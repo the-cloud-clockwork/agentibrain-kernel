@@ -1,0 +1,104 @@
+# Generic defaults for brain-cron (tick CronJob + amygdala Deployment).
+#
+# Ticks every 2 hours by default. The tick-engine image is ghcr.io/the-cloud-clock-work/agentibrain-tick-engine.
+# Operators override environment-specific values (NFS server, INFERENCE_URL, secrets);
+# see values-anton.yaml for the operator's production reference.
+
+schedule: "7 */2 * * *"
+
+image:
+  repository: ghcr.io/the-cloud-clock-work/agentibrain-tick-engine
+  tag: latest
+  pullPolicy: Always
+
+command:
+  - /bin/sh
+  - -c
+  - |
+    set -euo pipefail
+    NTFY_URL="${NTFY_URL:-}"
+
+    notify_failure() {
+      if [ -n "$NTFY_URL" ]; then
+        wget -q --post-data="brain-cron FAILED at $(date -u +%H:%M) UTC: $1" \
+          --header="Title: Brain Cron Failure" \
+          --header="Priority: high" \
+          --header="Tags: skull,brain" \
+          "$NTFY_URL/alerts" -O /dev/null 2>/dev/null || true
+      fi
+      exit 1
+    }
+
+    DATE=$(date -u +%Y-%m-%d)
+    HOUR=$(date -u +%H)
+    OUTDIR="/vault/clusters/$DATE"
+    mkdir -p "$OUTDIR"
+    chmod 777 "$OUTDIR"
+
+    # Extraction: only at 04:00 UTC (first tick of the day)
+    if [ "$HOUR" = "04" ]; then
+      echo "Brain extraction: since=26h min-turns=5 out=$OUTDIR"
+      python3 /app/extract.py --since 26h --min-turns 5 \
+        --projects-dir /shared/.claude/projects \
+        | python3 /app/cluster.py --out-dir "$OUTDIR" \
+        || notify_failure "extraction phase"
+      echo "Extraction done."
+    else
+      echo "Skipping extraction (hour=$HOUR, runs at 04 only)."
+    fi
+
+    echo "Running hybrid brain tick (with AI)..."
+    python3 /app/brain_tick.py --vault /vault --brain-feed /vault/brain-feed \
+      --inference-url "${INFERENCE_URL:-}" \
+      || notify_failure "brain tick phase"
+    echo "Brain tick complete."
+
+    echo "Running amygdala check..."
+    python3 /app/amygdala.py \
+      --redis-url "${REDIS_URL}" \
+      --vault /vault --brain-feed /vault/brain-feed \
+      || notify_failure "amygdala check"
+    echo "Amygdala check complete."
+
+env:
+  # INFERENCE_URL is operator-specific — set empty default so the kernel can run
+  # without an inference-gateway (brain_tick will skip AI phase if unset).
+  INFERENCE_URL: ""
+  # Self-healing knobs (see services/tick-engine/brain_keeper.py)
+  BRAIN_STALE_SIGNAL_DAYS: "1"
+  BRAIN_DECAY_START_DAYS: "2"
+  BRAIN_DECAY_INTERVAL_DAYS: "2"
+
+# Operators override with their secrets provider (OpenBao / AWS SM / etc).
+secretRef: brain-cron-secrets
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# NFS volumes — operator override required. Friends mount PVCs or hostPath.
+# nfsVault:
+#   server: 10.x.y.z
+#   path: /path/to/vault
+# nfsShared:
+#   server: 10.x.y.z
+#   path: /path/to/agenticore/shared
+
+concurrencyPolicy: Forbid
+successfulJobsHistoryLimit: 3
+failedJobsHistoryLimit: 3
+backoffLimit: 1
+activeDeadlineSeconds: 600
+restartPolicy: OnFailure
+
+imagePullSecrets:
+  - ghcr-pull-secret
+
+# Amygdala continuous consumer (Deployment). Reads Redis stream for emergency signals.
+amygdala:
+  enabled: true
+  pollInterval: "5"

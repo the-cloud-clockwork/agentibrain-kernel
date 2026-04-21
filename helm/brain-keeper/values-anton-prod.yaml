@@ -1,0 +1,15 @@
+tpl:
+  fullnameOverride: brain-keeper
+  global:
+    environment: prod
+
+  app:
+    image:
+      tag: latest
+      pullPolicy: Always
+
+  env:
+    variables:
+      AGENTIBRIDGE_URL: "http://agentibridge.anton-prod.svc:8100"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.anton-prod.svc:4317"
+      OTEL_RESOURCE_ATTRIBUTES: "agent.name=brain-keeper,environment=prod,agent.type=daemon"

@@ -1,0 +1,133 @@
+# Generic defaults for the brain-keeper chart.
+#
+# brain-keeper runs on the agenticore agent image (same pattern as every agenti
+# ecosystem agent — same image, different env vars). It is a first-class agent
+# for brain operations: enrichment, triage, replay.
+#
+# For operator-specific reference deployments see values-anton.yaml and
+# values-anton-prod.yaml.
+tpl:
+  fullnameOverride: brain-keeper
+  enableServiceLinks: false
+  podAnnotations:
+    reloader.stakater.com/auto: "true"
+  global:
+    environment: dev
+    project: agentibrain
+  app:
+    name: agenticore
+    type: statefulset
+    image:
+      repository: ghcr.io/the-cloud-clock-work/agenticore
+      tag: latest
+      pullPolicy: Always
+    replicaCount: 1
+    container:
+      port: 8200
+    lifecycle:
+      preStop:
+        exec:
+          command:
+            - /bin/sh
+            - -c
+            - agenticore drain --timeout 25
+    terminationGracePeriodSeconds: 30
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: '1'
+        memory: 2Gi
+    healthChecks:
+      enabled: true
+      startupProbe:
+        httpGet:
+          path: /health
+          port: 8200
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        failureThreshold: 60
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 8200
+        periodSeconds: 30
+        failureThreshold: 3
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: 8200
+        periodSeconds: 10
+  env:
+    variables:
+      # Agenticore runtime flags
+      AGENT_MODE: 'true'
+      AGENT_MODE_MODEL: opus
+      AGENT_MODE_MAX_TURNS: '20'
+      AGENT_MODE_PERMISSION_MODE: bypassPermissions
+      AGENT_MODE_TIMEOUT: '600'
+      AGENT_MODE_EFFORT: medium
+      AGENT_MODE_QUEUE_ENABLED: 'true'
+      AGENTICORE_TRANSPORT: sse
+      AGENTICORE_HOST: 0.0.0.0
+      AGENTICORE_PORT: '8200'
+      AGENTICORE_AGENT_NAME: brain-keeper
+      AGENTICORE_MAX_PARALLEL_JOBS: '3'
+      AGENTICORE_CLAUDE_TIMEOUT: '600'
+      AGENTICORE_SHARED_FS_ROOT: /shared
+      AGENTICORE_SHARED_LOCKS: 'false'
+      AGENTICORE_REPOS_ROOT: /shared/repos
+      AGENTICORE_JOBS_DIR: /shared/job-state
+      HOME: /shared
+      # agentihooks + agentihub sync (canonical sources for the brain profile + keeper agent)
+      AGENTICORE_AGENTIHOOKS_URL: https://github.com/The-Cloud-Clock-Work/agentihooks
+      AGENTICORE_AGENTIHOOKS_BUNDLE_URL: https://github.com/The-Cloud-Clock-Work/agentihooks-bundle
+      AGENTICORE_AGENTIHUB_URL: https://github.com/The-Cloud-Clock-Work/agentihub
+      AGENTICORE_AGENTIHOOKS_SYNC_INTERVAL: '30'
+      AGENTICORE_AGENTIHOOKS_BUNDLE_SYNC_INTERVAL: '30'
+      AGENTICORE_AGENTIHUB_SYNC_INTERVAL: '30'
+      AGENTIHOOKS_PROFILE: brain-keeper
+      AGENTIHUB_AGENT: brain-keeper
+      # Brain wiring — operators override these for their deployment.
+      # BRAIN_URL points at the kernel kb-router; set in per-env values file.
+      BRAIN_ENABLED: 'true'
+      BRAIN_CHANNEL: brain
+      BRAIN_SOURCE_PATH: /vault/brain-feed
+      BRAIN_REFRESH_INTERVAL: '10'
+      AMYGDALA_ENABLED: 'true'
+      AMYGDALA_SIGNAL_PATH: /vault/brain-feed/amygdala-active.md
+      # ARTIFACT_STORE_URL — operator override (see values-anton.yaml)
+  secrets:
+    enabled: true
+    external:
+      enabled: true
+      # Operators point this at their secrets provider (OpenBao / AWS SM / etc).
+      secretName: agenticore-secrets
+  persistence:
+    enabled: true
+    volumes:
+      - name: shared-fs
+        size: 5Gi
+        accessMode: ReadWriteOnce
+        storageClass: local-path
+        mountPath: /shared
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8200
+    targetPort: 8200
+  ingress:
+    enabled: false
+  database:
+    enabled: false
+  configMap:
+    enabled: false
+  securityContext:
+    enabled: false
+  serviceAccount:
+    create: false
+  rbac:
+    create: false
+  imagePullSecrets:
+    - ghcr-pull-secret

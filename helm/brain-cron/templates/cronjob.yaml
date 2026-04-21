@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Chart.Name }}
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  concurrencyPolicy: {{ .Values.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
+      template:
+        spec:
+          restartPolicy: {{ .Values.restartPolicy }}
+          containers:
+            - name: brain-tick
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: {{- toYaml .Values.command | nindent 16 }}
+              {{- if or .Values.env .Values.secretRef }}
+              env:
+                {{- range $key, $value := .Values.env }}
+                - name: {{ $key }}
+                  value: {{ $value | quote }}
+                {{- end }}
+              {{- if .Values.secretRef }}
+              envFrom:
+                - secretRef:
+                    name: {{ .Values.secretRef }}
+              {{- end }}
+              {{- end }}
+              resources: {{- toYaml .Values.resources | nindent 16 }}
+              volumeMounts:
+                - name: nfs-vault
+                  mountPath: /vault
+                - name: nfs-shared
+                  mountPath: /shared
+                  readOnly: true
+          volumes:
+            - name: nfs-vault
+              nfs:
+                server: {{ .Values.nfsVault.server }}
+                path: {{ .Values.nfsVault.path }}
+            - name: nfs-shared
+              nfs:
+                server: {{ .Values.nfsShared.server }}
+                path: {{ .Values.nfsShared.path }}
+                readOnly: true
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- range . }}
+            - name: {{ . }}
+            {{- end }}
+          {{- end }}
