@@ -1,0 +1,15 @@
+# -- agentihooks fields (read by install.py) --
+name: brain
+description: "Brain Nervous System — marker emission rules for agents. Chain this profile to give any agent the ability to write back to the brain in real-time."
+mcp_categories: []
+enabledMcpServers: []
+
+# This profile is meant to be CHAINED, not used standalone.
+# Example: AGENTIHOOKS_PROFILE=anton,brain
+# or: AGENTIHOOKS_PROFILE=agenticore,brain
+#
+# It adds:
+#   1. Rules for marker emission (what to emit, when, severity levels)
+#   2. Future: broadcast MCP tool for agent-controlled fleet messages
+#
+# No model, no effort, no otel — those come from the base profile.

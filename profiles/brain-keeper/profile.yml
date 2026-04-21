@@ -1,0 +1,30 @@
+# -- agentihooks fields (read by install.py) --
+name: brain-keeper
+description: "Brain-keeper daemon — vault maintenance, heat recomputation, frontal-lobe promotion/demotion, _hot-arcs.md generation"
+mcp_categories:
+  - tools-knowledge
+  - tools-notifications
+
+enabledMcpServers:
+  - hooks-utils
+  - tools-knowledge
+  - tools-notifications
+
+otel:
+  enabled: true
+  endpoint: "http://10.10.30.130:4317"
+  protocol: grpc
+  resource_attributes:
+    agent.name: brain-keeper
+    agent.type: daemon
+    environment: prod
+  langfuse:
+    enabled: true
+    endpoint: "https://langfuse.homeofanton.com/api/public/otel"
+    public_key: ""
+    secret_key: ""
+
+claude:
+  model: "claude-sonnet-4-6"
+  permission_mode: bypassPermissions
+  effort: medium
