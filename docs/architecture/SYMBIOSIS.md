@@ -112,7 +112,7 @@ We have all six. That is why this is the moment.
 The architecture we are building is **fractal**. The same primitives apply at every scope:
 
 - **Brain scope**: the operator's own cognitive system. Arcs, hemispheres, amygdala, frontal lobe. This is what `docs/brain/CLUSTERS.md` describes.
-- **Tech scope**: the antoncore ecosystem. Docker stacks, K8s deployments, CI/CD, monitoring, incident response. The left hemisphere of the brain.
+- **Tech scope**: the operator's ecosystem (antoncore in this doc's home deployment). Docker stacks, K8s deployments, CI/CD, monitoring, incident response. The left hemisphere of the brain.
 - **Business scope**: the commercial entity. Customers, invoices, strategy, legal, partnerships. The right hemisphere of the brain.
 - **Personal scope**: life logistics. Fitness, relationships, travel, health, calendar. A third dimension orthogonal to tech and business, but using the same primitives.
 

@@ -57,8 +57,9 @@ jobs:
         with:
           context: services/${{ matrix.service }}
           push: ${{ steps.tag.outputs.push == 'true' }}
+          # Only the floating tag is published (per no-hash-pins rule). Rollback
+          # is `git revert` on main, which republishes :latest.
           tags: |
             ghcr.io/the-cloud-clock-work/agentibrain-${{ matrix.service }}:${{ steps.tag.outputs.tag }}
-            ghcr.io/the-cloud-clock-work/agentibrain-${{ matrix.service }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,scope=${{ matrix.service }},mode=max

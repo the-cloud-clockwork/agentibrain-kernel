@@ -10,11 +10,11 @@ active. File absence = all clear.
 
 Usage:
     # One-shot check (run from brain-cron)
-    python3 amygdala.py --redis-url redis://10.10.30.130:6379/11 \
+    python3 amygdala.py --redis-url redis://redis:6379/11 \
         --vault /vault --brain-feed /vault/brain-feed
 
     # Dry run
-    python3 amygdala.py --redis-url redis://10.10.30.130:6379/11 \
+    python3 amygdala.py --redis-url redis://redis:6379/11 \
         --vault /vault --brain-feed /vault/brain-feed --dry-run
 """
 from __future__ import annotations
@@ -32,10 +32,10 @@ try:
 except ImportError:
     redis = None
 
-STREAMS = [
-    "anton:events:health", "anton:events:host", "anton:events:deploy",
-    "anton:events:system", "anton:events:brain",
-]
+_DEFAULT_STREAMS = "events:health,events:host,events:deploy,events:system,events:brain"
+# Operators with an existing namespaced prefix (e.g. anton:events:*) override via
+# AMYGDALA_STREAMS="anton:events:health,anton:events:host,...".
+STREAMS = [s.strip() for s in os.getenv("AMYGDALA_STREAMS", _DEFAULT_STREAMS).split(",") if s.strip()]
 GROUP = "amygdala"
 CONSUMER = os.getenv("AMYGDALA_CONSUMER", "amygdala-cron")
 CLEAR_WINDOW_SEC = int(os.getenv("AMYGDALA_CLEAR_WINDOW", "900"))  # 15 min
@@ -318,7 +318,7 @@ def run_continuous(redis_url: str, vault_root: Path, brain_feed_dir: Path, poll_
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Amygdala — Redis Streams emergency signal consumer")
-    p.add_argument("--redis-url", default=os.getenv("REDIS_URL", "redis://10.10.30.130:6379/11"))
+    p.add_argument("--redis-url", default=os.getenv("REDIS_URL", "redis://redis:6379/11"))
     p.add_argument("--vault", help="Vault root path (required unless --replay)")
     p.add_argument("--brain-feed", help="Brain feed directory (required unless --replay)")
     p.add_argument("--dry-run", action="store_true")

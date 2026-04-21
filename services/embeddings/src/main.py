@@ -12,9 +12,9 @@ import db
 import embed
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
-log = logging.getLogger("anton-embeddings")
+log = logging.getLogger("agentibrain-embeddings")
 
-app = FastAPI(title="Anton Embeddings", version="1.0.0")
+app = FastAPI(title="agentibrain-embeddings", version="1.0.0")
 
 
 class EmbedRequest(BaseModel):
@@ -45,7 +45,7 @@ def startup():
     else:
         log.warning("embedding_not_configured — LLM_API_BASE or LLM_API_KEY missing")
 
-    log.info("anton_embeddings_ready")
+    log.info("agentibrain_embeddings_ready")
 
 
 @app.get("/health")

@@ -53,6 +53,7 @@ agentibrain = [
     "templates/compose/*.j2",
     "templates/helm/**/*",
     "templates/vault-layout/**/*",
+    "migrations/*.sql",
 ]
 
 [tool.setuptools.dynamic]

@@ -33,21 +33,44 @@ spec:
               {{- end }}
               resources: {{- toYaml .Values.resources | nindent 16 }}
               volumeMounts:
+                {{- if and .Values.nfsVault .Values.nfsVault.server }}
                 - name: nfs-vault
                   mountPath: /vault
+                {{- else if .Values.vaultPVC }}
+                - name: vault
+                  mountPath: /vault
+                {{- end }}
+                {{- if and .Values.nfsShared .Values.nfsShared.server }}
                 - name: nfs-shared
                   mountPath: /shared
                   readOnly: true
+                {{- else if .Values.sharedPVC }}
+                - name: shared
+                  mountPath: /shared
+                  readOnly: true
+                {{- end }}
           volumes:
+            {{- if and .Values.nfsVault .Values.nfsVault.server }}
             - name: nfs-vault
               nfs:
                 server: {{ .Values.nfsVault.server }}
                 path: {{ .Values.nfsVault.path }}
+            {{- else if .Values.vaultPVC }}
+            - name: vault
+              persistentVolumeClaim:
+                claimName: {{ .Values.vaultPVC }}
+            {{- end }}
+            {{- if and .Values.nfsShared .Values.nfsShared.server }}
             - name: nfs-shared
               nfs:
                 server: {{ .Values.nfsShared.server }}
                 path: {{ .Values.nfsShared.path }}
                 readOnly: true
+            {{- else if .Values.sharedPVC }}
+            - name: shared
+              persistentVolumeClaim:
+                claimName: {{ .Values.sharedPVC }}
+            {{- end }}
           {{- with .Values.imagePullSecrets }}
           imagePullSecrets:
             {{- range . }}

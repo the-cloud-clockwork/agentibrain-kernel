@@ -45,13 +45,24 @@ spec:
               cpu: 200m
               memory: 128Mi
           volumeMounts:
+            {{- if and .Values.nfsVault .Values.nfsVault.server }}
             - name: nfs-vault
               mountPath: /vault
+            {{- else if .Values.vaultPVC }}
+            - name: vault
+              mountPath: /vault
+            {{- end }}
       volumes:
+        {{- if and .Values.nfsVault .Values.nfsVault.server }}
         - name: nfs-vault
           nfs:
             server: {{ .Values.nfsVault.server }}
             path: {{ .Values.nfsVault.path }}
+        {{- else if .Values.vaultPVC }}
+        - name: vault
+          persistentVolumeClaim:
+            claimName: {{ .Values.vaultPVC }}
+        {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- range . }}

@@ -30,7 +30,7 @@ def require_token(authorization: str | None = Header(None)) -> None:
         raise HTTPException(status_code=401, detail="invalid token")
 
 
-app = FastAPI(title="Anton KB Router", version="0.1.0")
+app = FastAPI(title="agentibrain kb-router", version="0.1.0")
 
 
 @app.get("/health")

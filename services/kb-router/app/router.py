@@ -26,7 +26,11 @@ import httpx
 
 log = logging.getLogger("kb_router")
 
-ARTIFACT_STORE_URL = os.getenv("ARTIFACT_STORE_URL", "http://artifact-store:8080")
+# ARTIFACT_STORE_URL is optional. When unset, binary-blob ingest raises a
+# clear error rather than silently hitting a non-existent DNS name. Operators
+# point this at their storage plane (antoncore's artifact-store, an S3 gateway,
+# or any OpenAPI-compatible blob service).
+ARTIFACT_STORE_URL = os.getenv("ARTIFACT_STORE_URL", "")
 ARTIFACT_STORE_KEY = os.getenv("ARTIFACT_STORE_KEY", "")
 OBSIDIAN_READER_URL = os.getenv("OBSIDIAN_READER_URL", "http://obsidian-reader:8080")
 OBSIDIAN_READER_TOKEN = os.getenv("OBSIDIAN_READER_TOKEN", "")
@@ -71,7 +75,7 @@ class IngestResult:
         }
 
 
-SYSTEM_PROMPT = """You are the Anton KB ingest router. Your job: read an operator message and extract:
+SYSTEM_PROMPT = """You are the agentibrain KB ingest router. Your job: read an operator message and extract:
   1. `semantic_text`: the semantic/idea/commentary part of the message (the operator's own thinking)
   2. `extractables`: concrete references to CONTENT that should be downloaded/read and stored
   3. `title`: a short descriptive title for this ingest batch (max 80 chars)
@@ -238,6 +242,12 @@ async def _upload_bytes_to_artifact_store(
     client: httpx.AsyncClient,
 ) -> dict:
     """Delegate to artifact-store POST /artifacts/upload (multipart)."""
+    if not ARTIFACT_STORE_URL:
+        raise RuntimeError(
+            "ARTIFACT_STORE_URL is not configured; binary ingest is disabled. "
+            "Point it at your storage plane (antoncore artifact-store, S3 gateway, "
+            "or any OpenAPI-compatible blob service) to enable blob upload."
+        )
     files = {"file": (filename, raw, content_type)}
     data = {
         "producer": producer,

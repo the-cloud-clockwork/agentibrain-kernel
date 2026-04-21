@@ -18,7 +18,7 @@ The brain is five cooperating systems:
 2. **Ticks (cron)** — every 2h at HH:07 UTC, `brain-cron` scans arcs, computes heat, writes `brain-feed/*.md`, tombstones stale signals.
 3. **Brain-feed (outbox)** — plaintext summary files (`hot-arcs.md`, `signals.md`, `inject.md`, `intent.md`, `last-tick-diff.md`, `health.jsonl`). Synced to every machine via rsync every 5min.
 4. **Agentihooks (injection)** — on `UserPromptSubmit`, reads `brain-feed/*.md`, injects as `BROADCAST` blocks into Claude's context. Emits OTel spans per inject + delivery + marker-write.
-5. **Brain-keeper (ops agent)** — first-class agent at `brain-keeper.anton-prod.svc:8200`. Runs triage, heal, replay, test via LiteLLM model `brain-keeper`.
+5. **Brain-keeper (ops agent)** — first-class agent at `brain-keeper.<namespace>.svc:8200` (antoncore: `anton-prod`). Runs triage, heal, replay, test via LiteLLM model `brain-keeper`.
 
 Data flows: `sessions → clusters → tick → brain-feed → hooks → broadcast → new sessions (+ markers flow back)`.
 

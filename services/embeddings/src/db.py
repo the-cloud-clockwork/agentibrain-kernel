@@ -6,7 +6,7 @@ import logging
 from psycopg_pool import ConnectionPool
 from psycopg.types.json import Jsonb
 
-log = logging.getLogger("anton-embeddings.db")
+log = logging.getLogger("agentibrain-embeddings.db")
 
 POSTGRES_URL = os.environ.get("POSTGRES_URL", "")
 

@@ -285,7 +285,7 @@ The cluster primitive is **orthogonal** to MUBS (Minimal Unit of Brain Storage, 
 
 - **MUBS** = container for an ongoing project/idea (VISION.md, SPECS.md, BLOCKS.md, etc.)
 - **Cluster** = historical record of a task-in-action that touched one or more MUBS instances
-- Clusters reference MUBS via `edges: [mubs:left/projects/antoncore]`
+- Clusters reference MUBS via `edges: [mubs:left/projects/<your-project>]` (antoncore example: `mubs:left/projects/antoncore`)
 - A MUBS can list recent clusters in its `BLOCKS.md` under "Recent arcs"
 
 **Extraction sources**:

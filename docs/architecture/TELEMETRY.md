@@ -17,7 +17,7 @@ LAYER 1 — Claude Code native OTel (zero code)
   ~/.claude/settings.json env vars
     CLAUDE_CODE_ENABLE_TELEMETRY=1
     CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://10.10.30.130:4318
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://${OTEL_HOST}:4318
     OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
     OTEL_SERVICE_NAME=claude-code-home
   Emits: claude_code.user_prompt, claude_code.tool_result,
@@ -39,7 +39,7 @@ LAYER 3 — Hook log OTLP fan-out
   additionally POST to OTLP /v1/logs → ClickHouse otel_logs
 
 LAYER 4 — Data plane
-  otel-collector (Docker Compose at 10.10.30.130:4318)
+  otel-collector (Docker Compose at ${OTEL_HOST}:4318)
     ↓
   ClickHouse otel database  (otel_traces, otel_logs, otel_metrics)
   Langfuse via otlphttp/langfuse exporter (traces only)
@@ -137,7 +137,7 @@ cd /home/iamroot/dev/tccw-ecosystem/agentihooks
 ./scripts/brain-smoke                # 4 core tests, offline
 ./scripts/brain-smoke --otel-check   # + ClickHouse span verification (5 tests)
 
-CLICKHOUSE_URL="http://default:$PASS@10.10.30.130:8123" \
+CLICKHOUSE_URL="http://default:$PASS@${CLICKHOUSE_HOST}:8123" \
   ./scripts/brain-smoke --otel-check
 ```
 
@@ -153,15 +153,15 @@ Exit 0 on all-pass, 1 on any fail. Runs in ~1.5 s. Wired into CI at `agentihooks
 ## Troubleshooting
 
 **Spans don't show up in ClickHouse**
-- Check OTel collector is reachable: `curl http://10.10.30.130:4318` → expect 404 (endpoint up, wrong path)
+- Check OTel collector is reachable: `curl http://${OTEL_HOST}:4318` → expect 404 (endpoint up, wrong path)
 - Check env vars: `printenv | grep OTEL` → should show OTLP_ENDPOINT + PROTOCOL
 - Check agentihooks telemetry flag: `printenv | grep OTEL_HOOKS_ENABLED` → should be `true`
 - Restart your Claude Code session — settings.json env is read at startup
 
 **Langfuse is empty**
-- Langfuse only receives from the `otlphttp/langfuse` exporter in the Docker Compose collector
-- Verify collector config: `ssh root@10.10.30.130 "grep -A3 langfuse /mnt/user/appdata/antoncore/stacks/observability/otelcol.yaml"`
-- Verify credentials env: `ssh root@10.10.30.130 "docker exec observability_otel-collector printenv | grep LANGFUSE"`
+- Langfuse only receives from the `otlphttp/langfuse` exporter in the collector
+- Verify collector config (antoncore example): `ssh root@${OTEL_HOST} "grep -A3 langfuse /mnt/user/appdata/antoncore/stacks/observability/otelcol.yaml"`
+- Verify credentials env (antoncore example): `ssh root@${OTEL_HOST} "docker exec observability_otel-collector printenv | grep LANGFUSE"`
 - For K8s pods: see `k8s/charts/otel-collector/values-prod.yaml` — langfuse exporter is wired but requires `secret/k8s/otel-collector-prod` populated in OpenBao
 
 **ClickHouse lag > 30s**

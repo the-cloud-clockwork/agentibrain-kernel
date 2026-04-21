@@ -32,21 +32,25 @@ class BrainClient:
             return r.json()
 
     def ingest(self, payload: dict) -> dict:
-        """POST /ingest — Phase 5."""
-        raise NotImplementedError
+        """POST /ingest — wiring pending."""
+        raise NotImplementedError("BrainClient.ingest not wired yet — call POST /ingest directly.")
 
     def search(self, query: str, **kwargs: object) -> dict:
-        """POST /search — Phase 5."""
-        raise NotImplementedError
+        """POST /search — wiring pending."""
+        raise NotImplementedError("BrainClient.search not wired yet — call POST /search directly.")
 
     def brief(self, query: str, **kwargs: object) -> dict:
-        """POST /brief — Phase 5."""
-        raise NotImplementedError
+        """POST /brief — wiring pending."""
+        raise NotImplementedError("BrainClient.brief not wired yet — call POST /brief directly.")
 
     def feed(self) -> dict:
         """GET /feed — Phase 7 (replaces brain_adapter's vault reads)."""
-        raise NotImplementedError
+        raise NotImplementedError(
+            "BrainClient.feed requires the Phase 7 kernel /feed endpoint (not shipped yet)."
+        )
 
     def marker(self, marker_type: str, content: str, **kwargs: object) -> dict:
         """POST /marker — Phase 7 (replaces brain_writer_hook direct vault writes)."""
-        raise NotImplementedError
+        raise NotImplementedError(
+            "BrainClient.marker requires the Phase 7 kernel /marker endpoint (not shipped yet)."
+        )

@@ -20,7 +20,7 @@ Timeline / Lessons / Resolution sections that a separate LLM pass
 (kb_brief via inference-gateway) fills in later.
 
 Usage:
-    python3 extract.py --since 24h --project antoncore | \\
+    python3 extract.py --since 24h --project my-project | \\
         python3 cluster.py --out-dir /tmp/clusters/2026-04-09
 
     # Or two-step with a saved bundle:

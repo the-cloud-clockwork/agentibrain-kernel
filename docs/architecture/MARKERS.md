@@ -3,14 +3,14 @@ title: Brain Markup Protocol — Marker Specification
 status: living
 date: 2026-04-10
 related:
-  - docs/brain/CLUSTERS.md
-  - docs/brain/ARCHITECTURE.md
-  - stacks/brain-tools/markers.py
+  - docs/architecture/CLUSTERS.md
+  - docs/architecture/ARCHITECTURE.md
+  - services/tick-engine/markers.py
 ---
 
 # Brain Markup Protocol — Marker Specification
 
-> **Parser:** `stacks/brain-tools/markers.py` (pure stdlib Python, self-test included)
+> **Parser:** `services/tick-engine/markers.py` (pure stdlib Python, self-test included)
 > **Design principle:** 80% deterministic, 20% AI. Markers enable the 80%.
 
 ---

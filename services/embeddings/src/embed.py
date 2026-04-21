@@ -6,7 +6,7 @@ from typing import Optional
 
 import httpx
 
-log = logging.getLogger("anton-embeddings.embed")
+log = logging.getLogger("agentibrain-embeddings.embed")
 
 LLM_API_BASE = os.environ.get("LLM_API_BASE", "")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")

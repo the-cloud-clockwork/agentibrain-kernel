@@ -80,13 +80,23 @@ resources:
     cpu: 500m
     memory: 512Mi
 
-# NFS volumes — operator override required. Friends mount PVCs or hostPath.
-# nfsVault:
-#   server: 10.x.y.z
-#   path: /path/to/vault
-# nfsShared:
-#   server: 10.x.y.z
-#   path: /path/to/agenticore/shared
+# Volume mounts — choose ONE of the two patterns:
+#
+#   1. NFS (operators with a shared filer):
+#        nfsVault: { server: 10.x.y.z, path: /exports/vault }
+#        nfsShared: { server: 10.x.y.z, path: /exports/shared }
+#
+#   2. PVC (friends / standard K8s — use a PVC you've pre-provisioned):
+#        vaultPVC: my-vault-pvc
+#        sharedPVC: my-shared-pvc
+#
+# When neither is set, no vault volume is mounted and the tick will fail loudly
+# on first read. The template guards each block; the chart installs cleanly
+# with defaults so `helm template` / `helm lint` don't fail.
+nfsVault: {}
+nfsShared: {}
+vaultPVC: ""
+sharedPVC: ""
 
 concurrencyPolicy: Forbid
 successfulJobsHistoryLimit: 3

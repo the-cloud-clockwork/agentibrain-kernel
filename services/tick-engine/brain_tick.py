@@ -22,7 +22,7 @@ Usage:
     python3 brain_tick.py --vault /vault --brain-feed /vault/brain-feed --no-ai
 
     # Custom inference endpoint
-    python3 brain_tick.py --vault /vault --brain-feed /vault/brain-feed --inference-url http://10.10.30.130:8103
+    python3 brain_tick.py --vault /vault --brain-feed /vault/brain-feed --inference-url http://inference-gateway:8080
 """
 from __future__ import annotations
 
@@ -43,7 +43,9 @@ import brain_keeper
 import brain_tick_prompt
 
 
-INFERENCE_URL = os.getenv("INFERENCE_URL", "http://10.10.30.130:8103")
+# INFERENCE_URL is optional — when empty, the AI reasoning phase is skipped and
+# the tick runs deterministic-only. Operators configure this via env.
+INFERENCE_URL = os.getenv("INFERENCE_URL", "")
 CLICKHOUSE_URL = os.getenv("CLICKHOUSE_URL", "http://localhost:8123")
 
 

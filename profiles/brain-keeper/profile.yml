@@ -11,16 +11,21 @@ enabledMcpServers:
   - tools-notifications
 
 otel:
+  # Leave endpoint blank for friends / local dev — the agenticore runtime skips
+  # OTel export when the endpoint is empty. Operators override in their
+  # deployment via the agent's env (OTEL_EXPORTER_OTLP_ENDPOINT) or via an
+  # overlay profile.
   enabled: true
-  endpoint: "http://10.10.30.130:4317"
+  endpoint: ""
   protocol: grpc
   resource_attributes:
     agent.name: brain-keeper
     agent.type: daemon
-    environment: prod
   langfuse:
-    enabled: true
-    endpoint: "https://langfuse.homeofanton.com/api/public/otel"
+    # Langfuse export is optional. Operators wire their own endpoint + keys via
+    # agent secrets; the kernel ships with placeholders only.
+    enabled: false
+    endpoint: ""
     public_key: ""
     secret_key: ""
 
