@@ -1,0 +1,34 @@
+services:
+  kb-router:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/the-cloud-clock-work/agentibrain-kb-router:local
+    container_name: agentibrain_kb_router
+    restart: unless-stopped
+    environment:
+      - ARTIFACT_STORE_URL=${ARTIFACT_STORE_URL:-http://artifact-store:8080}
+      - OBSIDIAN_READER_URL=${OBSIDIAN_READER_URL:-http://obsidian-reader:8080}
+      - INFERENCE_URL=${INFERENCE_URL:-}
+      - INGEST_ROUTER_ROUTE=${INGEST_ROUTER_ROUTE:-kb-router-classify}
+      - LOCAL_READ_ROOTS=${LOCAL_READ_ROOTS:-/workspace,/mnt/ingest}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - KB_ROUTER_TOKEN=${KB_ROUTER_TOKEN:-}
+    ports:
+      - "8102:8080"
+    networks:
+      - agentibrain_net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# This compose is for solo-dev of kb-router in isolation.
+# For the full stack (kb-router + obsidian-reader + embeddings + tick-engine +
+# Postgres + Redis + optional MinIO), use `brain up` which renders the unified
+# compose from agentibrain/templates/compose/.
+networks:
+  agentibrain_net:
+    external: true

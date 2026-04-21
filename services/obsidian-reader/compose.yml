@@ -1,0 +1,32 @@
+services:
+  obsidian-reader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/the-cloud-clock-work/agentibrain-obsidian-reader:local
+    container_name: agentibrain_obsidian_reader
+    restart: unless-stopped
+    environment:
+      - VAULT_ROOT=${VAULT_ROOT:-/vault}
+      - RAW_INBOX_PREFIX=${RAW_INBOX_PREFIX:-raw/inbox}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - OBSIDIAN_READER_TOKEN=${OBSIDIAN_READER_TOKEN:-}
+    volumes:
+      # Read-write mount; the service enforces raw/inbox-only writes at the app layer.
+      # The vault path is operator-configured via BRAIN_VAULT_PATH / --vault flag.
+      - ${BRAIN_VAULT_PATH:-./vault}:/vault:rw
+    ports:
+      - "8101:8080"
+    networks:
+      - agentibrain_net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# Solo-dev compose for obsidian-reader. Full stack = `brain up`.
+networks:
+  agentibrain_net:
+    external: true
