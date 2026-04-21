@@ -1,0 +1,61 @@
+{{- if .Values.amygdala.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amygdala
+  labels:
+    app: amygdala
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: amygdala
+  template:
+    metadata:
+      labels:
+        app: amygdala
+      annotations:
+        reloader.stakater.com/auto: "true"
+    spec:
+      containers:
+        - name: amygdala
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              REDIS_DB11=$(echo "$REDIS_URL" | sed 's|/[0-9]*$|/11|')
+              exec python3 /app/amygdala.py \
+                --continuous \
+                --poll-interval {{ .Values.amygdala.pollInterval }} \
+                --redis-url "$REDIS_DB11" \
+                --vault /vault \
+                --brain-feed /vault/brain-feed
+          envFrom:
+            {{- if .Values.secretRef }}
+            - secretRef:
+                name: {{ .Values.secretRef }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: nfs-vault
+              mountPath: /vault
+      volumes:
+        - name: nfs-vault
+          nfs:
+            server: {{ .Values.nfsVault.server }}
+            path: {{ .Values.nfsVault.path }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+{{- end }}

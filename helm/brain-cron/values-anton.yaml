@@ -1,0 +1,97 @@
+schedule: "7 */2 * * *"
+
+image:
+  repository: ghcr.io/the-cloud-clock-work/antoncore-brain-tools
+  tag: latest
+  pullPolicy: Always
+
+command:
+  - /bin/sh
+  - -c
+  - |
+    set -euo pipefail
+    NTFY_URL="${NTFY_URL:-}"
+
+    notify_failure() {
+      if [ -n "$NTFY_URL" ]; then
+        wget -q --post-data="brain-cron FAILED at $(date -u +%H:%M) UTC: $1" \
+          --header="Title: Brain Cron Failure" \
+          --header="Priority: high" \
+          --header="Tags: skull,brain" \
+          "$NTFY_URL/alerts" -O /dev/null 2>/dev/null || true
+      fi
+      exit 1
+    }
+
+    DATE=$(date -u +%Y-%m-%d)
+    HOUR=$(date -u +%H)
+    OUTDIR="/vault/clusters/$DATE"
+    mkdir -p "$OUTDIR"
+    chmod 777 "$OUTDIR"
+
+    # Extraction: only at 04:00 UTC (first tick of the day)
+    if [ "$HOUR" = "04" ]; then
+      echo "Brain extraction: since=26h min-turns=5 out=$OUTDIR"
+      python3 /app/extract.py --since 26h --min-turns 5 \
+        --projects-dir /shared/.claude/projects \
+        | python3 /app/cluster.py --out-dir "$OUTDIR" \
+        || notify_failure "extraction phase"
+      echo "Extraction done."
+    else
+      echo "Skipping extraction (hour=$HOUR, runs at 04 only)."
+    fi
+
+    # Full hybrid tick: deterministic + AI reasoning
+    echo "Running hybrid brain tick (with AI)..."
+    python3 /app/brain_tick.py --vault /vault --brain-feed /vault/brain-feed \
+      --inference-url "${INFERENCE_URL}" \
+      || notify_failure "brain tick phase"
+    echo "Brain tick complete."
+
+    # Amygdala one-shot check (continuous consumer handles real-time)
+    echo "Running amygdala check..."
+    python3 /app/amygdala.py \
+      --redis-url "${REDIS_URL}" \
+      --vault /vault --brain-feed /vault/brain-feed \
+      || notify_failure "amygdala check"
+    echo "Amygdala check complete."
+
+env:
+  INFERENCE_URL: "http://10.10.30.130:8103"
+  # Tier 2 self-healing knobs (see stacks/brain-tools/brain_keeper.py)
+  BRAIN_STALE_SIGNAL_DAYS: "1"      # signals older than 1d get tombstoned (except nuclear/critical)
+  BRAIN_DECAY_START_DAYS: "2"       # hot-arc decay kicks in after 2d of age
+  BRAIN_DECAY_INTERVAL_DAYS: "2"    # -1 heat per 2d of inactivity past start
+
+secretRef: ops-runner-secrets
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+nfsVault:
+  server: 10.10.30.130
+  path: /mnt/user/appdata/obsidian/vault
+
+nfsShared:
+  server: 10.10.30.130
+  path: /mnt/user/appdata/agenticore/shared
+
+concurrencyPolicy: Forbid
+successfulJobsHistoryLimit: 3
+failedJobsHistoryLimit: 3
+backoffLimit: 1
+activeDeadlineSeconds: 600
+restartPolicy: OnFailure
+
+imagePullSecrets:
+  - ghcr-pull-secret
+
+# Amygdala continuous consumer (Deployment)
+amygdala:
+  enabled: true
+  pollInterval: "5"

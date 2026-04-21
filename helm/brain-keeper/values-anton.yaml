@@ -1,0 +1,163 @@
+tpl:
+  fullnameOverride: brain-keeper
+  enableServiceLinks: false
+  podAnnotations:
+    reloader.stakater.com/auto: "true"
+  global:
+    environment: dev
+    project: anton
+  app:
+    name: agenticore
+    type: statefulset
+    image:
+      repository: ghcr.io/the-cloud-clock-work/agenticore
+      tag: dev
+      pullPolicy: Always
+    replicaCount: 2  # Tier 3 HA — both replicas register with AgentiBridge, LiteLLM round-robins
+    container:
+      port: 8200
+    lifecycle:
+      preStop:
+        exec:
+          command:
+          - /bin/sh
+          - -c
+          - agenticore drain --timeout 25
+    terminationGracePeriodSeconds: 30
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: '1'
+        memory: 2Gi
+    healthChecks:
+      enabled: true
+      startupProbe:
+        httpGet:
+          path: /health
+          port: 8200
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        failureThreshold: 60
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 8200
+        periodSeconds: 30
+        failureThreshold: 3
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: 8200
+        periodSeconds: 10
+  env:
+    variables:
+      AGENT_MODE: 'true'
+      AGENTICORE_AGENTIHOOKS_URL: https://github.com/The-Cloud-Clock-Work/agentihooks
+      AGENTICORE_AGENTIHOOKS_SYNC_INTERVAL: '30'
+      AGENTIHOOKS_PROFILE: brain-keeper
+      AGENTICORE_AGENTIHOOKS_BUNDLE_URL: https://github.com/The-Cloud-Clock-Work/agentihooks-bundle
+      AGENTICORE_AGENTIHOOKS_BUNDLE_SYNC_INTERVAL: '30'
+      AGENTICORE_AGENTIHUB_URL: https://github.com/The-Cloud-Clock-Work/agentihub
+      AGENTICORE_AGENTIHUB_SYNC_INTERVAL: '30'
+      AGENTICORE_AGENTIHOOKS_BRANCH: dev
+      AGENTICORE_AGENTIHUB_BRANCH: dev
+      AGENTICORE_AGENTIHOOKS_BUNDLE_BRANCH: dev
+      AGENTIHUB_AGENT: brain-keeper
+      AGENTICORE_AGENT_NAME: brain-keeper
+      AGENT_MODE_MODEL: opus
+      AGENT_MODE_MAX_TURNS: '20'
+      AGENT_MODE_PERMISSION_MODE: bypassPermissions
+      AGENT_MODE_TIMEOUT: '600'
+      AGENT_MODE_EFFORT: medium
+      AGENT_MODE_QUEUE_ENABLED: 'true'
+      AGENTICORE_TRANSPORT: sse
+      AGENTICORE_HOST: 0.0.0.0
+      AGENTICORE_PORT: '8200'
+      AGENTIBRIDGE_URL: http://agentibridge.anton-dev.svc:8100
+      AGENTICORE_MAX_PARALLEL_JOBS: '3'
+      AGENTICORE_CLAUDE_TIMEOUT: '600'
+      AGENTICORE_SHARED_FS_ROOT: /shared
+      AGENTICORE_SHARED_LOCKS: 'false'
+      AGENTICORE_REPOS_ROOT: /shared/repos
+      AGENTICORE_JOBS_DIR: /shared/job-state
+      HOME: /shared
+      BRAIN_ENABLED: 'true'
+      BRAIN_SOURCE_PATH: /vault/brain-feed
+      BRAIN_CHANNEL: brain
+      AMYGDALA_ENABLED: 'true'
+      AMYGDALA_SIGNAL_PATH: /vault/brain-feed/amygdala-active.md
+      BRAIN_REFRESH_INTERVAL: '10'
+      ARTIFACT_STORE_URL: 'http://10.10.30.130:8095'
+      # ARTIFACT_STORE_API_KEY injected via agenticore-secrets (ESO from OpenBao)
+  secrets:
+    enabled: true
+    external:
+      enabled: true
+      secretName: agenticore-secrets
+  initContainers:
+  - name: fix-shared-perms
+    image: busybox:1.37
+    command:
+    - sh
+    - -c
+    - chown -R 1000:1000 /shared
+    volumeMounts:
+    - name: shared-fs
+      mountPath: /shared
+    securityContext:
+      runAsUser: 0
+  persistence:
+    enabled: true
+    volumes:
+    - name: shared-fs
+      size: 5Gi
+      accessMode: ReadWriteOnce
+      storageClass: local-path
+      mountPath: /shared
+  extraVolumes:
+  - name: nfs-vault
+    nfs:
+      server: 10.10.30.130
+      path: /mnt/user/appdata/obsidian/vault
+  - name: nfs-artifacts
+    nfs:
+      server: 10.10.30.130
+      path: /mnt/user/appdata/agenticore/shared
+      readOnly: true
+  extraVolumeMounts:
+  - name: nfs-vault
+    mountPath: /vault
+  - name: nfs-artifacts
+    mountPath: /artifacts
+    readOnly: true
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8200
+    targetPort: 8200
+  ingress:
+    enabled: false
+  database:
+    enabled: false
+  configMap:
+    enabled: false
+  securityContext:
+    enabled: false
+  serviceAccount:
+    create: false
+  rbac:
+    create: false
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 80
+        preference:
+          matchExpressions:
+          - key: anton.io/node-tier
+            operator: In
+            values:
+            - high-performance
+  imagePullSecrets:
+  - ghcr-pull-secret
