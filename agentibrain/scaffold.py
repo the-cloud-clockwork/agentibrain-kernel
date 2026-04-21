@@ -1,12 +1,16 @@
 """Vault scaffolder.
 
 Owns the versioned vault layout. Writes ``.brain-schema`` as the single source
-of truth for the layout version.
+of truth for the layout version. Everything else is sourced from the packaged
+``templates/vault-layout/`` tree — directories, README files, note templates,
+and MUBS templates. Adding a new folder or file to the template ships it to
+every future scaffold without touching this module.
 """
 
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,18 +18,6 @@ from agentibrain import __version__
 
 SCHEMA_VERSION = "1"
 SCHEMA_PRODUCER = f"agentibrain@{__version__}"
-
-VAULT_FOLDERS: tuple[str, ...] = (
-    "raw/inbox",
-    "clusters",
-    "brain-feed",
-    "amygdala",
-    "frontal-lobe",
-    "pineal",
-    "_index",
-    "templates",
-)
-
 SCHEMA_FILENAME = ".brain-schema"
 
 
@@ -45,10 +37,45 @@ def _schema_payload() -> dict:
     }
 
 
-def scaffold(vault_path: Path | str, *, force_upgrade: bool = False) -> dict:
-    """Create the vault folder tree and write ``.brain-schema``.
+def _copy_tree(src: Path, dst: Path) -> tuple[int, int]:
+    """Copy ``src`` into ``dst`` recursively.
 
-    Returns a summary dict: ``{"vault": str, "folders_created": int, "schema": ...}``.
+    Returns ``(folders_created, files_written)``. Never overwrites an existing
+    file — the operator's edits always win over the shipped template.
+    """
+    folders_created = 0
+    files_written = 0
+    for entry in src.rglob("*"):
+        rel = entry.relative_to(src)
+        target = dst / rel
+        if entry.is_dir():
+            if not target.exists():
+                target.mkdir(parents=True, exist_ok=True)
+                folders_created += 1
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if not target.exists():
+                shutil.copyfile(entry, target)
+                files_written += 1
+    return folders_created, files_written
+
+
+def scaffold(vault_path: Path | str, *, force_upgrade: bool = False) -> dict:
+    """Create (or top up) the vault tree and write ``.brain-schema``.
+
+    Returns a summary dict::
+
+        {
+            "vault": <absolute path>,
+            "folders_created": <int>,
+            "files_written": <int>,
+            "schema": {"version", "schema", "created_at"},
+        }
+
+    The call is idempotent: existing files and folders are never overwritten.
+    Only missing pieces are filled in. When an existing ``.brain-schema`` has
+    a different version, ``SchemaConflict`` is raised unless ``force_upgrade``
+    is True.
     """
     vault = Path(vault_path).expanduser().resolve()
     vault.mkdir(parents=True, exist_ok=True)
@@ -69,30 +96,12 @@ def scaffold(vault_path: Path | str, *, force_upgrade: bool = False) -> dict:
                 f"scaffolder is {SCHEMA_VERSION!r}. Pass force_upgrade=True to overwrite."
             )
 
-    created = 0
-    for rel in VAULT_FOLDERS:
-        folder = vault / rel
-        if not folder.exists():
-            folder.mkdir(parents=True, exist_ok=True)
-            created += 1
-
-    templates_src = _templates_root() / "templates"
-    if templates_src.exists():
-        dst = vault / "templates"
-        for src_file in templates_src.glob("*.md"):
-            target = dst / src_file.name
-            if not target.exists():
-                target.write_text(src_file.read_text())
-
-    root_readme = _templates_root() / "README.md"
-    dst_readme = vault / "README.md"
-    if root_readme.exists() and not dst_readme.exists():
-        dst_readme.write_text(root_readme.read_text())
-
+    folders_created, files_written = _copy_tree(_templates_root(), vault)
     schema_path.write_text(json.dumps(new_payload, indent=2) + "\n")
 
     return {
         "vault": str(vault),
-        "folders_created": created,
+        "folders_created": folders_created,
+        "files_written": files_written,
         "schema": new_payload,
     }

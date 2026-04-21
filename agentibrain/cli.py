@@ -179,6 +179,7 @@ def scaffold_cmd(vault_path: str | None, force_upgrade: bool) -> None:
 
     console.print(f"[green]✓[/green] vault    → {result['vault']}")
     console.print(f"[green]✓[/green] created  → {result['folders_created']} new folders")
+    console.print(f"[green]✓[/green] seeded   → {result['files_written']} files")
     console.print(
         f"[green]✓[/green] schema   → v{result['schema']['version']} ({result['schema']['schema']})"
     )
