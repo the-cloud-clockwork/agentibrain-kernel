@@ -1,0 +1,157 @@
+# Unified compose for the agentibrain kernel, rendered by `brain up`.
+#
+# Two variants controlled by the Jinja context:
+#   storage_mode: "s3"    → use AWS S3, no MinIO
+#   storage_mode: "local" → spin up MinIO alongside the stack
+#
+# Service URLs resolve over the shared ``agentibrain_net`` bridge network.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: agentibrain_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agentibrain
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentibrain}
+      POSTGRES_DB: agentibrain
+    volumes:
+      - agentibrain_pg_data:/var/lib/postgresql/data
+    ports:
+      - "{{ postgres_port | default(5432) }}:5432"
+    networks: [agentibrain_net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentibrain"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: agentibrain_redis
+    restart: unless-stopped
+    volumes:
+      - agentibrain_redis_data:/data
+    ports:
+      - "{{ redis_port | default(6379) }}:6379"
+    networks: [agentibrain_net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+{% if storage_mode == "local" %}
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    container_name: agentibrain_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-agentibrain}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-agentibrain}
+    volumes:
+      - agentibrain_minio_data:/data
+    ports:
+      - "{{ minio_port | default(9000) }}:9000"
+      - "{{ minio_console_port | default(9001) }}:9001"
+    networks: [agentibrain_net]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
+    container_name: agentibrain_minio_init
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-agentibrain} ${MINIO_ROOT_PASSWORD:-agentibrain}
+        mc mb --ignore-existing local/{{ s3_bucket | default("agentibrain-artifacts") }}
+        mc anonymous set download local/{{ s3_bucket | default("agentibrain-artifacts") }} || true
+    networks: [agentibrain_net]
+{% endif %}
+
+  embeddings:
+    image: {{ embeddings_image | default("ghcr.io/the-cloud-clock-work/agentibrain-embeddings:latest") }}
+    container_name: agentibrain_embeddings
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      POSTGRES_URL: postgresql://agentibrain:${POSTGRES_PASSWORD:-agentibrain}@postgres:5432/agentibrain
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks: [agentibrain_net]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  obsidian-reader:
+    image: {{ obsidian_reader_image | default("ghcr.io/the-cloud-clock-work/agentibrain-obsidian-reader:latest") }}
+    container_name: agentibrain_obsidian_reader
+    restart: unless-stopped
+    environment:
+      VAULT_ROOT: /vault
+      RAW_INBOX_PREFIX: raw/inbox
+      OBSIDIAN_READER_TOKEN: ${KB_ROUTER_TOKEN}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - {{ vault_path }}:/vault:rw
+    ports:
+      - "{{ obsidian_reader_port | default(8101) }}:8080"
+    networks: [agentibrain_net]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  kb-router:
+    image: {{ kb_router_image | default("ghcr.io/the-cloud-clock-work/agentibrain-kb-router:latest") }}
+    container_name: agentibrain_kb_router
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      obsidian-reader: { condition: service_started }
+      embeddings: { condition: service_started }
+    environment:
+      ARTIFACT_STORE_URL: ${ARTIFACT_STORE_URL:-}
+      OBSIDIAN_READER_URL: http://obsidian-reader:8080
+      OBSIDIAN_READER_TOKEN: ${KB_ROUTER_TOKEN}
+      EMBEDDINGS_URL: http://embeddings:8080
+      INFERENCE_URL: ${INFERENCE_URL:-}
+      INGEST_ROUTER_ROUTE: ${INGEST_ROUTER_ROUTE:-kb-router-classify}
+      LOCAL_READ_ROOTS: ${LOCAL_READ_ROOTS:-/workspace,/mnt/ingest}
+      KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "{{ kb_router_port | default(8102) }}:8080"
+    networks: [agentibrain_net]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  agentibrain_pg_data:
+  agentibrain_redis_data:
+{% if storage_mode == "local" %}
+  agentibrain_minio_data:
+{% endif %}
+
+networks:
+  agentibrain_net:
+    driver: bridge

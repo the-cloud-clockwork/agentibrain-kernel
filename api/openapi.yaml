@@ -1,0 +1,248 @@
+openapi: 3.1.0
+info:
+  title: agentibrain-kernel HTTP API
+  version: 0.1.0
+  description: |
+    Canonical HTTP contract for the agentibrain kernel. Consumed by:
+
+    - `agentihooks` hooks (brain_adapter → /feed, brain_writer_hook → /marker,
+      amygdala_hook → /signal).
+    - KB MCP tools (`kb_search`, `kb_brief`, `kb_dispatch`).
+    - Humans + other agents for ingest and retrieval.
+
+    **Auth:** bearer token via `Authorization: Bearer $KB_ROUTER_TOKEN`. The
+    token is issued at `brain init` time and stored in `~/.agentibrain/.env`.
+
+    **Status:** v0.1.0 ships `/health`, `/ingest`, `/search`, `/brief`,
+    `/dispatch`. The fleet-facing endpoints (`/feed`, `/signal`, `/marker`,
+    `/tick`) land in Phase 7 when the agentihooks connectors are rewritten.
+
+servers:
+  - url: http://localhost:8102
+    description: Default local kb-router port (brain init default).
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+        version:
+          type: string
+        services:
+          type: object
+          additionalProperties: { type: string }
+
+    IngestRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          description: Free-form message; router classifies and fans out.
+        title:
+          type: string
+        tags:
+          type: array
+          items: { type: string }
+
+    IngestResponse:
+      type: object
+      properties:
+        obsidian_ref:
+          type: string
+          nullable: true
+        ingest_batch:
+          type: string
+        artifacts:
+          type: array
+          items: { type: object }
+
+    SearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string }
+        limit: { type: integer, default: 10 }
+        include_artifact: { type: boolean, default: true }
+        include_obsidian:  { type: boolean, default: true }
+        min_score: { type: number, default: 0.0 }
+
+    SearchHit:
+      type: object
+      properties:
+        source: { type: string }
+        ref: { type: string }
+        title: { type: string }
+        score: { type: number }
+        preview: { type: string }
+        metadata: { type: object }
+
+    SearchResponse:
+      type: object
+      properties:
+        hits:
+          type: array
+          items: { $ref: "#/components/schemas/SearchHit" }
+
+    MarkerRequest:
+      type: object
+      required: [type, content]
+      properties:
+        type:
+          type: string
+          enum: [lesson, milestone, signal, decision]
+        content: { type: string }
+        severity:
+          type: string
+          enum: [nuclear, critical, warning, info, resolved]
+        source: { type: string }
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Liveness probe.
+      security: []
+      responses:
+        "200":
+          description: Service is healthy.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+
+  /ingest:
+    post:
+      summary: Classify + fan-out an ingest payload.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IngestRequest" }
+      responses:
+        "200":
+          description: Ingest summary.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IngestResponse" }
+
+  /search:
+    post:
+      summary: Federated search across artifact-store + vault.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SearchRequest" }
+      responses:
+        "200":
+          description: Ranked hits.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchResponse" }
+
+  /brief:
+    post:
+      summary: LLM-synthesized digest of search hits (3-5 sentences + candidate refs).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SearchRequest" }
+      responses:
+        "200":
+          description: Brief.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query: { type: string }
+                  brief: { type: string }
+                  candidate_refs:
+                    type: array
+                    items: { type: string }
+
+  /dispatch:
+    post:
+      summary: Assemble bundle + submit generation job.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_engine, target_job_type, source_refs]
+              properties:
+                target_engine: { type: string }
+                target_job_type: { type: string }
+                source_refs:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: Dispatch receipt.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id: { type: string }
+                  bundle_id: { type: string }
+
+  /feed:
+    get:
+      summary: Hot arcs + operator intent for SessionStart injection (Phase 7).
+      responses:
+        "200":
+          description: Fleet feed snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hot_arcs:
+                    type: array
+                    items: { type: object }
+                  inject_blocks:
+                    type: array
+                    items: { type: object }
+
+  /signal:
+    get:
+      summary: SSE stream of emergency signals (Phase 7).
+      responses:
+        "200":
+          description: SSE stream.
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+  /marker:
+    post:
+      summary: Record a lesson / milestone / signal / decision marker (Phase 7).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MarkerRequest" }
+      responses:
+        "202":
+          description: Marker accepted.
+
+  /tick:
+    post:
+      summary: Trigger a manual cognitive tick (operator / cron).
+      responses:
+        "202":
+          description: Tick queued.
