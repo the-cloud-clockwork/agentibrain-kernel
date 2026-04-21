@@ -7,14 +7,14 @@
 ## Identity
 
 - **Kind:** K8s StatefulSet running the agenticore image with `AGENT_MODE=true`
-- **Namespace/pod:** `anton-prod/brain-keeper-0` (dev mirror in `anton-dev`)
+- **Namespace/pod:** operator-chosen (antoncore uses `anton-prod/brain-keeper-0`, with a dev mirror in `anton-dev`)
 - **Port:** `8200` (HTTP OpenAI-compat + `/health`)
-- **Profile:** `brain-keeper` (agentihooks-bundle)
-- **Package:** `agentihub/agents/brain-keeper/` — `agent.yml`, `package/system.md`, `package/.agentihooks.json`
+- **Profile:** `brain-keeper` — canonical source lives in this repo under `profiles/brain-keeper/`. Agentihooks-bundle clones at install time.
+- **Package:** `agents/brain-keeper/` in this repo — `agent.yml`, `package/system.md`, `package/.agentihooks.json`. Agentihub clones at install time.
 - **Model:** Sonnet 4.6 (brain-keeper orchestrator — Opus is the target, see Known Issues)
 - **Concurrency:** `AGENTICORE_MAX_PARALLEL_JOBS=3`
 - **Timeout:** 600s per job
-- **A2A registration:** auto-registers with AgentiBridge on startup (`registered_at` in `list_agents`)
+- **A2A registration:** auto-registers with AgentiBridge on startup when `AGENTIBRIDGE_URL` is set
 
 ## Command surface
 
@@ -43,7 +43,7 @@ brain-keeper is reachable three ways, all through the same agenticore HTTP serve
 Registered in LiteLLM prod (unit `brain-keeper`, model_id `82bdc994-ee97-444c-bc2f-29b5cf57f6cb`) via `add_agent_as_model` with `force=true`. Any consumer of the LiteLLM gateway can invoke it:
 
 ```bash
-curl -X POST http://litellm.anton-prod.svc:4000/v1/chat/completions \
+curl -X POST http://litellm:4000/v1/chat/completions \
   -H "Authorization: Bearer $LITELLM_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model":"brain-keeper","messages":[{"role":"user","content":"run brain test"}]}'
@@ -88,12 +88,12 @@ The internal 8-char hex run_id is still embedded in the report content and marke
 
 ```bash
 # Markdown
-curl -X PUT "http://10.10.30.130:8095/artifacts/miscellaneous/brain-keeper/${FILENAME_MD}?content_type=text%2Fmarkdown" \
+curl -X PUT "${ARTIFACT_STORE_URL}/artifacts/miscellaneous/brain-keeper/${FILENAME_MD}?content_type=text%2Fmarkdown" \
   -H "Authorization: Bearer ${ARTIFACT_STORE_API_KEY}" \
   --data-binary @/tmp/${FILENAME_MD}
 
 # CSV
-curl -X PUT "http://10.10.30.130:8095/artifacts/miscellaneous/brain-keeper/${FILENAME_CSV}?content_type=text%2Fcsv" \
+curl -X PUT "${ARTIFACT_STORE_URL}/artifacts/miscellaneous/brain-keeper/${FILENAME_CSV}?content_type=text%2Fcsv" \
   -H "Authorization: Bearer ${ARTIFACT_STORE_API_KEY}" \
   --data-binary @/tmp/${FILENAME_CSV}
 ```
@@ -154,7 +154,7 @@ A curated **`brain-keeper-tools-prod`** LiteLLM unit exists with 93 tools (adds 
 Run `brain-report-2026-04-13-2320`:
 
 1. Operator dispatched via AgentiBridge `run_agent(brain-keeper-0, "full brain test", wait=False)` from an external session
-2. brain-keeper picked up the job, executed 3 curls against ClickHouse (`http://10.10.30.130:8123` with basic auth)
+2. brain-keeper picked up the job, executed 3 curls against ClickHouse (`${CLICKHOUSE_URL}` with basic auth)
 3. Built structured markdown + CSV reports with 6 region sections (Frontal Lobe, Amygdala, Broadcast Cortex, Hippocampus, Pineal, Hook Observability)
 4. Uploaded both via REST to `miscellaneous/brain-keeper/` — returned presigned S3 URLs
 5. Drive-sync Lambda mirrored both within ~60s and converted `.md` → Google Doc, `.csv` → Google Sheet
@@ -206,9 +206,9 @@ Findings from the run: brain self-diagnosed **DEGRADED** status — throttle sup
 | `agentihub/agents/brain-keeper/agent.yml` | Agent manifest (model, categories, concurrency) |
 | `agentihub/agents/brain-keeper/package/system.md` | Command surface + upload pipeline spec |
 | `agentihub/agents/brain-keeper/package/.agentihooks.json` | Channel subscriptions (brain, amygdala) |
-| `antoncore/k8s/charts/brain-keeper/values.yaml` | StatefulSet config, env, MAX_PARALLEL_JOBS, ARTIFACT_STORE_URL |
-| `antoncore/k8s/argocd/prod/brain-keeper.yaml` | ArgoCD app |
-| `antoncore/stacks/artifact-store/src/main.py` | REST PUT /artifacts/{key} endpoint |
-| `antoncore/stacks/terraform/modules/s3-drive-connector/lambda/handler.py` | Drive sync routing, `system/*` skip rule at line 539 |
+| `helm/brain-keeper/values.yaml` (+ operator overlay) | StatefulSet config, env, MAX_PARALLEL_JOBS, ARTIFACT_STORE_URL |
+| Operator deployment repo — ArgoCD Application manifest | e.g. `antoncore/k8s/argocd/prod/brain-keeper.yaml` |
+| Operator storage plane — PUT /artifacts/{key} endpoint | e.g. `antoncore/stacks/artifact-store/src/main.py` |
+| Operator drive-sync wiring | e.g. `antoncore/stacks/terraform/modules/s3-drive-connector/lambda/handler.py` |
 | `agentihooks/hooks/mcp/storage.py` | storage_upload_path MCP tool (post-fix) |
 | `agentibridge/agentibridge/registry.py` | `route_to_agent` with 600s `wait=True` timeout |

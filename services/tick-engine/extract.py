@@ -6,7 +6,7 @@ project substring, and emits a structured JSON bundle that the AI side of the
 skill consumes to produce semantic cluster markdown files.
 
 Usage:
-    python3 extract.py --since 24h [--project antoncore] [--min-turns 5]
+    python3 extract.py --since 24h [--project my-project] [--min-turns 5]
 
 Output: JSON to stdout. Warnings to stderr.
 """
@@ -210,7 +210,7 @@ def main() -> int:
     parser.add_argument(
         "--project",
         default=None,
-        help="Substring filter on cwd path (e.g. 'antoncore')",
+        help="Substring filter on cwd path (e.g. 'my-project')",
     )
     parser.add_argument(
         "--min-turns",

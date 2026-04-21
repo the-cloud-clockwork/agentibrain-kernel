@@ -6,6 +6,8 @@ import os
 import secrets
 import shutil
 import subprocess
+import time
+from importlib import resources
 from pathlib import Path
 
 import yaml
@@ -14,6 +16,12 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from agentibrain.config import BrainSettings
 
 COMPOSE_TEMPLATE = "compose.yml.j2"
+
+# Defaults for the bundled stack — written to .env so `.env` is the single
+# source of truth for the compose credentials.
+DEFAULT_POSTGRES_PASSWORD = "agentibrain"
+DEFAULT_MINIO_USER = "agentibrain"
+DEFAULT_MINIO_PASSWORD = "agentibrain"
 
 
 def _templates_dir() -> Path:
@@ -47,7 +55,8 @@ def render_compose(settings: BrainSettings) -> str:
 def write_config(settings: BrainSettings) -> Path:
     """Persist settings to ``<config_dir>/config.yaml`` (minus secrets).
 
-    Secrets live in ``<config_dir>/.env`` so ``docker compose`` picks them up.
+    Secrets live in ``<config_dir>/.env`` (chmod 600) so ``docker compose``
+    picks them up. config.yaml stays world-readable with no sensitive fields.
     """
     cfg_dir = settings.config_dir.expanduser()
     cfg_dir.mkdir(parents=True, exist_ok=True)
@@ -59,6 +68,8 @@ def write_config(settings: BrainSettings) -> Path:
         "s3_endpoint": settings.s3_endpoint,
         "brain_url": settings.brain_url,
         "llm_gateway_url": settings.llm_gateway_url,
+        # postgres_url / redis_url are NOT written here — they may contain
+        # passwords. If operators override them via flags, they come from env.
     }
     cfg_path = cfg_dir / "config.yaml"
     cfg_path.write_text(yaml.safe_dump(payload, sort_keys=False))
@@ -66,14 +77,31 @@ def write_config(settings: BrainSettings) -> Path:
 
 
 def write_env_file(settings: BrainSettings, token: str) -> Path:
+    """Persist runtime secrets + compose credentials to ``<config_dir>/.env``.
+
+    This .env is the single source of truth for the stack — compose reads it
+    via ``--env-file``. Includes generated defaults for bundled Postgres/MinIO
+    so the friend never has to guess.
+    """
     cfg_dir = settings.config_dir.expanduser()
     cfg_dir.mkdir(parents=True, exist_ok=True)
     env_path = cfg_dir / ".env"
-    lines = [f"KB_ROUTER_TOKEN={token}"]
+
+    lines: list[str] = [
+        f"KB_ROUTER_TOKEN={token}",
+        f"POSTGRES_PASSWORD={os.getenv('POSTGRES_PASSWORD', DEFAULT_POSTGRES_PASSWORD)}",
+        "LOG_LEVEL=INFO",
+    ]
     if settings.openai_api_key is not None:
         lines.append(f"OPENAI_API_KEY={settings.openai_api_key.get_secret_value()}")
     if settings.llm_gateway_url:
         lines.append(f"INFERENCE_URL={settings.llm_gateway_url}")
+    if settings.mode == "local":
+        lines.append(f"MINIO_ROOT_USER={os.getenv('MINIO_ROOT_USER', DEFAULT_MINIO_USER)}")
+        lines.append(
+            f"MINIO_ROOT_PASSWORD={os.getenv('MINIO_ROOT_PASSWORD', DEFAULT_MINIO_PASSWORD)}"
+        )
+    # ARTIFACT_STORE_URL is optional — binary ingest fails clearly when unset.
     env_path.write_text("\n".join(lines) + "\n")
     env_path.chmod(0o600)
     return env_path
@@ -124,32 +152,57 @@ def compose_ps(settings: BrainSettings) -> subprocess.CompletedProcess:
 
 
 def migrations_dir() -> Path:
-    """Return the repo-local ``migrations/`` directory.
+    """Locate packaged SQL migrations via importlib.resources.
 
-    When installed via pip, the CLI ships migrations as package data; for this
-    early cut we resolve relative to the kernel source tree. Phase 7 hardening.
+    Works in both editable installs and wheel installs because migrations/ is
+    a package directory under agentibrain/ (declared in pyproject package-data).
     """
-    here = Path(__file__).resolve()
-    # In an editable install, migrations/ lives next to agentibrain/.
-    candidate = here.parent.parent / "migrations"
-    if candidate.is_dir():
-        return candidate
-    return here.parent / "migrations"
+    try:
+        root = resources.files("agentibrain") / "migrations"
+        return Path(str(root))
+    except (ModuleNotFoundError, AttributeError):
+        # Defensive fallback — should not be hit in practice.
+        return Path(__file__).resolve().parent / "migrations"
+
+
+def _wait_for_postgres(dsn: str, *, max_attempts: int = 30, sleep_seconds: float = 2.0) -> bool:
+    """Poll ``pg_isready`` until Postgres accepts connections or max_attempts."""
+    pg_isready = shutil.which("pg_isready")
+    if not pg_isready:
+        return True  # Best-effort — fall through to psql and let it fail loudly if needed.
+    for _ in range(max_attempts):
+        proc = subprocess.run(
+            [pg_isready, "-d", dsn],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0:
+            return True
+        time.sleep(sleep_seconds)
+    return False
 
 
 def run_migrations(settings: BrainSettings) -> list[str]:
     """Apply SQL migrations in order via ``psql``.
 
-    Prints a note and skips if ``psql`` isn't on PATH. Phase 5 ships a minimal
-    migration set; schema ownership moves to Alembic in Phase 7.
+    Waits for Postgres readiness via ``pg_isready`` before running (compose
+    exits as soon as containers start, not when services are accepting
+    connections). Returns a list of human-readable status lines.
+
+    Schema ownership moves to Alembic in a future release.
     """
     if not shutil.which("psql"):
         return ["psql not found on PATH — skipped migrations. Install postgresql-client."]
 
     dsn = settings.postgres_url or (
-        f"postgresql://agentibrain:{os.getenv('POSTGRES_PASSWORD', 'agentibrain')}"
+        f"postgresql://agentibrain:{os.getenv('POSTGRES_PASSWORD', DEFAULT_POSTGRES_PASSWORD)}"
         f"@localhost:5432/agentibrain"
     )
+
+    if not _wait_for_postgres(dsn):
+        return ["Postgres did not accept connections within 60s — skipped migrations."]
+
     results: list[str] = []
     for path in sorted(migrations_dir().glob("*.sql")):
         proc = subprocess.run(

@@ -39,10 +39,15 @@ The flagship command. Produces a markdown audit report.
    ```
    The internal run_id (8-char hex) still exists inside the report content and markers for ClickHouse tracing — it just doesn't go in the filename.
 
+   Both uploads target the storage plane at `${ARTIFACT_STORE_URL}` — this env
+   is wired by the operator's deployment values (for antoncore it points at
+   their artifact-store; for friends, it points at whatever blob service they
+   connected to the kernel).
+
    **a) Markdown report** — renders as Google Doc:
    ```bash
    curl -s -X PUT \
-     "http://10.10.30.130:8095/artifacts/miscellaneous/brain-keeper/${FILENAME_MD}?content_type=text%2Fmarkdown" \
+     "${ARTIFACT_STORE_URL}/artifacts/miscellaneous/brain-keeper/${FILENAME_MD}?content_type=text%2Fmarkdown" \
      -H "Authorization: Bearer ${ARTIFACT_STORE_API_KEY}" \
      --data-binary @/tmp/${FILENAME_MD}
    ```
@@ -50,7 +55,7 @@ The flagship command. Produces a markdown audit report.
    **b) CSV data sheet** — auto-converts to native Google Sheet:
    ```bash
    curl -s -X PUT \
-     "http://10.10.30.130:8095/artifacts/miscellaneous/brain-keeper/${FILENAME_CSV}?content_type=text%2Fcsv" \
+     "${ARTIFACT_STORE_URL}/artifacts/miscellaneous/brain-keeper/${FILENAME_CSV}?content_type=text%2Fcsv" \
      -H "Authorization: Bearer ${ARTIFACT_STORE_API_KEY}" \
      --data-binary @/tmp/${FILENAME_CSV}
    ```

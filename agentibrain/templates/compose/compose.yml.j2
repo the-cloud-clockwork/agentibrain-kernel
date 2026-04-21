@@ -105,7 +105,7 @@ services:
       OBSIDIAN_READER_TOKEN: ${KB_ROUTER_TOKEN}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - {{ vault_path }}:/vault:rw
+      - "{{ vault_path }}:/vault:rw"
     ports:
       - "{{ obsidian_reader_port | default(8101) }}:8080"
     networks: [agentibrain_net]

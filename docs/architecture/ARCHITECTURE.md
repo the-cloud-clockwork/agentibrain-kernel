@@ -35,9 +35,9 @@ The tick runs as a K8s CronJob every 2h at HH:07 UTC (12 ticks/day). Full extrac
 
 ## Components
 
-### 1. Brain Tools (`stacks/brain-tools/`)
+### 1. Tick Engine (`services/tick-engine/`)
 
-Six Python scripts, pure stdlib (no pip dependencies), packaged as `ghcr.io/the-cloud-clock-work/antoncore-brain-tools:latest`.
+Python scripts, pure stdlib on the runtime side (no pip dependencies beyond `redis` for the amygdala consumer), packaged as `ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:latest` (built from `services/tick-engine/`). These were historically named `brain-tools` in antoncore — same code, new location.
 
 | Script | Purpose | Time |
 |--------|---------|------|
@@ -202,19 +202,19 @@ python3 /app/extract.py --since 26h --min-turns 5 \
 python3 /app/brain_tick.py --vault /vault --brain-feed /vault/brain-feed
 ```
 
-**Deployment:** `k8s/charts/brain-cron/` (CronJob in `anton-ops` namespace)
-**Image:** `ghcr.io/the-cloud-clock-work/antoncore-brain-tools:latest`
-**NFS mounts:** vault (RW) at `/vault`, agenticore shared (RO) at `/shared`
+**Deployment:** `helm/brain-cron/` (CronJob). Operators pick a namespace; antoncore uses `anton-ops`.
+**Image:** `ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:latest`
+**Vault mount:** RW at `/vault` (NFS or PVC — see `helm/brain-cron/values.yaml`). Shared-FS at `/shared` (RO) is optional and only needed when co-located with agenticore runtime pods.
 
 ### 8. brain-keeper (K8s StatefulSet)
 
 Agenticore instance deployed for the 20% AI tasks (edge discovery, synthesis, complex reasoning). The deterministic tick (`brain_keeper.py`) runs in brain-cron; the AI tick dispatches to this pod.
 
-**Deployment:** `k8s/charts/brain-keeper/` (StatefulSet in anton-dev + anton-prod)
-**Profile:** `agentihooks-bundle/profiles/brain-keeper/`
-**Agentihub:** `agentihub/agents/brain-keeper/`
-**LiteLLM unit:** `brain-keeper-dev` (94 tools) / `brain-keeper-prod` (90 tools)
-**Model:** Sonnet 4.6
+**Deployment:** `helm/brain-keeper/` (StatefulSet; operators pick a namespace).
+**Profile:** `profiles/brain-keeper/` (kernel canonical — agentihooks-bundle clones at install).
+**Agent definition:** `agents/brain-keeper/` (kernel canonical — agentihub clones at install).
+**LiteLLM:** operators register the agent as a model via `add_agent_as_model`. Tool count and model choice are operator policy.
+**Model:** Sonnet 4.6 (default; override via `AGENT_MODE_MODEL` env).
 
 ### 9. Brain ETL (Session-Scope Loop)
 
@@ -270,14 +270,15 @@ env:
     BRAIN_ENABLED: "true"
     BRAIN_SOURCE_PATH: "/vault/brain-feed"
     BRAIN_CHANNEL: "brain"
+# Operator-supplied vault mount — pick NFS (example below) or a PVC.
 extraVolumes:
-- name: nfs-brain
+- name: brain
   nfs:
-    server: 10.10.30.130
-    path: /mnt/user/appdata/obsidian/vault/brain-feed
+    server: <your-nfs-host>
+    path: <your-vault-path>/brain-feed
     readOnly: true
 extraVolumeMounts:
-- name: nfs-brain
+- name: brain
   mountPath: /vault/brain-feed
   readOnly: true
 ```
@@ -292,20 +293,28 @@ extraVolumeMounts:
 
 ---
 
-## NFS Exports
+## Vault storage
 
-Added to Anton Unraid (`/etc/exports`):
-```
-"/mnt/user/appdata/obsidian/vault" -async,no_subtree_check,fsid=301 10.10.30.0/24
-"/mnt/user/appdata/obsidian/vault/brain-feed" -async,no_subtree_check,fsid=302 10.10.30.0/24
-```
+Operators pick one of:
+
+- **NFS share** — one export for the full vault (RW) that the tick-engine
+  CronJob and brain-keeper StatefulSet both mount at `/vault`. Brain-feed is a
+  subtree; agents can mount just the subtree read-only. Example antoncore
+  exports:
+  ```
+  "/path/to/vault"            -async,no_subtree_check,fsid=301 10.0.0.0/24
+  "/path/to/vault/brain-feed" -async,no_subtree_check,fsid=302 10.0.0.0/24
+  ```
+- **PVC** — a PersistentVolumeClaim with ReadWriteMany. Agent pods can mount
+  the same claim read-only by sub-path.
+- **Local compose** — `brain up` mounts the host vault directory directly.
 
 ---
 
 ## File Map
 
 ```
-stacks/brain-tools/
+services/tick-engine/
 ├── Dockerfile           ← Python 3.12-slim + 6 scripts
 ├── extract.py           ← Session scanner (jsonl → JSON bundle)
 ├── cluster.py           ← Deterministic grouper (bundle → arc stubs)
@@ -315,20 +324,11 @@ stacks/brain-tools/
 ├── brain_apply.py       ← AI recommendation applier (edges, merges, signals)
 └── brain_tick.py        ← Orchestrator (all phases in one command)
 
-k8s/charts/brain-cron/   ← CronJob chart (HH:07 every 2h)
-k8s/charts/brain-keeper/ ← StatefulSet chart (agenticore agent for AI tasks)
-k8s/argocd/{dev,prod}/brain-cron.yaml     ← ArgoCD apps
-k8s/argocd/{dev,prod}/brain-keeper.yaml
+helm/brain-cron/     ← CronJob + amygdala Deployment (HH:07 every 2h)
+helm/brain-keeper/   ← StatefulSet chart (agenticore agent for AI tasks)
 
-brain-etl/
-├── INSTRUCTIONS.md      ← Self-contained tick brief for session-scope loop
-├── LEARNINGS.md         ← Append-only audit log (20 entries from overnight run)
-└── ticks/               ← Per-tick reports and AI outputs
-
-.claude/skills/brain-clusters/
-├── SKILL.md             ← Skill definition for /brain-clusters command
-├── extract.py           ← (same as stacks/brain-tools/extract.py)
-└── cluster.py           ← (same as stacks/brain-tools/cluster.py)
+# ArgoCD Application manifests are operator-specific and live in each
+# operator's deployment repo (antoncore keeps k8s/argocd/{dev,prod}/brain-*.yaml).
 ```
 
 ---
@@ -337,11 +337,15 @@ brain-etl/
 
 | Document | Purpose |
 |----------|---------|
-| `operator/BRAIN-MVP.md` | 4-block execution plan with checklist (Block 1 done, Block 2 done) |
-| `docs/brain/CLUSTERS.md` | Arc primitive schema (authoritative) |
-| `operator/brain/ARCS-EXECUTION.md` | Detailed 4-block plan |
-| `docs/brain/SYMBIOSIS.md` | Philosophical compass — the WHY |
-| `operator/architecture/AGENT-ROSTER.md` | brain-keeper listed as LIVE agent |
+| `docs/architecture/CLUSTERS.md` | Arc primitive schema (authoritative) |
+| `docs/architecture/SYMBIOSIS.md` | Philosophical compass — the WHY |
+| `docs/architecture/KEEPER.md` | brain-keeper agent responsibilities + commands |
+| `docs/architecture/MATURITY.md` | Maturity scorecard |
+| `docs/VAULT-SCHEMA.md` | Folder layout owned by `brain scaffold` |
+| `api/openapi.yaml` | HTTP contract |
+
+Operator-specific planning and rollout notes (e.g. `operator/BRAIN-MVP.md`)
+live in each operator's deployment repo.
 | `brain-etl/LEARNINGS.md` | ETL audit log (overnight run: 20 ticks) |
 | `docs/8E-MEMORY.md` | Memory stack hierarchy (auto-memory → AgentiBridge → brain arcs) |
 | `docs/9D-OPERATOR-CRONJOBS.md` | brain-cron listed in anton-ops workload table |

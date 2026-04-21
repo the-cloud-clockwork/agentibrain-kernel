@@ -1,0 +1,14 @@
+# PVC-backed overlay for brain-cron and brain-keeper. Pairs with the base
+# values.yaml in each chart. Pre-provision a ReadWriteMany PVC and set the
+# claim name via --set vaultPVC=<name> (or via an env-specific values file
+# that sets vaultPVC and sharedPVC).
+#
+# This overlay ships as a SAMPLE — operators are expected to copy it into
+# their deployment repo and adjust.
+
+vaultPVC: agentibrain-vault
+sharedPVC: ""
+
+# Clear NFS defaults so the PVC branch in templates wins.
+nfsVault: {}
+nfsShared: {}
