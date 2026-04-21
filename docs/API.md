@@ -1,0 +1,73 @@
+# API Reference
+
+The authoritative source is [`api/openapi.yaml`](../api/openapi.yaml). This
+document summarizes the contract for humans.
+
+## Authentication
+
+All endpoints except `/health` require:
+
+```
+Authorization: Bearer <KB_ROUTER_TOKEN>
+```
+
+The token is printed once at `brain init` and persisted to
+`~/.agentibrain/.env`. To rotate: delete the token line, re-run `brain init
+--vault <same-vault>` — the kernel issues a new token, existing vault data is
+untouched.
+
+## Endpoints
+
+| Method | Path | Purpose | Status |
+|---|---|---|---|
+| GET  | `/health`   | Liveness. | ✅ v0.1.0 |
+| POST | `/ingest`   | Classify + fan-out ingest. | ✅ v0.1.0 |
+| POST | `/search`   | Federated search. | ✅ v0.1.0 |
+| POST | `/brief`    | LLM-synthesized digest. | ✅ v0.1.0 |
+| POST | `/dispatch` | Assemble bundle + submit job. | ✅ v0.1.0 |
+| GET  | `/feed`     | Fleet SessionStart injection payload. | ⏳ Phase 7 |
+| GET  | `/signal`   | SSE stream of emergency signals. | ⏳ Phase 7 |
+| POST | `/marker`   | Record `@lesson`/`@milestone`/`@signal`/`@decision`. | ⏳ Phase 7 |
+| POST | `/tick`     | Trigger a manual cognitive tick. | ⏳ Phase 7 |
+
+## Examples
+
+### Ingest
+
+```bash
+curl -s -X POST http://localhost:8102/ingest \
+  -H "Authorization: Bearer $KB_ROUTER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "notes on lambda cold-start mitigation", "tags": ["aws", "perf"]}'
+```
+
+### Search
+
+```bash
+curl -s -X POST http://localhost:8102/search \
+  -H "Authorization: Bearer $KB_ROUTER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "lambda cold start", "limit": 5}'
+```
+
+### Brief (search + LLM synthesis)
+
+```bash
+curl -s -X POST http://localhost:8102/brief \
+  -H "Authorization: Bearer $KB_ROUTER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "lambda cold start mitigations"}'
+```
+
+## SDK
+
+Python consumers should import `agentibrain.client.BrainClient`:
+
+```python
+from agentibrain.client import BrainClient
+
+bc = BrainClient(base_url="http://localhost:8102", token=TOKEN)
+print(bc.health())
+```
+
+The SDK is thin on purpose — one place for the HTTP contract.
