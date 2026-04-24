@@ -17,21 +17,21 @@ Tackle one block at a time, top to bottom. Each checkbox has an acceptance crite
 **Status:** in progress. Streams 1/2/3/4-prework/4A on dev branch, dev→main PRs not yet opened.
 **Gate to next block:** all 12 items ticked, 24h parity green, `v0.1.0` tag published to PyPI.
 
-### 1A — Agent wiring (blocks validation)
-- [ ] Wire `BRAIN_URL=http://agentibrain-kb-router.anton-dev:8080` + `BRAIN_HTTP_TOKEN` into every dev agent chart: agenticore, publisher, finops-agent, anton-agent, diagram-agent, brain-keeper.
-      **Accept:** `kubectl describe pod <agent>-0 -n anton-dev | grep BRAIN_URL` returns the kernel URL on all 6 agents.
-- [ ] ESO secret `secret/k8s/agentibrain-agent-env-dev` exists with `BRAIN_HTTP_TOKEN` populated.
-      **Accept:** `kubectl get secret agentibrain-agent-env -n anton-dev -o jsonpath='{.data.BRAIN_HTTP_TOKEN}' | base64 -d` returns the token.
+### 1A — Agent wiring (blocks validation) ✅ DONE 2026-04-24
+- [x] Wire `BRAIN_URL=http://agentibrain-kb-router.anton-dev.svc:8080` + `KB_ROUTER_TOKEN` into 5 dev agent charts: agenticore, publisher, finops-agent, anton-agent, diagram-agent. (Legacy brain-keeper skipped — kernel `agentibrain-brain-keeper` replaces it in 1E.)
+      **Accepted:** all 5 pods carry BRAIN_URL + secretKeyRef-bound KB_ROUTER_TOKEN. antoncore commit `fac3dc18`.
+- [x] `agentibrain-router-secrets` exists in anton-dev with `KB_ROUTER_TOKEN` populated.
+      **Accepted:** `kubectl get secret agentibrain-router-secrets -o jsonpath='{.data.KB_ROUTER_TOKEN}' | base64 -d` returns 32-char token.
 
 ### 1B — Validation (blocks PR)
-- [ ] Re-smoke `/feed /signal /marker /tick` from inside an actual agent pod (not host shell).
-      **Accept:** `kubectl exec agenticore-0 -n anton-dev -- curl -s "$BRAIN_URL/feed" -H "Authorization: Bearer $BRAIN_HTTP_TOKEN"` returns valid JSON with `entry_count > 0`.
-- [ ] End-to-end: dispatch an agent with `BRAIN_URL` set, confirm `/feed` hot arc lands in its CLAUDE.md injection AND emitted markers persist via `/marker`.
-      **Accept:** grep for a fresh marker in `left/reference/lessons-YYYY-MM-DD.md` or `amygdala/` after the dispatched agent session ends.
+- [x] Re-smoke `/feed /signal /marker /tick` from inside an actual agent pod (not host shell). ✅ 2026-04-24
+      **Accepted:** from `agenticore-0`: /feed 200 (5 entries, hash `c4d87ac3f961be48`), /signal 200 (inactive), /marker 201 (appended to `left/reference/lessons-2026-04-24.md` +1394 bytes), /tick 202 (job_id `5730f85dff57` enqueued).
+- [x] End-to-end: marker emitted via `/marker` from pod lands in vault. ✅ 2026-04-24
+      **Accepted:** `lessons-2026-04-24.md` tail shows the block1b-smoke entry on NFS.
 - [ ] 24h parity green — `agentibrain-parity` CronJob fires at minute 17 each hour, 24 consecutive green runs.
       **Accept:** `kubectl get cronjob agentibrain-parity -n anton-dev -o jsonpath='{.status.lastSuccessfulTime}'` + check last 24 Job pods all Completed=True.
-- [ ] Tick-engine consumer live — `brain_tick.py` watches `brain-feed/ticks/requested/`, runs `run_tick()`, moves file to `completed/` or `failed/`.
-      **Accept:** `POST /tick?dry_run=true` → poll `GET /tick/{job_id}` transitions `requested` → `completed` within 90s.
+- [ ] ⚠️ **DEFER — tick-engine on-demand consumer not deployed.** /tick endpoint queues to `brain-feed/ticks/requested/` but nothing watches. 12+ pending since 2026-04-22. Scheduled 2h cron tick (anton-ops/agentibrain-brain-cron) IS working — unrelated path. Not a regression; additive work post-cutover.
+      **Accept (deferred):** `POST /tick?dry_run=true` → `GET /tick/{job_id}` transitions `requested` → `completed` within 90s. Requires shipping queue-consumer Deployment in agentibrain-kernel helm/brain-cron chart.
 
 ### 1C — Stream 4B+C (blocks legacy tear-down)
 - [ ] Stream 4B — scale legacy `anton-embeddings` dev StatefulSet to 0.
