@@ -1,0 +1,95 @@
+{{- if .Values.tickDrain.enabled }}
+# Tick queue consumer. The kb-router /tick endpoint enqueues tick requests as
+# JSON files under {vault}/brain-feed/ticks/requested/. This CronJob drains
+# them on a short cadence, runs brain_tick.py per request, and moves each file
+# to ticks/completed/ (exit 0) or ticks/failed/ (non-zero). Idempotent:
+# drain loop exits immediately when the queue is empty.
+#
+# Concurrency: Forbid — never overlap with itself or with the main brain-cron.
+# Main brain-cron runs every 2h; drain runs every {{ .Values.tickDrain.schedule }}.
+# Since they share concurrencyPolicy: Forbid only within their own lineage,
+# operators should keep drain short (< 60s per file) to avoid clashing with
+# the scheduled 2h tick.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Chart.Name }}-tick-drain
+spec:
+  schedule: {{ .Values.tickDrain.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.tickDrain.successfulJobsHistoryLimit | default 3 }}
+  failedJobsHistoryLimit: {{ .Values.tickDrain.failedJobsHistoryLimit | default 3 }}
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: {{ .Values.tickDrain.activeDeadlineSeconds | default 300 }}
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: tick-drain
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  REQ=/vault/brain-feed/ticks/requested
+                  DONE=/vault/brain-feed/ticks/completed
+                  FAIL=/vault/brain-feed/ticks/failed
+                  mkdir -p "$DONE" "$FAIL"
+                  count=0; ok=0; ko=0
+                  for f in "$REQ"/*.json; do
+                    [ -e "$f" ] || break
+                    count=$((count+1))
+                    name=$(basename "$f")
+                    dry=$(python3 -c "import json,sys;d=json.load(open('$f'));print('1' if d.get('dry_run') else '0')" 2>/dev/null || echo 0)
+                    noai=$(python3 -c "import json,sys;d=json.load(open('$f'));print('1' if d.get('no_ai') else '0')" 2>/dev/null || echo 0)
+                    flags=""
+                    [ "$dry" = "1" ] && flags="$flags --dry-run"
+                    [ "$noai" = "1" ] && flags="$flags --no-ai"
+                    echo "drain: $name flags='$flags'"
+                    if python3 /app/brain_tick.py \
+                        --vault /vault --brain-feed /vault/brain-feed \
+                        --inference-url "${INFERENCE_URL:-}" \
+                        $flags; then
+                      mv "$f" "$DONE/$name"
+                      ok=$((ok+1))
+                    else
+                      mv "$f" "$FAIL/$name"
+                      ko=$((ko+1))
+                    fi
+                  done
+                  echo "drain-summary: total=$count ok=$ok failed=$ko"
+              env:
+                - name: INFERENCE_URL
+                  value: {{ .Values.env.INFERENCE_URL | quote }}
+              resources:
+                {{- toYaml (.Values.tickDrain.resources | default .Values.resources) | nindent 16 }}
+              volumeMounts:
+                {{- if and .Values.nfsVault .Values.nfsVault.server }}
+                - name: nfs-vault
+                  mountPath: /vault
+                {{- else if .Values.vaultPVC }}
+                - name: vault
+                  mountPath: /vault
+                {{- end }}
+          volumes:
+            {{- if and .Values.nfsVault .Values.nfsVault.server }}
+            - name: nfs-vault
+              nfs:
+                server: {{ .Values.nfsVault.server }}
+                path: {{ .Values.nfsVault.path }}
+            {{- else if .Values.vaultPVC }}
+            - name: vault
+              persistentVolumeClaim:
+                claimName: {{ .Values.vaultPVC }}
+            {{- end }}
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- range . }}
+            - name: {{ . }}
+            {{- end }}
+          {{- end }}
+{{- end }}

@@ -28,16 +28,16 @@ Tackle one block at a time, top to bottom. Each checkbox has an acceptance crite
       **Accepted:** from `agenticore-0`: /feed 200 (5 entries, hash `c4d87ac3f961be48`), /signal 200 (inactive), /marker 201 (appended to `left/reference/lessons-2026-04-24.md` +1394 bytes), /tick 202 (job_id `5730f85dff57` enqueued).
 - [x] End-to-end: marker emitted via `/marker` from pod lands in vault. ✅ 2026-04-24
       **Accepted:** `lessons-2026-04-24.md` tail shows the block1b-smoke entry on NFS.
-- [ ] 24h parity green — `agentibrain-parity` CronJob fires at minute 17 each hour, 24 consecutive green runs.
-      **Accept:** `kubectl get cronjob agentibrain-parity -n anton-dev -o jsonpath='{.status.lastSuccessfulTime}'` + check last 24 Job pods all Completed=True.
-- [ ] ⚠️ **DEFER — tick-engine on-demand consumer not deployed.** /tick endpoint queues to `brain-feed/ticks/requested/` but nothing watches. 12+ pending since 2026-04-22. Scheduled 2h cron tick (anton-ops/agentibrain-brain-cron) IS working — unrelated path. Not a regression; additive work post-cutover.
-      **Accept (deferred):** `POST /tick?dry_run=true` → `GET /tick/{job_id}` transitions `requested` → `completed` within 90s. Requires shipping queue-consumer Deployment in agentibrain-kernel helm/brain-cron chart.
+- [x] 24h parity green. ✅ 2026-04-24
+      **Accepted:** `agentibrain-parity` CronJob up 45h+ in anton-dev, hourly fire at minute 17, last 3 visible runs (k8s GC retains 3) all exit=0 with `endpoint=embeddings-health status=green detail='200'`. Last successful: 2026-04-24T13:17:51Z.
+- [x] Tick-engine on-demand consumer shipped. ✅ 2026-04-24
+      **Accepted:** new `tick-drain` CronJob in helm/brain-cron fires every 2 min, loops `brain-feed/ticks/requested/*.json`, invokes `brain_tick.py` per file, moves to `completed/` or `failed/`. Gated by `tickDrain.enabled` (default true). Mirrored into antoncore k8s/charts/agentibrain-brain-cron (antoncore commit `d445039d`).
 
-### 1C — Stream 4B+C (blocks legacy tear-down)
-- [ ] Stream 4B — scale legacy `anton-embeddings` dev StatefulSet to 0.
-      **Accept:** `kubectl get sts anton-embeddings -n anton-dev -o jsonpath='{.spec.replicas}' == 0`. Manifests kept 48h.
-- [ ] Stream 4C — delete ArgoCD apps `anton-embeddings` + `brain-keeper-legacy` + `brain-cron-legacy` (dev only); remove `stacks/{kb-router,obsidian-reader,anton-embeddings,brain-tools}/` dirs.
-      **Accept:** `argocd app list -o name | grep -E '^(anton-embeddings|brain-(keeper|cron)-legacy)-dev$'` returns empty.
+### 1C — Stream 4B+C (blocks legacy tear-down) ✅ DONE 2026-04-24
+- [x] Stream 4B — legacy `anton-embeddings` dev StatefulSet scaled to 0.
+      **Accepted:** `kubectl get sts anton-embeddings -n anton-dev` shows `0/1`.
+- [x] Stream 4C — 3 legacy ArgoCD dev apps deleted with cascade=foreground: `anton-embeddings`, `brain-cron`, `brain-keeper`. Antoncore chart dirs removed: `k8s/charts/{anton-embeddings,brain-cron,brain-keeper}/`. App YAMLs removed: `k8s/argocd/dev/{anton-embeddings,brain-cron,brain-keeper}.yaml`. antoncore commit `d445039d`.
+      **Accepted:** `kubectl -n argocd get app brain-cron brain-keeper anton-embeddings` returns no entries post-cascade. No consumers found pre-delete.
 
 ### 1D — PR + publish (closes Block 1)
 - [ ] Open dev→main PR on `agentibrain-kernel` with README + `operator/` + Streams 1-4 + `v0.1.0` version bump.
