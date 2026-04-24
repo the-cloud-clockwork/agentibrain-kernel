@@ -112,3 +112,14 @@ imagePullSecrets:
 amygdala:
   enabled: true
   pollInterval: "5"
+
+# Tick queue consumer. Drains JSON requests enqueued by kb-router /tick at
+# {vault}/brain-feed/ticks/requested/ on a short cadence. Processes each via
+# brain_tick.py, moves to ticks/completed/ or ticks/failed/.
+# Keep schedule short (every 2-5 min); drain exits immediately on empty queue.
+tickDrain:
+  enabled: true
+  schedule: "*/2 * * * *"
+  activeDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
