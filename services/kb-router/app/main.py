@@ -154,6 +154,65 @@ async def ingest_with_files(
     return payload
 
 
+# ── /index_artifact — sole brain-side write surface for artifact embeddings ──
+#
+# artifact-store calls this endpoint AFTER successfully storing an artifact
+# in S3. kb-router proxies to agentibrain-embeddings /embed so that the
+# brain stack remains the only thing writing into the embedding index.
+# This is the read/write boundary the operator decreed: brain owns retrieval
+# and ingestion; artifact-store owns artifact CRUD only.
+
+EMBEDDINGS_URL = os.getenv("EMBEDDINGS_URL", "")
+_EMBEDDINGS_API_KEY = (
+    os.environ.get("EMBEDDINGS_API_KEY") or ""
+)
+
+
+@app.post("/index_artifact")
+async def index_artifact(
+    payload: dict = Body(...),
+    _: None = Depends(require_token),
+) -> dict:
+    """Embed and index an artifact. Caller is artifact-store after a PUT.
+
+    Body: {key, content, content_type, producer, metadata?}.
+    Proxies to agentibrain-embeddings /embed with the kernel's API key.
+    """
+    if not EMBEDDINGS_URL or not _EMBEDDINGS_API_KEY:
+        raise HTTPException(503, "EMBEDDINGS_URL or EMBEDDINGS_API_KEY not configured")
+
+    required = ("key", "content")
+    missing = [f for f in required if not payload.get(f)]
+    if missing:
+        raise HTTPException(400, f"missing required fields: {missing}")
+
+    body = {
+        "key": payload["key"],
+        "content": payload["content"],
+        "content_type": payload.get("content_type", "text/plain"),
+        "producer": payload.get("producer", "unknown"),
+        "metadata": payload.get("metadata") or {},
+    }
+
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{EMBEDDINGS_URL.rstrip('/')}/embed",
+                json=body,
+                headers={
+                    "Authorization": f"Bearer {_EMBEDDINGS_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+            )
+            if not (200 <= resp.status_code < 300):
+                detail = resp.text[:300]
+                raise HTTPException(resp.status_code, f"embeddings: {detail}")
+            return resp.json()
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"embeddings unreachable: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # Brain HTTP contract — /feed /signal /marker /tick
 # ---------------------------------------------------------------------------
