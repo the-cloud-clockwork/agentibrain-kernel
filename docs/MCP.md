@@ -96,11 +96,18 @@ python app/server.py    # stdio MCP — connect with mcp-proxy or claude --debug
 
 Smoke tests: `pytest services/mcp/tests/`.
 
-## Phase 2 — what's missing
+## Phase 2 — likely deprecated
 
 `kb_dispatch` and `kb_converse` build a `JobBundle` (theme + focus + custom + audience + sources) and dispatch it to mediagen / notebooklm / paper2slides via `anton-jobs`. The bundle assembler and theme registry live in:
 
 - `packages/anton-bundles` (~700 LOC)
 - `packages/anton-themes` (~260 LOC)
 
-To complete the Phase 2 move, either vendor these packages into kernel or publish them and pin them in `services/mcp/requirements.txt`. Until then, the artifact-store MCP keeps `kb_dispatch` + `kb_converse`.
+**Status (2026-04-26):** these tools were made **brain-blind** in artifact-store:
+they reject `obsidian://` source refs and never call `kb_brief`. The clean
+boundary now justifies leaving them in artifact-store permanently — brain owns
+retrieval (`kb_search` / `kb_brief` / `brain_*` here), artifact-store owns
+artifact CRUD and media dispatch. Phase 2 (vendoring `anton-bundles` +
+`anton-themes` into the kernel and moving the dispatch tools here) is no longer
+required by the boundary contract; it would only consolidate code, not change
+responsibilities.
