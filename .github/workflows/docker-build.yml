@@ -27,6 +27,7 @@ jobs:
           - obsidian-reader
           - embeddings
           - tick-engine
+          - mcp
     steps:
       - uses: actions/checkout@v4
 
