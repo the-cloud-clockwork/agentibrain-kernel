@@ -2,23 +2,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: amygdala
+  name: {{ .Chart.Name }}-amygdala
   labels:
-    app: amygdala
+    app: {{ .Chart.Name }}-amygdala
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: amygdala
+      app: {{ .Chart.Name }}-amygdala
   template:
     metadata:
       labels:
-        app: amygdala
+        app: {{ .Chart.Name }}-amygdala
       annotations:
         reloader.stakater.com/auto: "true"
     spec:
       containers:
-        - name: amygdala
+        - name: {{ .Chart.Name }}-amygdala
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
