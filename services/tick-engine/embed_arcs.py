@@ -109,8 +109,17 @@ def scan_arcs(clusters_dir: Path):
     for date_dir in sorted(clusters_dir.iterdir()):
         if not date_dir.is_dir():
             continue
-        for md in sorted(date_dir.glob("*.md")):
-            if md.name.startswith("_") or ".merged." in md.name:
+        files = list(sorted(date_dir.glob("*.md")))
+        merged_stems = {
+            f.name.replace(".merged.md", "") for f in files if f.name.endswith(".merged.md")
+        }
+        for md in files:
+            if md.name.startswith("_"):
+                continue
+            # Skip the unmerged source if its merged twin exists; process
+            # standalone arcs in either form.
+            stem = md.name[:-3]  # strip .md
+            if not md.name.endswith(".merged.md") and stem in merged_stems:
                 continue
             yield md
 
