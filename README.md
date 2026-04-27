@@ -267,21 +267,25 @@ Branching: `dev` is the working branch. PRs go `dev` → `main`. `main` is what 
 
 ## Status
 
-**v0.1.x — alpha.** Dev deploy live in `anton-dev` (5 pods, Phase 7 HTTP contract shipped and smoke-green). Prod cutover, PyPI publish verification, and external-user install story are tracked in [`operator/`](operator/):
+**v0.1.0 — first stable.** Dev + prod deploys live in `anton-{dev,prod}` (5 agentibrain-* pods per env, Phase 7 HTTP contract shipped, brain-blind boundary verified end-to-end 2026-04-27). External-user install story + further hardening tracked in [`operator/`](operator/):
 
 - [`operator/VISION.md`](operator/VISION.md) — what 100% means
-- [`operator/STATE.md`](operator/STATE.md) — current ~60% maturity snapshot
+- [`operator/STATE.md`](operator/STATE.md) — current maturity snapshot
 - [`operator/BLOCKS.md`](operator/BLOCKS.md) — in-flight work (Tier 1+2)
-- [`operator/ENHANCEMENTS.md`](operator/ENHANCEMENTS.md) — backlog (Tier 3-5, ~40h effort)
+- [`operator/ENHANCEMENTS.md`](operator/ENHANCEMENTS.md) — backlog (Tier 3-5)
 - [`operator/TODO.md`](operator/TODO.md) — next actions with ready-to-run commands
 
-The kernel is the canonical source of truth for:
+The kernel is the **canonical and exclusive** source of truth for:
 - 4 brain services (kb-router, obsidian-reader, embeddings, tick-engine)
-- Helm charts
-- brain-keeper agent definition
-- brain + brain-keeper agentihooks profiles
+- Helm charts (`helm/agentibrain-{kb-router,obsidian-reader,embeddings,brain-keeper,brain-cron}/`)
+- brain-keeper agent definition (`agents/brain-keeper/`)
+- brain + brain-keeper agentihooks profiles (`profiles/{brain,brain-keeper}/`)
+- Brain HTTP contract (`/feed /signal /marker /tick /index_artifact /ingest`) — see [`docs/API.md`](docs/API.md)
 
-Downstream repos (`agentihub`, `agentihooks-bundle`, `antoncore`) mirror these via `scripts/sync-from-kernel.sh` pinned to tags; PR-time drift checks fail loud.
+Downstream repos (`agentihub`, `agentihooks-bundle`, `antoncore`) are **brain-blind** as of 2026-04-27 — no vendored copies, no kernel-sync scripts. They consume kernel artifacts at deploy time only:
+- `antoncore/k8s/charts/agentibrain-*/` — Helm values overlaying kernel charts
+- `antoncore/k8s/argocd/{dev,prod}/agentibrain-*.yaml` — ArgoCD apps pinned to kernel images (`ghcr.io/the-cloud-clock-work/agentibrain-*:{dev,latest}`)
+- Agent pods reach the kernel via `BRAIN_URL=http://agentibrain-kb-router.anton-{dev,prod}.svc:8080`
 
 ---
 
