@@ -80,24 +80,31 @@ def compute_heat(
         except (ValueError, TypeError):
             pass
 
-    # Tool volume from signals field
+    # Tool volume from signals field. If signals is missing (common on
+    # merged arcs and arcs predating cluster.py's signals writer), fall back
+    # to source_sessions count alone — better than treating signal-less arcs
+    # as zero-volume work.
     signals_str = fm.get("signals", "")
-    if isinstance(signals_str, str) and "tools:" in signals_str:
+    has_signals = isinstance(signals_str, str) and "tools:" in signals_str
+    if has_signals:
         try:
             tools_val = int(signals_str.split("tools:")[1].split(",")[0].split("}")[0].strip())
             heat += min(4, (tools_val // 1000) * 2)
         except (ValueError, IndexError):
             pass
 
-    # Session count
+    # Session count — every active session worth +1 (was: -1, capped at 3).
+    # Without rich signals data the per-session contribution was the only
+    # signal we had to differentiate single-session noise from real work,
+    # and it under-weighted single-session arcs that are fresh and active.
     sessions = fm.get("source_sessions", [])
     if isinstance(sessions, list):
-        heat += min(3, max(0, len(sessions) - 1))
+        heat += min(3, len(sessions))
     elif isinstance(sessions, str):
         heat += 1
 
     # Joy markers from signals
-    if isinstance(signals_str, str) and "joy:" in signals_str:
+    if has_signals and "joy:" in signals_str:
         try:
             joy_val = int(signals_str.split("joy:")[1].split(",")[0].split("}")[0].strip())
             if joy_val > 0:
