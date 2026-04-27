@@ -10,7 +10,10 @@ services:
       - VAULT_ROOT=${VAULT_ROOT:-/vault}
       - RAW_INBOX_PREFIX=${RAW_INBOX_PREFIX:-raw/inbox}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - OBSIDIAN_READER_TOKEN=${OBSIDIAN_READER_TOKEN:-}
+      # Auth token(s). The app reads VAULT_READER_TOKENS (plural, comma-sep);
+      # accept the legacy singular OBSIDIAN_READER_TOKEN as a fallback so an
+      # operator's existing .env keeps working.
+      - VAULT_READER_TOKENS=${VAULT_READER_TOKENS:-${OBSIDIAN_READER_TOKEN:-}}
     volumes:
       # Read-write mount; the service enforces raw/inbox-only writes at the app layer.
       # The vault path is operator-configured via BRAIN_VAULT_PATH / --vault flag.

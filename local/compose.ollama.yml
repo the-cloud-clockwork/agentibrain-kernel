@@ -1,0 +1,58 @@
+# agentibrain-kernel — Ollama overlay (opt-in).
+#
+# Adds a local Ollama container and pre-wires INFERENCE_URL on every brain
+# service that calls inference. Use:
+#
+#   docker compose -f compose.yml -f local/compose.ollama.yml up -d
+#   docker compose exec ollama ollama pull llama3.2     # or another model
+#
+# Recommended starter models (chat-completions compatible via /v1):
+#   - 8 GB host RAM:   llama3.2:3b   (fast, decent reasoning)
+#   - 16 GB host RAM:  llama3.1:8b   (balanced)
+#   - 32 GB+ host RAM: qwen2.5:14b   or mistral-nemo:12b (sharper)
+#
+# Note: Ollama's /v1 endpoint accepts arbitrary `model` in the request body
+# and ignores any `route` field that the kernel adds for inference-gateway
+# routing. Set BRAIN_INFERENCE_ROUTE in .env to whatever; it has no effect
+# against Ollama. Use OLLAMA_DEFAULT_MODEL below to pick the model name the
+# kernel sends — it must match a model you've `ollama pull`'d.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: agentibrain_ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "${PORT_OLLAMA:-11434}:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  kb-router:
+    environment:
+      INFERENCE_URL: http://ollama:11434/v1
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  tick-cron:
+    environment:
+      INFERENCE_URL: http://ollama:11434/v1
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  mcp:
+    environment:
+      INFERENCE_URL: http://ollama:11434/v1
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+volumes:
+  ollama-data:

@@ -1,0 +1,225 @@
+# agentibrain-kernel — root compose for local non-k8s deployment.
+#
+# Quickstart:
+#   ./local/bootstrap.sh   # generates .env + scaffolds ./vault
+#   docker compose up -d
+#
+# Optional Ollama overlay for local AI tick:
+#   docker compose -f compose.yml -f local/compose.ollama.yml up -d
+#
+# See local/README.md for full docs (inference modes, troubleshooting, etc.).
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: agentibrain_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-brain}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-brain}
+      POSTGRES_DB: ${POSTGRES_DB:-brain}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./local/sql:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${PORT_POSTGRES:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-brain} -d ${POSTGRES_DB:-brain}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: agentibrain_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    ports:
+      - "${PORT_REDIS:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  obsidian-reader:
+    build:
+      context: ./services/obsidian-reader
+      dockerfile: Dockerfile
+    image: ghcr.io/the-cloud-clock-work/agentibrain-obsidian-reader:local
+    container_name: agentibrain_obsidian_reader
+    restart: unless-stopped
+    environment:
+      VAULT_ROOT: /vault
+      VAULT_READER_TOKENS: ${VAULT_READER_TOKENS:-}
+      RAW_INBOX_PREFIX: ${RAW_INBOX_PREFIX:-raw/inbox}
+      MAX_FILE_BYTES: ${MAX_FILE_BYTES:-5242880}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ${VAULT_ROOT_HOST:-./vault}:/vault
+    ports:
+      - "${PORT_OBSIDIAN_READER:-8101}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  embeddings:
+    build:
+      context: ./services/embeddings
+      dockerfile: Dockerfile
+    image: ghcr.io/the-cloud-clock-work/agentibrain-embeddings:local
+    container_name: agentibrain_embeddings
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_URL: ${POSTGRES_URL:-postgresql://brain:brain@postgres:5432/brain}
+      LLM_API_BASE: ${LLM_API_BASE:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_EMBED_MODEL: ${LLM_EMBED_MODEL:-text-embedding-3-small}
+      API_KEYS: ${EMBEDDINGS_API_KEYS:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${PORT_EMBEDDINGS:-8102}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  kb-router:
+    build:
+      context: ./services/kb-router
+      dockerfile: Dockerfile
+    image: ghcr.io/the-cloud-clock-work/agentibrain-kb-router:local
+    container_name: agentibrain_kb_router
+    restart: unless-stopped
+    depends_on:
+      obsidian-reader:
+        condition: service_healthy
+      embeddings:
+        condition: service_healthy
+    environment:
+      OBSIDIAN_READER_URL: http://obsidian-reader:8080
+      OBSIDIAN_READER_TOKEN: ${VAULT_READER_TOKENS:-}
+      EMBEDDINGS_URL: http://embeddings:8080
+      EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
+      KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN:-}
+      INFERENCE_URL: ${INFERENCE_URL:-}
+      INGEST_ROUTER_ROUTE: ${INGEST_ROUTER_ROUTE:-kb-router-classify}
+      VAULT_ROOT: /vault
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ${VAULT_ROOT_HOST:-./vault}:/vault
+    ports:
+      - "${PORT_KB_ROUTER:-8103}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  tick-cron:
+    build:
+      context: ./services/tick-engine
+      dockerfile: Dockerfile
+    image: ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:local
+    container_name: agentibrain_tick_cron
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      kb-router:
+        condition: service_healthy
+    # Sleep-loop scheduler. Compose has no native cron; this is best-effort.
+    # Runs an initial tick on startup, then every TICK_INTERVAL_SECONDS.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        INTERVAL="${TICK_INTERVAL_SECONDS:-7200}"
+        echo "[tick-cron] starting; interval=${INTERVAL}s"
+        while true; do
+          python3 /app/brain_tick.py \
+            --vault /vault \
+            --brain-feed /vault/brain-feed \
+            || echo "[tick-cron] brain_tick failed (continuing)"
+          echo "[tick-cron] sleeping ${INTERVAL}s until next tick"
+          sleep "${INTERVAL}"
+        done
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/11}
+      INFERENCE_URL: ${INFERENCE_URL:-}
+      BRAIN_INFERENCE_ROUTE: ${BRAIN_INFERENCE_ROUTE:-kb-brief}
+      EMBEDDINGS_URL: http://embeddings:8080
+      EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
+      BRAIN_DECAY_START_DAYS: ${BRAIN_DECAY_START_DAYS:-2}
+      BRAIN_DECAY_INTERVAL_DAYS: ${BRAIN_DECAY_INTERVAL_DAYS:-2}
+      BRAIN_STALE_SIGNAL_DAYS: ${BRAIN_STALE_SIGNAL_DAYS:-3}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ${VAULT_ROOT_HOST:-./vault}:/vault
+
+  amygdala:
+    build:
+      context: ./services/tick-engine
+      dockerfile: Dockerfile
+    image: ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:local
+    container_name: agentibrain_amygdala
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    command:
+      - /app/amygdala.py
+      - --continuous
+      - --poll-interval
+      - "5"
+      - --redis-url
+      - ${REDIS_URL:-redis://redis:6379/11}
+      - --vault
+      - /vault
+      - --brain-feed
+      - /vault/brain-feed
+    environment:
+      AMYGDALA_STREAMS: ${AMYGDALA_STREAMS:-events:health,events:host,events:deploy,events:system,events:brain}
+      AMYGDALA_CONSUMER: ${AMYGDALA_CONSUMER:-amygdala-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ${VAULT_ROOT_HOST:-./vault}:/vault
+
+  mcp:
+    build:
+      context: ./services/mcp
+      dockerfile: Dockerfile
+    image: ghcr.io/the-cloud-clock-work/agentibrain-mcp:local
+    container_name: agentibrain_mcp
+    restart: unless-stopped
+    depends_on:
+      kb-router:
+        condition: service_healthy
+    environment:
+      INFERENCE_URL: ${INFERENCE_URL:-}
+      KB_BRIEF_ROUTE: ${KB_BRIEF_ROUTE:-kb-brief}
+      KB_ROUTER_URL: http://kb-router:8080
+      KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN:-}
+      EMBEDDINGS_URL: http://embeddings:8080
+      EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
+      MCP_PROXY_API_KEY: ${MCP_PROXY_API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${PORT_MCP:-8104}:8080"
+
+volumes:
+  pg-data:
+  redis-data:
