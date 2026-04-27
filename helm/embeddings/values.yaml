@@ -1,0 +1,75 @@
+tpl:
+  fullnameOverride: agentibrain-embeddings
+  enableServiceLinks: false
+  podAnnotations:
+    reloader.stakater.com/auto: "true"
+  env:
+    variables: null
+  global:
+    environment: dev
+    project: anton
+  app:
+    name: agentibrain-embeddings
+    type: statefulset
+    image:
+      repository: ghcr.io/the-cloud-clock-work/agentibrain-embeddings
+      tag: latest
+      pullPolicy: Always
+    replicaCount: 1
+    container:
+      port: 8080
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    healthChecks:
+      enabled: true
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 8080
+        initialDelaySeconds: 15
+        periodSeconds: 30
+        timeoutSeconds: 5
+        failureThreshold: 3
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: 8080
+        initialDelaySeconds: 10
+        periodSeconds: 10
+        timeoutSeconds: 3
+        failureThreshold: 3
+  secrets:
+    enabled: true
+    external:
+      enabled: true
+      # Reuse the existing embeddings-secrets (same schema: POSTGRES_URL, LLM_API_*).
+      secretName: embeddings-secrets
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  ingress:
+    enabled: false
+  database:
+    enabled: false
+  configMap:
+    enabled: false
+  securityContext:
+    enabled: false
+  serviceAccount:
+    create: false
+  rbac:
+    create: false
+  imagePullSecrets:
+  - ghcr-pull-secret
+  externalSecret:                              # nosecret
+    enabled: true                              # nosecret
+    storeName: openbao                         # nosecret
+    awsSecretPath: k8s/agentibrain-embeddings-dev   # nosecret
+    targetSecretName: embeddings-secrets       # nosecret

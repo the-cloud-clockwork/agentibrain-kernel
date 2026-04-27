@@ -1,0 +1,78 @@
+tpl:
+  fullnameOverride: agentibrain-obsidian-reader
+  enableServiceLinks: false
+  podAnnotations:
+    reloader.stakater.com/auto: "true"
+  global:
+    environment: dev
+    project: anton
+  app:
+    name: agentibrain-obsidian-reader
+    type: statefulset
+    image:
+      repository: ghcr.io/the-cloud-clock-work/agentibrain-obsidian-reader
+      tag: latest
+      pullPolicy: Always
+    replicaCount: 1
+    container:
+      port: 8080
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 300m
+        memory: 384Mi
+    healthChecks:
+      enabled: true
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: 8080
+        initialDelaySeconds: 15
+        periodSeconds: 30
+      readinessProbe:
+        httpGet:
+          path: /health
+          port: 8080
+        initialDelaySeconds: 5
+        periodSeconds: 10
+  env:
+    variables:
+      VAULT_ROOT: /vault
+      RAW_INBOX_PREFIX: raw/inbox
+      LOG_LEVEL: INFO
+  secrets:
+    enabled: true
+    external:
+      enabled: true
+      secretName: agentibrain-router-secrets
+  service:
+    enabled: true
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  ingress:
+    enabled: false
+  database:
+    enabled: false
+  configMap:
+    enabled: false
+  securityContext:
+    enabled: false
+  serviceAccount:
+    create: false
+  rbac:
+    create: false
+  imagePullSecrets:
+  - ghcr-pull-secret
+  externalSecret:
+    enabled: false
+  extraVolumes:
+    - name: nfs-vault
+      nfs:
+        server: 10.10.30.130
+        path: /mnt/user/appdata/obsidian/vault
+  extraVolumeMounts:
+    - name: nfs-vault
+      mountPath: /vault
