@@ -30,10 +30,20 @@ import brain_verifier
 
 HEAT_MAX = 10
 
+# Promote/demote/graduate thresholds. Empirically the heat formula tops out
+# at ~5-6 for healthy active arcs; the previous hardcoded promote=7 was
+# mathematically unreachable, leaving conscious/ permanently empty.
+BRAIN_PROMOTE_HEAT = int(os.getenv("BRAIN_PROMOTE_HEAT", "5"))
+BRAIN_DEMOTE_HEAT = int(os.getenv("BRAIN_DEMOTE_HEAT", "3"))
+BRAIN_GRADUATE_HEAT = int(os.getenv("BRAIN_GRADUATE_HEAT", "1"))
+BRAIN_GRADUATE_AGE_DAYS = int(os.getenv("BRAIN_GRADUATE_AGE_DAYS", "14"))
+
 # Decay: after BRAIN_DECAY_START_DAYS, heat drops -1 per BRAIN_DECAY_INTERVAL_DAYS.
 # Prevents arcs from staying hot forever when no new activity references them.
-BRAIN_DECAY_START_DAYS = int(os.getenv("BRAIN_DECAY_START_DAYS", "2"))
-BRAIN_DECAY_INTERVAL_DAYS = max(1, int(os.getenv("BRAIN_DECAY_INTERVAL_DAYS", "2")))
+# Defaults softened — previous 2/2 burned arcs in 4 days, faster than ticks
+# could promote them. 7/4 keeps an active arc hot for ~2 weeks.
+BRAIN_DECAY_START_DAYS = int(os.getenv("BRAIN_DECAY_START_DAYS", "7"))
+BRAIN_DECAY_INTERVAL_DAYS = max(1, int(os.getenv("BRAIN_DECAY_INTERVAL_DAYS", "4")))
 
 # Stale signal sweep: signals whose parent arc is older than this and are not
 # nuclear/critical get filtered out of signals.md. Prevents broadcast pollution
@@ -347,12 +357,12 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
                 continue
             fname = arc.path.name
 
-            if heat >= 7:
+            if heat >= BRAIN_PROMOTE_HEAT:
                 if not dry_run:
                     conscious.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(str(arc.path), str(conscious / fname))
                 promotions += 1
-            elif heat < 5:
+            elif heat < BRAIN_DEMOTE_HEAT:
                 conscious_file = conscious / fname
                 if conscious_file.exists():
                     if not dry_run:
@@ -402,12 +412,13 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
                     _update_frontmatter_field(arc.path, "workflow_template", "true")
                 templates_written += 1
 
-    # 3b. Graduate cold arcs (heat < 2, age > 7d) to hemisphere (skipped in quick_refresh)
+    # 3b. Graduate cold arcs (heat <= BRAIN_GRADUATE_HEAT, age > BRAIN_GRADUATE_AGE_DAYS)
+    # to hemisphere (skipped in quick_refresh).
     graduations = 0
     if not quick_refresh:
         for arc in arcs:
             heat = int(arc.frontmatter.get("heat", 0))
-            if heat >= 2 or arc.path is None:
+            if heat > BRAIN_GRADUATE_HEAT or arc.path is None:
                 continue
             created = arc.frontmatter.get("created", "")
             if not created:
@@ -419,7 +430,7 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
                 age_days = (now - created_dt).days
             except (ValueError, TypeError):
                 continue
-            if age_days <= 7:
+            if age_days <= BRAIN_GRADUATE_AGE_DAYS:
                 continue
             region = arc.frontmatter.get("region", "left-hemisphere")
             region_map = {"left-hemisphere": "left", "right-hemisphere": "right",
