@@ -77,18 +77,24 @@ Plus:
 ### Local / friend path (Docker Compose)
 
 ```bash
-pip install agentibrain
-brain init --local --vault ~/my-vault --openai-key $OPENAI_API_KEY
-brain up              # docker compose up: services + Postgres + Redis + MinIO
-brain scaffold        # seed vault folder layout
-brain status          # health check
+git clone https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+cd agentibrain-kernel
+./local/bootstrap.sh              # generates .env (random tokens) + scaffolds ./vault
+docker compose up -d              # 8 containers: 5 brain services + postgres + redis
+TOK=$(grep ^KB_ROUTER_TOKEN .env | cut -d= -f2)
+curl -H "Authorization: Bearer $TOK" http://localhost:8103/feed | jq .
 ```
 
-What this does:
-- Writes `~/.agentibrain/config.yaml` + `~/.agentibrain/.env` (chmod 600).
-- Renders `~/.agentibrain/compose.yml` with the 4 services + storage plane.
-- Mints a `KB_ROUTER_TOKEN` — save it.
-- Scaffolds your vault with 30 folders + 52 template files (Obsidian-ready).
+For a local LLM (Ollama, no API key needed):
+
+```bash
+docker compose -f compose.yml -f local/compose.ollama.yml up -d
+docker compose exec ollama ollama pull llama3.2
+```
+
+Full local docs — inference modes, port config, troubleshooting, vault bind to your Obsidian — live in [`local/README.md`](local/README.md).
+
+> **CLI note.** `pip install agentibrain` ships a `brain` CLI that aspires to render the compose for you (`brain init`, `brain up`, `brain scaffold`). The CLI shell exists; the compose-rendering templates are still being wired up. Until then, the static `compose.yml` + `local/bootstrap.sh` above is the supported path.
 
 ### Cloud path (bring your own Postgres + S3)
 
