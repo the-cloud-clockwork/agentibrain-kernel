@@ -301,8 +301,19 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
         if not date_dir.is_dir():
             continue
         date_arcs = []
-        for md_file in sorted(date_dir.glob("*.md")):
-            if md_file.name.startswith("_") or ".merged." in md_file.name:
+        # Skip dashboard files (_*) and the unmerged source of any arc that
+        # also has a `.merged.md` companion — the merged file is canonical
+        # post-consolidation, but if only one form exists, parse it.
+        files = list(sorted(date_dir.glob("*.md")))
+        merged_stems = {
+            f.name.replace(".merged.md", "") for f in files if f.name.endswith(".merged.md")
+        }
+        for md_file in files:
+            if md_file.name.startswith("_"):
+                continue
+            # Skip the unmerged source if its merged twin exists
+            stem = md_file.name[:-3]  # strip .md
+            if not md_file.name.endswith(".merged.md") and stem in merged_stems:
                 continue
             try:
                 doc = markers.extract_all(md_file)
