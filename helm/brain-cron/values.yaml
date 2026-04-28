@@ -53,6 +53,19 @@ command:
       || notify_failure "brain tick phase"
     echo "Brain tick complete."
 
+    # Refresh embeddings + reap orphans. Diff-only by mtime, so the cost
+    # is bounded to whatever the tick just rewrote. --prune deletes pgvector
+    # rows whose cluster_id no longer has an arc file (graduations, merges,
+    # renames). Failure is non-fatal — kb_search still works on stale rows.
+    echo "Refreshing arc embeddings + pruning orphans..."
+    if [ -n "${EMBEDDINGS_API_KEY:-}" ]; then
+      python3 /app/embed_arcs.py --vault /vault --prune \
+        || echo "WARN: embed_arcs failed (non-fatal)"
+      echo "Embeddings refresh complete."
+    else
+      echo "Skipping embed_arcs (EMBEDDINGS_API_KEY not set)."
+    fi
+
     echo "Running amygdala check..."
     python3 /app/amygdala.py \
       --redis-url "${REDIS_URL}" \
@@ -71,6 +84,12 @@ env:
 
 # Operators override with their secrets provider (OpenBao / AWS SM / etc).
 secretRef: brain-cron-secrets
+
+# Optional list of EXTRA secret names to envFrom, in addition to `secretRef`.
+# Use this when the credentials needed by brain-cron live across multiple
+# secrets — e.g. the embed reaper needs EMBEDDINGS_API_KEY which usually
+# lives in the kb-router secret rather than the ops/runner secret.
+additionalSecretRefs: []
 
 resources:
   requests:
