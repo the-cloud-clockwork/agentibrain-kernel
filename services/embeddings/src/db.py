@@ -108,6 +108,37 @@ def search(
         return results
 
 
+def prune(producer: str, keep_keys: list[str]) -> dict:
+    """Delete all rows for `producer` whose `key` is not in `keep_keys`.
+
+    Returns {deleted: N, kept: M, scanned: N+M}. Used by reaper jobs to
+    clean orphan rows when source files (e.g. arc files) get renamed,
+    graduated, or deleted from the vault.
+    """
+    pool = get_pool()
+    with pool.connection() as conn:
+        # Distinct key set for the producer.
+        cur = conn.execute(
+            "SELECT DISTINCT key FROM content_embeddings WHERE producer = %s",
+            (producer,),
+        )
+        existing = {row[0] for row in cur.fetchall()}
+        keep = set(keep_keys)
+        to_delete = sorted(existing - keep)
+        if to_delete:
+            conn.execute(
+                "DELETE FROM content_embeddings WHERE producer = %s AND key = ANY(%s)",
+                (producer, list(to_delete)),
+            )
+            conn.commit()
+        return {
+            "deleted": len(to_delete),
+            "kept": len(existing & keep),
+            "scanned": len(existing),
+            "deleted_keys": to_delete,
+        }
+
+
 def get_vector_count() -> int:
     pool = get_pool()
     with pool.connection() as conn:

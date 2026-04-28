@@ -19,16 +19,22 @@ spec:
               image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
               imagePullPolicy: {{ .Values.image.pullPolicy }}
               command: {{- toYaml .Values.command | nindent 16 }}
-              {{- if or .Values.env .Values.secretRef }}
+              {{- if or .Values.env .Values.secretRef .Values.additionalSecretRefs }}
               env:
                 {{- range $key, $value := .Values.env }}
                 - name: {{ $key }}
                   value: {{ $value | quote }}
                 {{- end }}
-              {{- if .Values.secretRef }}
+              {{- if or .Values.secretRef .Values.additionalSecretRefs }}
               envFrom:
+                {{- if .Values.secretRef }}
                 - secretRef:
                     name: {{ .Values.secretRef }}
+                {{- end }}
+                {{- range .Values.additionalSecretRefs }}
+                - secretRef:
+                    name: {{ . }}
+                {{- end }}
               {{- end }}
               {{- end }}
               resources: {{- toYaml .Values.resources | nindent 16 }}

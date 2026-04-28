@@ -138,6 +138,10 @@ def main() -> int:
         os.environ.get("EMBEDDINGS_API_KEY")
         or os.environ.get("EMBED_API_KEY", "")
     ))
+    ap.add_argument("--prune", action="store_true",
+                    help="after embedding, POST /prune with the cluster_id "
+                         "set of every arc seen — deletes orphan rows for "
+                         "arcs that were graduated/renamed/deleted")
     args = ap.parse_args()
 
     vault = Path(args.vault)
@@ -158,6 +162,9 @@ def main() -> int:
 
     stats = {"scanned": 0, "embedded": 0, "skipped_unchanged": 0,
              "skipped_noop": 0, "errors": 0}
+    # Cluster IDs of every arc we saw on disk — used for the prune call so
+    # that pgvector rows whose source file has disappeared get deleted.
+    seen_keys: set[str] = set()
 
     t0 = time.time()
     for md in scan_arcs(clusters_dir):
@@ -165,6 +172,12 @@ def main() -> int:
         rel = str(md.relative_to(vault))
         mtime = md.stat().st_mtime
         if state.get(rel) == mtime:
+            # Still record the cluster_id so prune doesn't delete unchanged arcs.
+            try:
+                fm_only, _ = parse_frontmatter(md.read_text(encoding="utf-8"))
+                seen_keys.add(fm_only.get("cluster_id") or md.stem)
+            except OSError:
+                pass
             stats["skipped_unchanged"] += 1
             continue
 
@@ -178,10 +191,12 @@ def main() -> int:
             continue
 
         if len(content) < 50:
+            seen_keys.add(fm.get("cluster_id") or md.stem)
             stats["skipped_noop"] += 1
             continue
 
         cluster_id = fm.get("cluster_id") or md.stem
+        seen_keys.add(cluster_id)
         payload = {
             "key": cluster_id,
             "content": content,
@@ -214,6 +229,32 @@ def main() -> int:
 
     if not args.dry_run:
         save_state(state_path, state)
+
+    # Reaper: delete pgvector rows whose cluster_id no longer maps to an
+    # arc file on disk (graduated, renamed, or removed).
+    if args.prune and not args.dry_run:
+        try:
+            prune_payload = {
+                "producer": "brain-arc",
+                "keep_keys": sorted(seen_keys),
+            }
+            req = urllib.request.Request(
+                f"{args.api_url.rstrip('/')}/prune",
+                data=json.dumps(prune_payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {args.api_key}",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=REQ_TIMEOUT) as resp:
+                pr = json.loads(resp.read())
+            stats["pruned"] = pr.get("deleted", 0)
+            stats["pruned_kept"] = pr.get("kept", 0)
+            print(f"PRUNE: deleted={stats['pruned']} kept={stats['pruned_kept']}")
+        except Exception as e:
+            stats["prune_error"] = str(e)
+            print(f"WARN: prune failed: {e}", file=sys.stderr)
 
     stats["elapsed_sec"] = round(time.time() - t0, 3)
     json.dump(stats, sys.stdout, indent=2)
