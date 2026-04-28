@@ -32,6 +32,11 @@ class SearchRequest(BaseModel):
     min_score: float = 0.0
 
 
+class PruneRequest(BaseModel):
+    producer: str
+    keep_keys: list[str]
+
+
 @app.on_event("startup")
 def startup():
     try:
@@ -117,3 +122,27 @@ async def search_content(
     )
 
     return {"query": req.query, "results": results, "count": len(results)}
+
+
+@app.post("/prune")
+async def prune_orphans(
+    req: PruneRequest,
+    _token: str = Depends(auth.require_api_key),
+):
+    """Delete rows for `producer` whose `key` is not in `keep_keys`.
+
+    Reaper for orphan vectors — when source files (e.g. arc files) get
+    renamed, graduated, or deleted, the corresponding embedding row is
+    not auto-removed. Reapers POST the current valid key set here and
+    everything else for that producer is deleted.
+    """
+    try:
+        result = db.prune(producer=req.producer, keep_keys=req.keep_keys)
+    except Exception as e:
+        log.error(f"prune_failed producer={req.producer} error={e}")
+        raise HTTPException(500, f"Prune failed: {e}")
+    log.info(
+        f"pruned producer={req.producer} deleted={result['deleted']} "
+        f"kept={result['kept']} scanned={result['scanned']}"
+    )
+    return result
