@@ -7,7 +7,7 @@ tpl:
     variables: null
   global:
     environment: dev
-    project: anton
+    project: agentibrain
   app:
     name: agentibrain-embeddings
     type: statefulset
@@ -74,6 +74,6 @@ tpl:
   # LLM_EMBED_MODEL, EMBEDDINGS_API_KEYS) — see local/k8s-bootstrap.sh.
   externalSecret:                                  # nosecret
     enabled: false                                 # nosecret
-    storeName: openbao                             # nosecret
+    storeName: ""                                  # nosecret
     awsSecretPath: k8s/agentibrain-embeddings-dev  # nosecret
     targetSecretName: embeddings-secrets           # nosecret

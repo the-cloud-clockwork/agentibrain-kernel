@@ -4,8 +4,8 @@
 # ecosystem agent — same image, different env vars). It is a first-class agent
 # for brain operations: enrichment, triage, replay.
 #
-# For operator-specific reference deployments see values-anton.yaml and
-# values-anton-prod.yaml.
+# Operators ship their own overlays in their platform repo; this chart
+# defines the portable defaults only.
 tpl:
   fullnameOverride: brain-keeper
   enableServiceLinks: false
