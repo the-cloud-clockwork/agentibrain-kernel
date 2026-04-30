@@ -11,7 +11,7 @@ The kernel is a brain + KB substrate for AI fleets. This index is the entry poin
 
 ## Install
 - [`../local/README.md`](../local/README.md) — Docker Compose laptop path: `./local/bootstrap.sh && docker compose up -d`.
-- [`../local/k8s-bootstrap.sh`](../local/k8s-bootstrap.sh) — K8s bootstrap: generates tokens + `kubectl create secret` for the three Opaque Secrets the charts expect. Pair with `helm install helm/<chart>/`.
+- [`HELM-QUICKSTART.md`](HELM-QUICKSTART.md) — bare-cluster Helm install (no operator infra required). Pairs with `local/k8s-bootstrap.sh`.
 - [`DEPLOYMENT.md`](DEPLOYMENT.md) — Kubernetes deploy patterns (Helm, ArgoCD, env-split values).
 - [`ENVIRONMENTS.md`](ENVIRONMENTS.md) — dev / prod separation, what differs, the values-prod overlay pattern.
 
