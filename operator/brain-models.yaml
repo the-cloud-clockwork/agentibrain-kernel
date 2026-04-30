@@ -1,0 +1,44 @@
+# Brain LLM Model Registry
+#
+# Declarative listing of every model name the kernel brain services call.
+# This file is documentation + a source-of-truth for operators wiring up
+# their inference gateway (LiteLLM, OpenAI, Ollama, etc).
+#
+# Contract: brain code POSTs `{"model": "<name>", "messages": [...]}` to
+# INFERENCE_URL with `Authorization: Bearer ${INFERENCE_API_KEY}`.
+# Each entry below describes one model name the brain expects to be
+# resolvable by the gateway.
+#
+# To add a new brain LLM call: add an entry here, add a `BRAIN_<NEW>_MODEL`
+# env var to the kernel chart values, and read it from the call site.
+# See docs/GATEWAY-CONTRACT.md for the wiring guide.
+
+models:
+  brain-classify:
+    tier: small
+    purpose: |
+      Classify operator ingest message into structured JSON
+      (semantic_text + extractables + title + tags). Called once per
+      kb-router /ingest by services/kb-router/app/router.py.
+    json_mode: required
+    typical_underlying:
+      - claude-haiku-4-5 (via OAuth proxy)
+      - gpt-4o-mini (OpenAI)
+      - qwen2.5:1.5b (Ollama, dev only)
+    env_var: BRAIN_CLASSIFY_MODEL
+    fallback_behavior: regex classifier (deterministic, no LLM)
+
+  brain-brief:
+    tier: large
+    purpose: |
+      Synthesize a 3-5 line brief over kb_search hits, with citations.
+      Also used by tick-engine for arc reasoning. Called by:
+      services/mcp/app/tools/kb.py (kb_brief tool) and
+      services/tick-engine/brain_tick.py (call_llm).
+    json_mode: optional
+    typical_underlying:
+      - claude-sonnet-4-6 (via OAuth proxy)
+      - gpt-4o (OpenAI)
+      - qwen2.5:7b (Ollama, dev only)
+    env_var: BRAIN_BRIEF_MODEL
+    fallback_behavior: error string returned to caller (no LLM = no brief)
