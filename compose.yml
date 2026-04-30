@@ -115,7 +115,8 @@ services:
       EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
       KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN:-}
       INFERENCE_URL: ${INFERENCE_URL:-}
-      INGEST_ROUTER_ROUTE: ${INGEST_ROUTER_ROUTE:-kb-router-classify}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
+      BRAIN_CLASSIFY_MODEL: ${BRAIN_CLASSIFY_MODEL:-brain-classify}
       VAULT_ROOT: /vault
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
@@ -160,7 +161,8 @@ services:
     environment:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/11}
       INFERENCE_URL: ${INFERENCE_URL:-}
-      BRAIN_INFERENCE_ROUTE: ${BRAIN_INFERENCE_ROUTE:-kb-brief}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
+      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}
       EMBEDDINGS_URL: http://embeddings:8080
       EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
       BRAIN_DECAY_START_DAYS: ${BRAIN_DECAY_START_DAYS:-2}
@@ -210,7 +212,8 @@ services:
         condition: service_healthy
     environment:
       INFERENCE_URL: ${INFERENCE_URL:-}
-      KB_BRIEF_ROUTE: ${KB_BRIEF_ROUTE:-kb-brief}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
+      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}
       KB_ROUTER_URL: http://kb-router:8080
       KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN:-}
       EMBEDDINGS_URL: http://embeddings:8080

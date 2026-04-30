@@ -2,7 +2,7 @@
 
 The vault is the on-disk home of the brain: cluster markdown, hot-arc feed, operator intent, pipeline metadata, emergency signals, daily logs, and the operator's own dual-hemisphere knowledge base. It is an Obsidian-compatible folder tree, writable by humans and by kernel services.
 
-`brain scaffold <vault-path>` is the only authoritative writer of the schema marker. The tree itself can be edited freely — scaffold is idempotent and never overwrites existing files.
+`local/bootstrap.sh` scaffolds the vault tree on first compose run; the schema marker is `.brain-schema` (JSON). The tree itself can be edited freely — bootstrap is idempotent and never overwrites existing files.
 
 ## Layout (v1)
 
@@ -76,7 +76,7 @@ The vault is the on-disk home of the brain: cluster markdown, hot-arc feed, oper
       PATCHES.md
 ```
 
-The tree is exactly what `brain scaffold` seeds — it is shipped inside the `agentibrain` wheel under `agentibrain/templates/vault-layout/`.
+The tree is exactly what `local/bootstrap.sh` seeds — it is shipped inside the `agentibrain` wheel under `agentibrain/templates/vault-layout/`.
 
 ## `.brain-schema`
 
@@ -94,7 +94,7 @@ The tree is exactly what `brain scaffold` seeds — it is shipped inside the `ag
 
 ## Rules
 
-1. **Scaffold is idempotent** — re-running `brain scaffold` against an existing vault at the same version is a no-op (`folders_created=0`, `files_written=0`). Operator edits are never clobbered.
+1. **Scaffold is idempotent** — re-running `local/bootstrap.sh` against an existing vault at the same version is a no-op (`folders_created=0`, `files_written=0`). Operator edits are never clobbered.
 2. **Version mismatch is an error** — if `.brain-schema` reports a different version, scaffold raises `SchemaConflict` unless `--force-upgrade` is passed.
 3. **Readers never mutate the schema** — hooks, agents, and CLI tools should treat `.brain-schema` as read-only and refuse to operate on an unfamiliar version.
 4. **Folder ownership** is a soft convention; enforcement is by producer name, not filesystem permissions. Keep writers scoped to their domain:

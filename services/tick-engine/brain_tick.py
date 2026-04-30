@@ -99,27 +99,33 @@ def _push_clickhouse(report: dict) -> None:
         req.add_header("Authorization", f"Basic {creds}")
     urllib.request.urlopen(req, timeout=5)
     print("ClickHouse: tick_health row inserted", file=sys.stderr)
-INFERENCE_ROUTE = os.getenv("BRAIN_INFERENCE_ROUTE", "kb-brief")  # reuse existing route
+INFERENCE_TOKEN_ENV = "INFERENCE_API_KEY"
+BRAIN_BRIEF_MODEL = os.getenv("BRAIN_BRIEF_MODEL", "brain-brief")
 
 
 def call_llm(prompt: str, inference_url: str = INFERENCE_URL) -> str:
     """Call the inference gateway with the reasoning prompt.
 
-    Uses the same route as kb_brief (sonnet with haiku fallback).
+    Speaks standard OpenAI chat-completions to whatever gateway INFERENCE_URL
+    points at (LiteLLM, OpenAI, Ollama, etc). Model is BRAIN_BRIEF_MODEL.
     Returns the LLM's text response.
     """
     payload = json.dumps({
-        "model": "brain-reasoning",
-        "route": INFERENCE_ROUTE,
+        "model": BRAIN_BRIEF_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 4096,
         "temperature": 0.3,
     }).encode()
 
+    headers = {"Content-Type": "application/json"}
+    token = os.environ.get(INFERENCE_TOKEN_ENV, "")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
     req = urllib.request.Request(
         f"{inference_url}/v1/chat/completions",
         data=payload,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
 

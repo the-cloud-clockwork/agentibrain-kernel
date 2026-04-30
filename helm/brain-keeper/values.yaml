@@ -4,8 +4,8 @@
 # ecosystem agent — same image, different env vars). It is a first-class agent
 # for brain operations: enrichment, triage, replay.
 #
-# For operator-specific reference deployments see values-anton.yaml and
-# values-anton-prod.yaml.
+# Operators ship their own overlays in their platform repo; this chart
+# defines the portable defaults only.
 tpl:
   fullnameOverride: brain-keeper
   enableServiceLinks: false
@@ -98,6 +98,9 @@ tpl:
       AMYGDALA_ENABLED: 'true'
       AMYGDALA_SIGNAL_PATH: /vault/brain-feed/amygdala-active.md
       # ARTIFACT_STORE_URL — operator override (see values-anton.yaml)
+      # AGENTIBRIDGE_URL — operator-only feature; empty by default. Operators
+      # with an AgentiBridge dispatch service set this in their overlay.
+      AGENTIBRIDGE_URL: ""
   secrets:
     enabled: true
     external:
@@ -110,7 +113,12 @@ tpl:
       - name: shared-fs
         size: 5Gi
         accessMode: ReadWriteOnce
-        storageClass: local-path
+        # storageClass: empty = use cluster default. Override per-cluster:
+        #   k3s        → local-path
+        #   EKS        → gp2 / gp3
+        #   GKE        → standard / premium-rwo
+        #   minikube   → standard
+        storageClass: ""
         mountPath: /shared
   service:
     enabled: true
@@ -129,5 +137,5 @@ tpl:
     create: false
   rbac:
     create: false
-  imagePullSecrets:
-    - ghcr-pull-secret
+  # ghcr.io images are public — pull secret only needed for forked private builds.
+  imagePullSecrets: []

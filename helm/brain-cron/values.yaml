@@ -75,8 +75,14 @@ command:
 
 env:
   # INFERENCE_URL is operator-specific — set empty default so the kernel can run
-  # without an inference-gateway (brain_tick will skip AI phase if unset).
+  # without an inference gateway (brain_tick will skip AI phase if unset).
+  # Wire at any OpenAI-compatible endpoint: LiteLLM, OpenAI, Ollama, etc.
+  # See docs/GATEWAY-CONTRACT.md.
   INFERENCE_URL: ""
+  # Brain LLM model name (standard OpenAI `model` field). The kernel ships
+  # `brain-brief` as the canonical name — wire your gateway to alias it at
+  # whatever underlying model you want (Sonnet-class synthesis tier).
+  BRAIN_BRIEF_MODEL: brain-brief
   # Self-healing knobs (see services/tick-engine/brain_keeper.py)
   BRAIN_STALE_SIGNAL_DAYS: "1"
   BRAIN_DECAY_START_DAYS: "2"
@@ -124,8 +130,8 @@ backoffLimit: 1
 activeDeadlineSeconds: 600
 restartPolicy: OnFailure
 
-imagePullSecrets:
-  - ghcr-pull-secret
+# ghcr.io images are public — pull secret only needed for forked private builds.
+imagePullSecrets: []
 
 # Amygdala continuous consumer (Deployment). Reads Redis stream for emergency signals.
 amygdala:

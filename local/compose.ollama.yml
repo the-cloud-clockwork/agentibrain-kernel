@@ -11,11 +11,10 @@
 #   - 16 GB host RAM:  llama3.1:8b   (balanced)
 #   - 32 GB+ host RAM: qwen2.5:14b   or mistral-nemo:12b (sharper)
 #
-# Note: Ollama's /v1 endpoint accepts arbitrary `model` in the request body
-# and ignores any `route` field that the kernel adds for inference-gateway
-# routing. Set BRAIN_INFERENCE_ROUTE in .env to whatever; it has no effect
-# against Ollama. Use OLLAMA_DEFAULT_MODEL below to pick the model name the
-# kernel sends — it must match a model you've `ollama pull`'d.
+# Note: Ollama's /v1 endpoint accepts arbitrary `model` in the request body.
+# Set BRAIN_CLASSIFY_MODEL and BRAIN_BRIEF_MODEL in .env to model names you
+# have `ollama pull`'d (the kernel speaks standard OpenAI chat-completions —
+# see docs/GATEWAY-CONTRACT.md).
 
 services:
   ollama:
