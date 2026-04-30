@@ -162,7 +162,7 @@ Free-text in. Haiku classifies, fans URLs/repos/files to artifact-store, drops a
 
 ## Vault schema
 
-Obsidian-compatible folder tree, writable by humans and by kernel services. `local/bootstrap.sh` scaffolds the schema marker on first run.
+Obsidian-compatible folder tree, writable by humans and by kernel services. `brain scaffold` is the authoritative writer of the schema marker; `local/bootstrap.sh` invokes it on first run.
 
 ```
 <vault>/
