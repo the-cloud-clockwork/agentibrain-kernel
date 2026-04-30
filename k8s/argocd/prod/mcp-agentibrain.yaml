@@ -19,7 +19,8 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+    # mcp-proxy chart is operator-side (antoncore). See dev/ variant note.
+    repoURL: https://github.com/The-Cloud-Clock-Work/antoncore.git
     targetRevision: main
     path: k8s/charts/mcp-proxy
     helm:

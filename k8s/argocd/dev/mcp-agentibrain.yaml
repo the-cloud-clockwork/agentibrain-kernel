@@ -19,7 +19,10 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+    # mcp-proxy chart is operator-side (antoncore). kernel does not ship a
+    # generic mcp chart; the mcp-agentibrain image is a kernel artifact, but
+    # the deploy template is the operator's reusable mcp-proxy chart.
+    repoURL: https://github.com/The-Cloud-Clock-Work/antoncore.git
     targetRevision: dev
     path: k8s/charts/mcp-proxy
     helm:
