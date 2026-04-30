@@ -4,6 +4,17 @@ tpl:
   app:
     image:
       tag: latest
+  # Operator's k3s cluster uses local-path; the kernel chart default is "" (cluster
+  # default) for portability, so we pin it here to match the existing bound PVC.
+  # PVC spec is immutable post-binding — must match what's deployed.
+  persistence:
+    enabled: true
+    volumes:
+      - name: shared-fs
+        size: 5Gi
+        accessMode: ReadWriteOnce
+        storageClass: local-path
+        mountPath: /shared
   env:
     variables:
       AGENTIBRIDGE_URL: http://agentibridge.anton-prod.svc:8100

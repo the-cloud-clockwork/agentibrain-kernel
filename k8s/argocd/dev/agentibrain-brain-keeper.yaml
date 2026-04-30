@@ -29,6 +29,17 @@ spec:
           app:
             image:
               tag: dev
+          # Operator's k3s uses local-path; chart default is "" for portability.
+          # PVC spec is immutable post-binding — must match the bound PVC's
+          # storageClass exactly.
+          persistence:
+            enabled: true
+            volumes:
+              - name: shared-fs
+                size: 5Gi
+                accessMode: ReadWriteOnce
+                storageClass: local-path
+                mountPath: /shared
           env:
             variables:
               # Brain registries — kernel owns brain-keeper agent + profile.
