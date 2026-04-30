@@ -36,7 +36,8 @@ OBSIDIAN_READER_URL = os.getenv("OBSIDIAN_READER_URL", "http://obsidian-reader:8
 OBSIDIAN_READER_TOKEN = os.getenv("OBSIDIAN_READER_TOKEN", "")
 
 INFERENCE_URL = os.getenv("INFERENCE_URL", "")
-INGEST_ROUTER_ROUTE = os.getenv("INGEST_ROUTER_ROUTE", "kb-router-classify")
+INFERENCE_TOKEN_ENV = "INFERENCE_API_KEY"
+BRAIN_CLASSIFY_MODEL = os.getenv("BRAIN_CLASSIFY_MODEL", "brain-classify")
 
 # Comma-separated allowlist of filesystem roots the router is permitted to read from.
 LOCAL_READ_ROOTS = [
@@ -135,19 +136,19 @@ def _parse_json(raw: str) -> dict:
     return {}
 
 
-async def _call_router_llm(message: str, route: str) -> dict:
-    """Single-shot classification via the shared inference-gateway.
+async def _call_router_llm(message: str, model: str) -> dict:
+    """Single-shot classification via any OpenAI-compatible gateway.
 
-    Passes a named `route` from inference-gateway's config.json — the gateway
-    selects the model, host, retries, backoff, timeout, and fallback model.
+    Posts a standard chat-completions body with `model: <BRAIN_CLASSIFY_MODEL>`.
+    Wire INFERENCE_URL at any OAI-compatible endpoint (LiteLLM, OpenAI, Ollama).
     Fails closed to a deterministic regex classifier if the gateway is down.
     """
     if not INFERENCE_URL:
-        log.warning("inference-gateway not configured; falling back to regex")
+        log.warning("inference gateway not configured; falling back to regex")
         return _fallback_classify(message)
 
     body = {
-        "route": route,
+        "model": model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": message},
@@ -156,18 +157,22 @@ async def _call_router_llm(message: str, route: str) -> dict:
         "temperature": 0.1,
         "response_format": {"type": "json_object"},
     }
+    headers = {"Content-Type": "application/json"}
+    token = os.environ.get(INFERENCE_TOKEN_ENV, "")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     try:
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
                 f"{INFERENCE_URL.rstrip('/')}/v1/chat/completions",
                 json=body,
-                headers={"Content-Type": "application/json"},
+                headers=headers,
             )
             resp.raise_for_status()
             data = resp.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "") or ""
     except Exception as exc:
-        log.warning("inference-gateway classification failed: %s — using regex fallback", exc)
+        log.warning("inference gateway classification failed: %s — using regex fallback", exc)
         return _fallback_classify(message)
 
     parsed = _parse_json(content)
@@ -530,7 +535,7 @@ async def ingest_message(message: str) -> IngestResult:
     batch_id = uuid4().hex[:12]
     errors: list[str] = []
 
-    classification = await _call_router_llm(message, INGEST_ROUTER_ROUTE)
+    classification = await _call_router_llm(message, BRAIN_CLASSIFY_MODEL)
     semantic = (classification.get("semantic_text") or "").strip()
     title = (classification.get("title") or "").strip() or "ingest"
     tags = classification.get("tags") or []
