@@ -64,15 +64,12 @@ tpl:
     create: false
   rbac:
     create: false
-  imagePullSecrets:
-  - ghcr-pull-secret
+  # ghcr.io images are public — pull secret only needed for forked private builds.
+  imagePullSecrets: []
   externalSecret:
     enabled: false
-  extraVolumes:
-    - name: nfs-vault
-      nfs:
-        server: 10.10.30.130
-        path: /mnt/user/appdata/obsidian/vault
-  extraVolumeMounts:
-    - name: nfs-vault
-      mountPath: /vault
+  # Vault mount — choose ONE pattern: NFS (server+path) or PVC (claimName).
+  # Default is empty: chart installs cleanly, vault reads will 500 until mounted.
+  # See README for full examples.
+  extraVolumes: []
+  extraVolumeMounts: []
