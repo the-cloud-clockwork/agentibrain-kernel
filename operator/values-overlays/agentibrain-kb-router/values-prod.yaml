@@ -1,0 +1,16 @@
+tpl:
+  global:
+    environment: prod
+  app:
+    image:
+      tag: latest
+  env:
+    variables:
+      OBSIDIAN_READER_URL: http://agentibrain-obsidian-reader.anton-prod.svc:8080
+      EMBEDDINGS_URL: http://agentibrain-embeddings.anton-prod.svc:8080
+  # ClusterIP only (default). The Docker artifact-store no longer auto-embeds
+  # via /index_artifact, so the MetalLB LoadBalancer at 10.10.30.205 was
+  # retired 2026-04-28. In-cluster consumers (mcp-artifact-store, brain agents)
+  # use the ClusterIP via svc DNS.
+  externalSecret:                                  # nosecret
+    secretPath: k8s/agentibrain-router             # nosecret

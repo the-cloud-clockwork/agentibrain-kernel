@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentibrain-obsidian-reader
+  namespace: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: obsidian=ghcr.io/the-cloud-clock-work/agentibrain-obsidian-reader:dev
+    argocd-image-updater.argoproj.io/obsidian.update-strategy: digest
+    argocd-image-updater.argoproj.io/obsidian.allow-tags: regexp:^dev$
+    argocd-image-updater.argoproj.io/obsidian.helm.image-name: tpl.app.image.repository
+    argocd-image-updater.argoproj.io/obsidian.helm.image-tag: tpl.app.image.tag
+    argocd-image-updater.argoproj.io/obsidian.pull-secret: secret:argocd/argocd-image-updater-ghcr#credentials
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+    argocd-image-updater.argoproj.io/obsidian.force-update: "true"
+  labels:
+    image-updater/image: agentibrain-obsidian-reader
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+  - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+    targetRevision: v0.1.1
+    path: helm/obsidian-reader
+  - repoURL: https://github.com/The-Cloud-Clock-Work/antoncore.git
+    targetRevision: dev
+    ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: anton-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

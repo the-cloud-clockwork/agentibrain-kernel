@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentibrain-brain-cron
+  namespace: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: tick=ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:latest
+    argocd-image-updater.argoproj.io/tick.update-strategy: digest
+    argocd-image-updater.argoproj.io/tick.allow-tags: regexp:^latest$
+    argocd-image-updater.argoproj.io/tick.helm.image-name: image.repository
+    argocd-image-updater.argoproj.io/tick.helm.image-tag: image.tag
+    argocd-image-updater.argoproj.io/tick.pull-secret: secret:argocd/argocd-image-updater-ghcr#credentials
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+    argocd-image-updater.argoproj.io/tick.force-update: "true"
+  labels:
+    image-updater/image: agentibrain-tick-engine
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+  - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+    # Tracking main while embeddings reaper feature lands; cut to v0.1.2
+    # tag once it's stable for ~1 week.
+    targetRevision: main
+    path: helm/brain-cron
+    helm:
+      valueFiles:
+      # brain-cron is a singleton in anton-ops — both dev and prod ArgoCD
+      # apps land the same resources, so a single env-less overlay applies.
+      - $values/k8s/values/agentibrain-brain-cron/values.yaml
+  - repoURL: https://github.com/The-Cloud-Clock-Work/antoncore.git
+    targetRevision: dev
+    ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: anton-ops
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
