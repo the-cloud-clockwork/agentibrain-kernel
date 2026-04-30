@@ -92,7 +92,7 @@ The kernel doesn't require dev/prod separation; the operator's reference setup d
 
 ## Local laptop install
 
-Use `brain init --local` (see `INSTALL-LOCAL.md`). The compose stack ships its own Postgres, Redis, MinIO. No K8s, no namespaces. The kernel runs in a single-environment mode.
+Use `./local/bootstrap.sh && docker compose up -d` from the repo root (see [`../local/README.md`](../local/README.md)). The compose stack ships its own Postgres, Redis, MinIO. No K8s, no namespaces. The kernel runs in a single-environment mode.
 
 ## Multi-tenant brain
 

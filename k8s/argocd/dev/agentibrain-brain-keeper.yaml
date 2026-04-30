@@ -39,7 +39,7 @@ spec:
               AGENTICORE_AGENTIHUB_PATH: /shared/agentibrain-kernel-hub
               AGENTICORE_AGENTIHOOKS_BUNDLE_URL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel
               AGENTICORE_AGENTIHOOKS_BUNDLE_PATH: /shared/agentibrain-kernel-bundle
-  - repoURL: https://github.com/The-Cloud-Clock-Work/antoncore.git
+  - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
     targetRevision: dev
     ref: values
   destination:
