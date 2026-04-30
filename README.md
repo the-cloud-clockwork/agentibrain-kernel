@@ -199,8 +199,11 @@ Scaffold is idempotent. Schema-version mismatch is a hard error unless `--force-
 | `KB_ROUTER_TOKEN` / `KB_ROUTER_TOKENS` | — | Bearer auth (single token or comma-sep list) |
 | `OBSIDIAN_READER_URL` | `http://obsidian-reader:8080` | Reader service URL |
 | `EMBEDDINGS_URL` | `http://embeddings:8080` | Embeddings service URL |
-| `INFERENCE_URL` | — | LLM proxy URL. Empty = deterministic-only ticks |
-| `LLM_API_KEY` | — | API key for embeddings + inference (optional) |
+| `INFERENCE_URL` | — | OpenAI-compatible LLM gateway. Empty = deterministic-only ticks. See [GATEWAY-CONTRACT.md](docs/GATEWAY-CONTRACT.md) |
+| `INFERENCE_API_KEY` | — | Bearer token for the inference gateway. Empty = no auth header (trusted-LAN ok) |
+| `BRAIN_CLASSIFY_MODEL` | `brain-classify` | Model name for kb-router classifier. See [brain-models.yaml](operator/brain-models.yaml) |
+| `BRAIN_BRIEF_MODEL` | `brain-brief` | Model name for kb_brief / tick synthesis |
+| `LLM_API_KEY` | — | API key for embeddings (optional) |
 | `FEED_CACHE_TTL_SECONDS` | `30` | `/feed` cache window |
 | `IDEMPOTENCY_TTL_SECONDS` | `3600` | `/marker` replay window |
 | `TICK_INTERVAL_SECONDS` | `7200` | Tick cadence (compose mode) |
