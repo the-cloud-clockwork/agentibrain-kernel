@@ -12,7 +12,7 @@ tpl:
     reloader.stakater.com/auto: "true"
   global:
     environment: dev
-    project: anton
+    project: agentibrain
   app:
     name: agentibrain-kb-router
     type: statefulset
@@ -93,8 +93,11 @@ tpl:
   # OpenBao / AWS SM / Vault flip `enabled: true` and point at their store.
   externalSecret:                                       # nosecret
     enabled: false                                      # nosecret
-    storeName: openbao                                  # nosecret
-    secretPath: k8s/agentibrain-router-dev              # nosecret
+    # storeName empty = chart-portable default. Operators set this in their
+    # overlay to whatever ClusterSecretStore name their cluster uses
+    # (e.g. "openbao", "aws-secrets", "vault", "akeyless").
+    storeName: ""                                       # nosecret
+    secretPath: ""                                      # nosecret
     targetSecretName: agentibrain-router-secrets        # nosecret
   # Vault mount — choose ONE of the two patterns:
   #
