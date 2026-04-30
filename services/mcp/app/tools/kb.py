@@ -1,10 +1,14 @@
 """Federated Knowledge Base retrieval tools.
 
 kb_search  - fan-out across agentibrain-embeddings (semantic) + agentibrain-obsidian-reader (text).
-kb_brief   - kb_search + LLM synthesis via inference-gateway, returns brief + candidate_refs.
+kb_brief   - kb_search + LLM synthesis via any OpenAI-compatible gateway, returns brief + candidate_refs.
 
 These tools are READ-ONLY. The kernel write surface (/feed /signal /marker /tick /ingest)
 is exposed by kb-router; for dispatch/build/converse see the antoncore artifact-store MCP.
+
+Inference contract: standard POST /v1/chat/completions with `Authorization: Bearer ${INFERENCE_API_KEY}`
+and `model: ${BRAIN_BRIEF_MODEL}`. Wire INFERENCE_URL at any OAI-compatible endpoint
+(LiteLLM proxy, OpenAI direct, Ollama, etc). See docs/GATEWAY-CONTRACT.md.
 """
 
 from __future__ import annotations
@@ -25,8 +29,9 @@ OBSIDIAN_READER_URL = os.getenv("OBSIDIAN_READER_URL", "http://agentibrain-obsid
 OBSIDIAN_READER_TOKEN = (
     os.environ.get("OBSIDIAN_READER_TOKEN") or ""
 )
-INFERENCE_URL = os.getenv("INFERENCE_URL", "http://10.10.30.130:8103")
-KB_BRIEF_ROUTE = os.getenv("KB_BRIEF_ROUTE", "kb-brief")
+INFERENCE_URL = os.getenv("INFERENCE_URL", "")
+INFERENCE_TOKEN_ENV = "INFERENCE_API_KEY"
+BRAIN_BRIEF_MODEL = os.getenv("BRAIN_BRIEF_MODEL", "brain-brief")
 
 
 async def _search_embeddings(query: str, limit: int, min_score: float) -> list[dict]:
@@ -105,12 +110,12 @@ async def _search_obsidian(query: str, limit: int) -> list[dict]:
         return []
 
 
-async def _inference_chat(system_prompt: str, user_prompt: str, route: str) -> str:
-    """Single-shot chat completion via inference-gateway with a named route."""
+async def _inference_chat(system_prompt: str, user_prompt: str, model: str) -> str:
+    """Single-shot chat completion via any OpenAI-compatible gateway."""
     if not INFERENCE_URL:
-        return "[inference-gateway not configured]"
+        return "[inference gateway not configured]"
     body = {
-        "route": route,
+        "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -118,12 +123,16 @@ async def _inference_chat(system_prompt: str, user_prompt: str, route: str) -> s
         "max_tokens": 800,
         "temperature": 0.3,
     }
+    headers = {"Content-Type": "application/json"}
+    token = os.environ.get(INFERENCE_TOKEN_ENV, "")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{INFERENCE_URL.rstrip('/')}/v1/chat/completions",
                 json=body,
-                headers={"Content-Type": "application/json"},
+                headers=headers,
                 timeout=aiohttp.ClientTimeout(total=200),
             ) as resp:
                 data = await resp.json()
@@ -196,7 +205,7 @@ def register(mcp: FastMCP):
     async def kb_brief(
         query: str,
         limit: int = 8,
-        route: str = "",
+        model: str = "",
     ) -> str:
         """Knowledge-base brief synthesizer. Runs kb_search, feeds hits to an LLM, returns 3-5 line synthesis.
 
@@ -206,7 +215,7 @@ def register(mcp: FastMCP):
         Args:
             query: Natural language or keyword query.
             limit: Max hits to feed to the LLM (default 8).
-            route: inference-gateway route name (default: KB_BRIEF_ROUTE env, 'kb-brief').
+            model: OpenAI-compatible model name to use (default: BRAIN_BRIEF_MODEL env, 'brain-brief').
         """
         raw = await kb_search(query=query, limit=limit)
         try:
@@ -242,15 +251,15 @@ def register(mcp: FastMCP):
         )
         user_prompt = f"Query: {query}\n\nSearch hits:\n{digest}"
 
-        chosen_route = route or KB_BRIEF_ROUTE
-        brief_content = await _inference_chat(system_prompt, user_prompt, chosen_route)
+        chosen_model = model or BRAIN_BRIEF_MODEL
+        brief_content = await _inference_chat(system_prompt, user_prompt, chosen_model)
         if not brief_content:
             return json.dumps({
                 "query": query,
                 "hits": hits,
                 "brief": "[LLM unavailable - returning raw hits]",
                 "candidate_refs": [f"{h.get('source')}://{h.get('ref')}" for h in hits[:3]],
-                "route": chosen_route,
+                "model": chosen_model,
             })
 
         candidate_refs: list[str] = []
@@ -273,5 +282,5 @@ def register(mcp: FastMCP):
             "hits": hits,
             "brief": brief_clean,
             "candidate_refs": candidate_refs,
-            "route": chosen_route,
+            "model": chosen_model,
         })

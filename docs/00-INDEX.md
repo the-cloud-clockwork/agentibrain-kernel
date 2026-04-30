@@ -10,8 +10,8 @@ The kernel is a brain + KB substrate for AI fleets. This index is the entry poin
 - [`VAULT-SCHEMA.md`](VAULT-SCHEMA.md) — folder layout v1, region semantics, schema marker.
 
 ## Install
-- [`INSTALL.md`](INSTALL.md) — kernel install reference, both compose and Kubernetes paths.
-- [`INSTALL-LOCAL.md`](INSTALL-LOCAL.md) — laptop walkthrough: `pip install agentibrain → brain init → brain up → brain scaffold`.
+- [`../local/README.md`](../local/README.md) — Docker Compose laptop path: `./local/bootstrap.sh && docker compose up -d`.
+- [`HELM-QUICKSTART.md`](HELM-QUICKSTART.md) — bare-cluster Helm install (no operator infra required). Pairs with `local/k8s-bootstrap.sh`.
 - [`DEPLOYMENT.md`](DEPLOYMENT.md) — Kubernetes deploy patterns (Helm, ArgoCD, env-split values).
 - [`ENVIRONMENTS.md`](ENVIRONMENTS.md) — dev / prod separation, what differs, the values-prod overlay pattern.
 

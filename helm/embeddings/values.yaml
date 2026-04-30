@@ -7,7 +7,7 @@ tpl:
     variables: null
   global:
     environment: dev
-    project: anton
+    project: agentibrain
   app:
     name: agentibrain-embeddings
     type: statefulset
@@ -66,10 +66,14 @@ tpl:
     create: false
   rbac:
     create: false
-  imagePullSecrets:
-  - ghcr-pull-secret
-  externalSecret:                              # nosecret
-    enabled: true                              # nosecret
-    storeName: openbao                         # nosecret
-    awsSecretPath: k8s/agentibrain-embeddings-dev   # nosecret
-    targetSecretName: embeddings-secrets       # nosecret
+  # ghcr.io images are public — pull secret only needed for forked private builds.
+  imagePullSecrets: []
+  # ExternalSecrets (ESO) — disabled by default. Operators with OpenBao /
+  # AWS SM / Vault flip enabled and point at their store. Without ESO, create
+  # the K8s Opaque Secret manually (POSTGRES_URL, LLM_API_KEY, LLM_API_BASE,
+  # LLM_EMBED_MODEL, EMBEDDINGS_API_KEYS) — see local/k8s-bootstrap.sh.
+  externalSecret:                                  # nosecret
+    enabled: false                                 # nosecret
+    storeName: ""                                  # nosecret
+    awsSecretPath: k8s/agentibrain-embeddings-dev  # nosecret
+    targetSecretName: embeddings-secrets           # nosecret
