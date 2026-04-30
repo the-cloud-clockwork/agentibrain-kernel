@@ -1,0 +1,9 @@
+# Operator overlay — agentibrain-obsidian-reader (anton-prod)
+# Layered on top of agentibrain-kernel/helm/obsidian-reader/values.yaml.
+# Source of truth for the chart itself: agentibrain-kernel @ tag v0.1.1.
+tpl:
+  global:
+    environment: prod
+  app:
+    image:
+      tag: latest

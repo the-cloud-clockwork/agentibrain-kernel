@@ -1,0 +1,61 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mcp-agentibrain
+  namespace: argocd
+  labels:
+    image-updater/image: mcp-agentibrain
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: mcp_agentibrain=ghcr.io/the-cloud-clock-work/agentibrain-mcp:dev
+    argocd-image-updater.argoproj.io/mcp_agentibrain.update-strategy: digest
+    argocd-image-updater.argoproj.io/mcp_agentibrain.allow-tags: "regexp:^dev$"
+    argocd-image-updater.argoproj.io/mcp_agentibrain.helm.image-name: tpl.app.image.repository
+    argocd-image-updater.argoproj.io/mcp_agentibrain.helm.image-tag: tpl.app.image.tag
+    argocd-image-updater.argoproj.io/mcp_agentibrain.pull-secret: secret:argocd/argocd-image-updater-ghcr#credentials
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+    argocd-image-updater.argoproj.io/mcp_agentibrain.force-update: "true"
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/The-Cloud-Clock-Work/antoncore.git
+    targetRevision: dev
+    path: k8s/charts/mcp-proxy
+    helm:
+      valuesObject:
+        tpl:
+          fullnameOverride: mcp-agentibrain
+          env:
+            variables:
+              EMBEDDINGS_URL: http://agentibrain-embeddings.anton-dev.svc:8080
+              OBSIDIAN_READER_URL: http://agentibrain-obsidian-reader.anton-dev.svc:8080
+              # KB tools call inference-gateway (not LiteLLM directly)
+              INFERENCE_URL: http://10.10.30.130:8103
+              KB_BRIEF_ROUTE: kb-brief
+          app:
+            name: mcp-agentibrain
+            image:
+              repository: ghcr.io/the-cloud-clock-work/agentibrain-mcp
+              tag: dev
+              pullPolicy: Always
+          secrets:
+            enabled: true
+            external:
+              enabled: true
+              secretName: mcps-secrets
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: anton-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

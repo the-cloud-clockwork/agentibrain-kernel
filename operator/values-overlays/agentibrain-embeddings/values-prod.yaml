@@ -1,0 +1,14 @@
+tpl:
+  global:
+    environment: prod
+  app:
+    image:
+      tag: latest
+  externalSecret:                              # nosecret
+    awsSecretPath: k8s/agentibrain-embeddings  # nosecret
+  # Reclaim the legacy 10.10.30.203 MetalLB IP so the docker artifact-store
+  # on Anton can keep the same EMBEDDINGS_URL and the alias svc shell goes away.
+  service:
+    type: LoadBalancer
+    annotations:
+      metallb.universe.tf/loadBalancerIPs: "10.10.30.203"

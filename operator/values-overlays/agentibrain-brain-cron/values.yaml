@@ -1,0 +1,49 @@
+# Prod override for the brain-cron (tick CronJob + amygdala Deployment).
+# anton-ops is cluster-wide, so the same values overlay drives both dev and
+# prod ArgoCD apps targeting this chart — keep it minimal.
+image:
+  tag: latest
+
+env:
+  INFERENCE_URL: "http://10.10.30.130:8103"
+  # Match antoncore's existing anton:events:* stream namespace so the kernel
+  # amygdala consumes the operator's event bus.
+  AMYGDALA_STREAMS: "anton:events:health,anton:events:host,anton:events:deploy,anton:events:system,anton:events:brain"
+  AMYGDALA_CONSUMER: "agentibrain-amygdala"
+  # Embeddings reaper — embed_arcs.py runs after each tick and prunes
+  # pgvector rows whose source arc has graduated/merged/been deleted.
+  # API key comes from the additional secret ref below.
+  EMBEDDINGS_URL: "http://agentibrain-embeddings.anton-dev.svc:8080"
+  # Self-healing knobs (services/tick-engine/brain_keeper.py).
+  # Decay 2/2 was burning arcs in 4 days — promote could never fire.
+  # Softened to 7/4 so an active arc stays hot for ~2 weeks.
+  BRAIN_STALE_SIGNAL_DAYS: "1"
+  BRAIN_DECAY_START_DAYS: "7"
+  BRAIN_DECAY_INTERVAL_DAYS: "4"
+  # Heat thresholds — empirical max heat under the recompute formula is 3
+  # (most arcs lack rich `signals: {tools, joy}` frontmatter, so the
+  # heat formula floors low). Promote=3 promotes any arc that is recent
+  # AND active. Tune up later when frontmatter signals are richer.
+  BRAIN_PROMOTE_HEAT: "3"
+  BRAIN_DEMOTE_HEAT: "2"
+  BRAIN_GRADUATE_HEAT: "1"
+  BRAIN_GRADUATE_AGE_DAYS: "14"
+
+# ops-runner-secrets (REDIS_URL, NTFY_URL, OPENAI_API_KEY, etc.) already in
+# anton-ops. Same secret the existing brain-cron uses.
+secretRef: ops-runner-secrets
+
+# Additional secrets envFrom'd alongside ops-runner-secrets. Use these for
+# credentials that don't belong in the ops grab-bag — e.g. embeddings reaper
+# auth, mirrored from secret/k8s/agentibrain-router-dev via ExternalSecret
+# (k8s/manifests/ops/agentibrain-embed-creds-external-secret.yaml).
+additionalSecretRefs:
+  - agentibrain-embed-creds
+
+# NFS-backed vault + shared mounts (operator-specific).
+nfsVault:
+  server: 10.10.30.130
+  path: /mnt/user/appdata/obsidian/vault
+nfsShared:
+  server: 10.10.30.130
+  path: /mnt/user/appdata/agenticore/shared

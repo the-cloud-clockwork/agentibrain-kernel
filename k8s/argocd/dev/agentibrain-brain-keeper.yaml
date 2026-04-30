@@ -1,0 +1,59 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentibrain-brain-keeper
+  namespace: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: agenticore=ghcr.io/the-cloud-clock-work/agenticore:dev
+    argocd-image-updater.argoproj.io/agenticore.update-strategy: digest
+    argocd-image-updater.argoproj.io/agenticore.allow-tags: regexp:^dev$
+    argocd-image-updater.argoproj.io/agenticore.helm.image-name: tpl.app.image.repository
+    argocd-image-updater.argoproj.io/agenticore.helm.image-tag: tpl.app.image.tag
+    argocd-image-updater.argoproj.io/agenticore.pull-secret: secret:argocd/argocd-image-updater-ghcr#credentials
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+    argocd-image-updater.argoproj.io/agenticore.force-update: "true"
+  labels:
+    image-updater/image: agenticore
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+  - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+    targetRevision: v0.1.1
+    path: helm/brain-keeper
+    helm:
+      valuesObject:
+        tpl:
+          fullnameOverride: agentibrain-brain-keeper
+          app:
+            image:
+              tag: dev
+          env:
+            variables:
+              # Brain registries — kernel owns brain-keeper agent + profile.
+              # Use isolated paths so we don't clobber the namespace's shared
+              # /shared/agentihub used by publisher / agenticore / etc. (those
+              # still pull the generic agentihub).
+              AGENTICORE_AGENTIHUB_URL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel
+              AGENTICORE_AGENTIHUB_PATH: /shared/agentibrain-kernel-hub
+              AGENTICORE_AGENTIHOOKS_BUNDLE_URL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel
+              AGENTICORE_AGENTIHOOKS_BUNDLE_PATH: /shared/agentibrain-kernel-bundle
+  - repoURL: https://github.com/The-Cloud-Clock-Work/antoncore.git
+    targetRevision: dev
+    ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: anton-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
