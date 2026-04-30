@@ -5,7 +5,12 @@ image:
   tag: latest
 
 env:
-  INFERENCE_URL: "http://10.10.30.130:8103"
+  # Brain-blind LLM gateway — LiteLLM speaks standard OpenAI chat-completions
+  # and resolves brain-classify / brain-brief into claude-max-haiku /
+  # claude-max-sonnet via auth-broker. The brain code now POSTs `model:
+  # brain-brief` instead of the legacy inference-gateway `route` field.
+  INFERENCE_URL: "http://litellm.anton-dev.svc:4000"
+  BRAIN_BRIEF_MODEL: "brain-brief"
   # Match antoncore's existing anton:events:* stream namespace so the kernel
   # amygdala consumes the operator's event bus.
   AMYGDALA_STREAMS: "anton:events:health,anton:events:host,anton:events:deploy,anton:events:system,anton:events:brain"
@@ -33,12 +38,13 @@ env:
 # anton-ops. Same secret the existing brain-cron uses.
 secretRef: ops-runner-secrets
 
-# Additional secrets envFrom'd alongside ops-runner-secrets. Use these for
-# credentials that don't belong in the ops grab-bag — e.g. embeddings reaper
-# auth, mirrored from secret/k8s/agentibrain-router-dev via ExternalSecret
-# (k8s/manifests/ops/agentibrain-embed-creds-external-secret.yaml).
+# Additional secrets envFrom'd alongside ops-runner-secrets. brain-inference-secrets
+# carries INFERENCE_API_KEY (brain-inference virtual key, written by litellm-state
+# CI from secret/k8s/brain-inference) AND EMBEDDINGS_API_KEY (embeddings reaper auth,
+# mirrored from secret/k8s/agentibrain-router-dev). Manifest:
+# antoncore/k8s/manifests/ops/brain-inference-external-secret.yaml.
 additionalSecretRefs:
-  - agentibrain-embed-creds
+  - brain-inference-secrets
 
 # NFS-backed vault + shared mounts (operator-specific).
 nfsVault:

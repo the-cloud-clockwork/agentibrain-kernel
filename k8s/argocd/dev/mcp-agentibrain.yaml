@@ -33,9 +33,13 @@ spec:
             variables:
               EMBEDDINGS_URL: http://agentibrain-embeddings.anton-dev.svc:8080
               OBSIDIAN_READER_URL: http://agentibrain-obsidian-reader.anton-dev.svc:8080
-              # KB tools call inference-gateway (not LiteLLM directly)
-              INFERENCE_URL: http://10.10.30.130:8103
-              KB_BRIEF_ROUTE: kb-brief
+              # Brain-blind LLM gateway — LiteLLM resolves brain-classify /
+              # brain-brief into claude-max-haiku / claude-max-sonnet via
+              # auth-broker. The kb_brief MCP tool POSTs `model: brain-brief`
+              # standard OpenAI chat-completions; INFERENCE_API_KEY is mounted
+              # via the mcps-secrets envFrom (k8s/manifests/dev/mcps/).
+              INFERENCE_URL: http://litellm.anton-dev.svc:4000
+              BRAIN_BRIEF_MODEL: brain-brief
           app:
             name: mcp-agentibrain
             image:

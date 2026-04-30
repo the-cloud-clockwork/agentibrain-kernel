@@ -10,7 +10,8 @@ services:
       - ARTIFACT_STORE_URL=${ARTIFACT_STORE_URL:-http://artifact-store:8080}
       - OBSIDIAN_READER_URL=${OBSIDIAN_READER_URL:-http://obsidian-reader:8080}
       - INFERENCE_URL=${INFERENCE_URL:-}
-      - INGEST_ROUTER_ROUTE=${INGEST_ROUTER_ROUTE:-kb-router-classify}
+      - INFERENCE_API_KEY=${INFERENCE_API_KEY:-}
+      - BRAIN_CLASSIFY_MODEL=${BRAIN_CLASSIFY_MODEL:-brain-classify}
       - LOCAL_READ_ROOTS=${LOCAL_READ_ROOTS:-/workspace,/mnt/ingest}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - KB_ROUTER_TOKEN=${KB_ROUTER_TOKEN:-}

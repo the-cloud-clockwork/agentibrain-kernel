@@ -54,9 +54,10 @@ tpl:
       # have an artifact-store and an inference-gateway in the same cluster.
       ARTIFACT_STORE_URL: ""
       INFERENCE_URL: ""
-      # LLM classifier route name. Override if your inference-gateway uses
-      # a different route alias (or leave default for the kernel reference).
-      INGEST_ROUTER_ROUTE: kb-router-classify
+      # Brain LLM model name (standard OpenAI `model` field). The kernel ships
+      # `brain-classify` as the canonical name — wire your gateway to alias it
+      # at whatever underlying model you want. See docs/GATEWAY-CONTRACT.md.
+      BRAIN_CLASSIFY_MODEL: brain-classify
       VAULT_ROOT: /vault
       LOG_LEVEL: INFO
   secrets:
