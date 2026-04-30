@@ -4,8 +4,13 @@ tpl:
   app:
     image:
       tag: latest
+  # ESO is enabled here because chart default is `false` (kernel portability,
+  # 2026-04-30) — operators with OpenBao flip it on in their overlay.
   externalSecret:                              # nosecret
+    enabled: true                              # nosecret
+    storeName: openbao                         # nosecret
     awsSecretPath: k8s/agentibrain-embeddings  # nosecret
+    targetSecretName: embeddings-secrets       # nosecret
   # Reclaim the legacy 10.10.30.203 MetalLB IP so the docker artifact-store
   # on Anton can keep the same EMBEDDINGS_URL and the alias svc shell goes away.
   service:
