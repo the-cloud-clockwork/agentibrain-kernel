@@ -18,3 +18,12 @@ tpl:
     storeName: openbao                             # nosecret
     secretPath: k8s/agentibrain-router-dev         # nosecret
     targetSecretName: agentibrain-router-secrets   # nosecret
+  # Operator's vault — NFS-backed on Anton's Unraid filer.
+  extraVolumes:
+    - name: nfs-vault
+      nfs:
+        server: 10.10.30.130
+        path: /mnt/user/appdata/obsidian/vault
+  extraVolumeMounts:
+    - name: nfs-vault
+      mountPath: /vault
