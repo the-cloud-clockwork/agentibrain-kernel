@@ -22,7 +22,7 @@ spec:
   - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
     targetRevision: v0.1.1
     path: helm/obsidian-reader
-  - repoURL: https://github.com/The-Cloud-Clock-Work/antoncore.git
+  - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
     targetRevision: dev
     ref: values
   destination:

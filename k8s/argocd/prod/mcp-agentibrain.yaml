@@ -19,7 +19,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/The-Cloud-Clock-Work/antoncore.git
+    repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
     targetRevision: main
     path: k8s/charts/mcp-proxy
     helm:

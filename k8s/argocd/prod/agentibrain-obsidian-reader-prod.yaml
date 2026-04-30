@@ -24,8 +24,8 @@ spec:
     path: helm/obsidian-reader
     helm:
       valueFiles:
-      - $values/k8s/values/agentibrain-obsidian-reader/values-prod.yaml
-  - repoURL: https://github.com/The-Cloud-Clock-Work/antoncore.git
+      - $values/operator/values-overlays/agentibrain-obsidian-reader/values-prod.yaml
+  - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
     targetRevision: main
     ref: values
   destination:

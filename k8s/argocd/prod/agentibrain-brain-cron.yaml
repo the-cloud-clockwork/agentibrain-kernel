@@ -30,8 +30,8 @@ spec:
       valueFiles:
       # brain-cron is a singleton in anton-ops — both dev and prod ArgoCD
       # apps land the same resources, so a single env-less overlay applies.
-      - $values/k8s/values/agentibrain-brain-cron/values.yaml
-  - repoURL: https://github.com/The-Cloud-Clock-Work/antoncore.git
+      - $values/operator/values-overlays/agentibrain-brain-cron/values.yaml
+  - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
     targetRevision: main
     ref: values
   destination:
