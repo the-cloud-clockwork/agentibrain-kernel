@@ -60,6 +60,20 @@ tpl:
           port: 8200
         periodSeconds: 10
   env:
+    # Per-pod agentihooks state directory. POD_NAME via Downward API,
+    # AGENTIHOOKS_HOME interpolates it. agentihooks resolves all state
+    # (state.json, sync hashes, session caches, sync-daemon PIDs) under
+    # this path. Without it, kubectl-exec shells default to
+    # ~/.agentihooks/ (empty) and `agentihooks --query` prints
+    # "not installed" even though the agenticore process wrote state to
+    # /shared/.agentihooks-<pod>/.
+    extra:
+    - name: POD_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.name
+    - name: AGENTIHOOKS_HOME
+      value: "/shared/.agentihooks-$(POD_NAME)"
     variables:
       # Agenticore runtime flags
       AGENT_MODE: 'true'
