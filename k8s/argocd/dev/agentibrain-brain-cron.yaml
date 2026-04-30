@@ -20,9 +20,9 @@ spec:
   project: default
   sources:
   - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
-    # Tracking main while embeddings reaper feature lands; cut to v0.1.2
-    # tag once it's stable for ~1 week.
-    targetRevision: main
+    # Same repo, same revision as the $values ref below — ArgoCD multi-source
+    # rejects same-repo-different-revision. dev app tracks dev branch.
+    targetRevision: dev
     path: helm/brain-cron
     helm:
       valueFiles:

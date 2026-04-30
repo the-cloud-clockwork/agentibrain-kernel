@@ -20,7 +20,7 @@ spec:
   project: default
   sources:
   - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
-    targetRevision: v0.1.1
+    targetRevision: dev
     path: helm/brain-keeper
     helm:
       valuesObject:
