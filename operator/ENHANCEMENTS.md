@@ -3,12 +3,15 @@ id: agentibrain-kernel-enhancements
 title: agentibrain-kernel — Enhancements (Tier 3-5)
 project: agentibrain-kernel
 status: backlog
-updated: 2026-04-22
+updated: 2026-04-30
 ---
 
-# agentibrain-kernel — Enhancements (60% → 100%)
+# agentibrain-kernel — Enhancements (Tier 3-5)
 
-Tier 1+2 live in `BLOCKS.md`. This file tracks the 14 items beyond dev+prod parity.
+Tier 1+2 (dev+prod parity) live in `BLOCKS.md`. This file tracks the 14 items beyond
+parity. As of 2026-04-30: dev cutover complete (kernel decoupled from antoncore,
+operator-side overlays + ArgoCD apps lifted into antoncore). Prod cutover gated
+on dev→main merge — see Block 1D + Block 2.
 
 ## Tier 3 — External adoption (friend-install story)
 
