@@ -1,12 +1,13 @@
-# Operator overlay — agentibrain-obsidian-reader (anton-prod)
+# Operator overlay — agentibrain-obsidian-reader (anton-dev)
 # Layered on top of agentibrain-kernel/helm/obsidian-reader/values.yaml.
 tpl:
   global:
-    environment: prod
+    environment: dev
   app:
     image:
       tag: latest
-  # Operator's vault — NFS-backed on Anton's Unraid filer.
+  # Operator's vault — NFS-backed on Anton's Unraid filer (same vault as prod;
+  # both envs read the operator's single Obsidian source of truth).
   extraVolumes:
     - name: nfs-vault
       nfs:

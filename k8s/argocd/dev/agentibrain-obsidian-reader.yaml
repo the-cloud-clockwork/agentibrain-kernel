@@ -22,6 +22,9 @@ spec:
   - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
     targetRevision: dev
     path: helm/obsidian-reader
+    helm:
+      valueFiles:
+        - $values/operator/values-overlays/agentibrain-obsidian-reader/values-dev.yaml
   - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
     targetRevision: dev
     ref: values
