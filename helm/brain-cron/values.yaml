@@ -124,8 +124,8 @@ backoffLimit: 1
 activeDeadlineSeconds: 600
 restartPolicy: OnFailure
 
-imagePullSecrets:
-  - ghcr-pull-secret
+# ghcr.io images are public — pull secret only needed for forked private builds.
+imagePullSecrets: []
 
 # Amygdala continuous consumer (Deployment). Reads Redis stream for emergency signals.
 amygdala:
