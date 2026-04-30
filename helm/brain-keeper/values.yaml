@@ -95,9 +95,16 @@ tpl:
       AGENTICORE_JOBS_DIR: /shared/job-state
       HOME: /shared
       # agentihooks + agentihub sync (canonical sources for the brain profile + keeper agent)
+      # Branch defaults to dev — agenticore needs BOTH URL+BRANCH to clone the
+      # editable overlay; otherwise it falls back to PyPI which lags the dev tip
+      # (e.g. PyPI 1.10.0 lacks the `init --force` flag agenticore boot relies on).
+      # Prod overlays should override these to `main`.
       AGENTICORE_AGENTIHOOKS_URL: https://github.com/The-Cloud-Clock-Work/agentihooks
+      AGENTICORE_AGENTIHOOKS_BRANCH: dev
       AGENTICORE_AGENTIHOOKS_BUNDLE_URL: https://github.com/The-Cloud-Clock-Work/agentihooks-bundle
+      AGENTICORE_AGENTIHOOKS_BUNDLE_BRANCH: dev
       AGENTICORE_AGENTIHUB_URL: https://github.com/The-Cloud-Clock-Work/agentihub
+      AGENTICORE_AGENTIHUB_BRANCH: dev
       AGENTICORE_AGENTIHOOKS_SYNC_INTERVAL: '30'
       AGENTICORE_AGENTIHOOKS_BUNDLE_SYNC_INTERVAL: '30'
       AGENTICORE_AGENTIHUB_SYNC_INTERVAL: '30'
