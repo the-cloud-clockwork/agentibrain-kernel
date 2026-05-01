@@ -4,6 +4,6 @@ description: Embeddings service — agentibrain-kernel image, pgvector storage
 version: 0.1.1
 dependencies:
   - name: tccw-k8s-service-template
-    version: "0.3.4"
+    version: "0.3.6"
     repository: "oci://ghcr.io/the-cloud-clock-work"
     alias: tpl
