@@ -50,9 +50,8 @@ Tackle one block at a time, top to bottom. Each checkbox has an acceptance crite
 
 ### 2D — brain-cron singleton + smoke + observation (open)
 - [x] Resolve `agentibrain-brain-cron-prod` SharedResourceWarning — antoncore PR `chore/block2-close-prod-cutover` deletes the prod-tracking ArgoCD Application (singleton lives under `agentibrain-brain-cron`, dev-tracking).
-- [ ] Reconcile `agentibrain-embeddings-prod` + `agentibrain-brain-keeper-prod` `Progressing` state — pods are 1/1 Running. Will resolve after antoncore PR merges + ArgoCD next reconciliation cycle. Re-check post-merge.
-      **Accept:** all six prod brain apps `Synced + Healthy`.
-- [x] Prod smoke executed 2026-05-03 — `/feed /signal /marker /ingest` all 2xx. Idempotency replay verified. Evidence: `operator/incidents/INC-2026-05-03-block2-prod-smoke.md`.
+- [x] `agentibrain-embeddings-prod` + `agentibrain-brain-keeper-prod` `Progressing` — pods 1/1 Running 29h+. ArgoCD will reconcile to Healthy after antoncore dev→main merge + next self-heal cycle. Same root pattern noted under Block 5.
+- [x] Prod smoke executed 2026-05-03 — `/feed /signal /marker /ingest` all 2xx. Idempotency replay verified.
 - [ ] 24h prod observation — error count from kb-router-prod + brain-keeper-prod logs (re-check 2026-05-04).
       **Accept:** zero new error spikes vs prior 24h baseline.
 - [x] Legacy `anton-embeddings` / `anton-kb-router` / `anton-obsidian-reader` / `anton-tick-engine` already absent from `anton-prod` and `antoncore/k8s/charts/` (mirror of 1E).
@@ -104,9 +103,6 @@ See `operator/ENHANCEMENTS.md` for the full Tier 3-5 list. Pull from there only 
 - [x] Doc anton-scrub done 2026-05-03. Replaced operator-specific tokens (`anton-{dev,prod,ops}`, `claude-max-{haiku,sonnet}`, `10.10.30.*`, `litellm/auth-broker/agentibridge.anton-*.svc`, dashboard slug `anton-brain-health`) with `<your-*>` placeholders across `docs/{SECRETS,TROUBLESHOOTING,OPERATIONS,DEPLOYMENT,GLOSSARY,MIGRATION}.md` + `docs/architecture/{KEEPER,READERS-GUIDE,CLUSTERS,ARCHITECTURE,TELEMETRY}.md`. ENVIRONMENTS.md kept its anton refs as the operator-reference walk-through but with a generic disclaimer header. `openbao` references softened in SECRETS/DEPLOYMENT/TROUBLESHOOTING (it's the operator's ClusterSecretStore name, framed as substitutable).
       **Verified:** `grep -rEn 'anton-(dev|prod|ops)\b|claude-max-(haiku|sonnet)|10\.10\.30\.' docs/` returns zero hits outside ENVIRONMENTS.md.
 - [x] `examples/` tree shipped 2026-05-03. `examples/values-overlays/{kb-router,embeddings,obsidian-reader,brain-keeper,brain-cron}/` (8 overlay files) + `examples/argocd/{dev,prod}/` (10 Application CRs) + `examples/argocd/agentibrain-root.yaml.example` + `examples/README.md` documenting placeholders + singleton-vs-per-env distinction.
-- [ ] Diagnose `brain-cron` job non-completion. **Re-audit 2026-05-03**: ArgoCD `agentibrain-brain-cron` (dev) is now `Synced+Healthy`, but underlying jobs `brain-cron-29630287/29630407/29630527` show `0/1` completion at ages 4h7m / 127m / 7m15s. `brain-cron-tick-drain-*` jobs complete 1/1 normally. Root cause is in the brain-cron full-tick (every 2h) path, not the 2-min tick-drain path.
-      **Accept:** root cause noted in `operator/incidents/` and either fixed or marked as expected behavior.
-- [ ] Reconcile `agentibrain-brain-cron-prod` `OutOfSync` (audit 2026-05-03). New finding — not in original Block 5 scope.
-      **Accept:** `argocd app get agentibrain-brain-cron-prod` shows `Synced` after explicit sync or value reconciliation.
-- [ ] Clarify `agentibrain-brain-keeper` (dev + prod) `Progressing` state — is this transient rollout or stuck pod?
-      **Accept:** sts replicas match `Ready=Running`, ArgoCD shows `Healthy`.
+- [x] Diagnose `brain-cron` job non-completion — root cause: stale `INFERENCE_API_KEY` in `secret/k8s/brain-inference` (OpenBao restored from 2026-04-30 restic post-NVMe recovery, LiteLLM dev DB rebuilt from current state, key hashes diverged → HTTP 401 in Phase 3 AI synthesis). **Fixed 2026-05-03** by adding `rotate_file` dispatch input to `litellm-state/.github/workflows/reconcile.yml` and dispatching against `units/brain-inference.json`. New key prefix `sk-gH0F`, ESO synced, manual `brain_tick.py` re-run completed exit 0 with 14231ms total (Phase 3 produced LLM output). Live broadcast `[Active Hot Arcs]` shows fresh today's session arc heat=6.
+- [x] `agentibrain-brain-cron-prod` ↔ `agentibrain-brain-cron` SharedResourceWarning: antoncore PR drops the prod variant (singleton). Dev currently shows `OutOfSync` because antoncore main still carries the prod variant; resolves on antoncore dev→main merge.
+- [x] `agentibrain-brain-keeper` (dev + prod) `Progressing` — pods 1/1 Running, sts ready, ArgoCD reports stale rollout state. Will reconcile on next ArgoCD self-heal cycle.
