@@ -18,10 +18,10 @@ This repo owns:
 
 ## What this repo does NOT own
 
-- `artifact-store` / `artifact-transform` — general storage plane, stays in antoncore
+- `artifact-store` / `artifact-transform` — general storage plane, lives in your downstream platform repo
 - Generic Claude Code hooks — those live in `agentihooks` (this kernel exposes HTTP, hooks talk to it)
 - `broadcast.py` / `channels.py` — fleet coordination, stays in agentihooks
-- Deployment values files, OpenBao secrets, operator-specific paths — stay in antoncore
+- Deployment values files, secret-store paths, operator-specific paths — stay in your downstream platform repo
 
 ## Core principle
 
@@ -38,14 +38,15 @@ not edit it manually. The runtime version lives in `agentibrain/__init__.py`
 
 ## Working model
 
-Normal dev-first flow:
-- Feature work on a feature branch → PR to `main` → operator merges.
-- `main` is the canonical trunk (this repo doesn't run a separate `dev` branch yet).
+Dev-first flow:
+- Work on `dev` → PR to `main` → merge.
+- `main` is the release trunk; CI publishes `:latest` images on every merge.
+- `dev` carries the in-flight changes; CI publishes `:dev` images on every push.
 - Image builds go to `ghcr.io/the-cloud-clock-work/agentibrain-*`.
 
 ## Downstream consumers
 
-- `antoncore` — operator's live deployment. Uses the kernel's Helm charts with operator-specific values.
+- Downstream platform repos — use the kernel's Helm charts with environment-specific values.
 - `agentihub` — clones `agents/brain-keeper/` at install time.
 - `agentihooks-bundle` — clones `profiles/brain/` and `profiles/brain-keeper/` at install time.
-- Friends / external users — `pip install agentibrain` → `brain init --local`.
+- External users — `pip install agentibrain` → `brain init --local`.
