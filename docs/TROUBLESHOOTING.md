@@ -125,7 +125,7 @@ If suspended: `kubectl -n <your-ops-namespace> patch cronjob agentibrain-brain-c
 
 **Fix:** rename one. Convention: prod CRs end with `-prod` suffix. Dev CRs use the un-suffixed name.
 
-This is the bug from the 2026-04-24 prod cutover — see `MIGRATION.md`.
+See `MIGRATION.md` for the cutover-time variant of this bug.
 
 ---
 
@@ -152,8 +152,8 @@ This is the bug from the 2026-04-24 prod cutover — see `MIGRATION.md`.
 ```bash
 NS=<your-namespace>
 kubectl -n $NS exec agentibrain-embeddings-0 -- env | grep POSTGRES_URL | head -c 60
-ssh anton "docker exec dataplane_postgres psql -U embeddings -d embeddings -c 'SELECT 1;'"
-ssh anton "docker exec dataplane_postgres psql -U embeddings -d embeddings -c '\\dx vector'"
+ssh <your-postgres-host> "docker exec <postgres-container> psql -U embeddings -d embeddings -c 'SELECT 1;'"
+ssh <your-postgres-host> "docker exec <postgres-container> psql -U embeddings -d embeddings -c '\\dx vector'"
 ```
 
 ---
@@ -166,9 +166,9 @@ ssh anton "docker exec dataplane_postgres psql -U embeddings -d embeddings -c '\
 
 **Fix:**
 ```bash
-ssh anton "ls /mnt/user/appdata/obsidian/vault/amygdala/"
+ssh <your-vault-host> "ls <your-vault-path>/amygdala/"
 # remove the resolved signal file:
-ssh anton "rm /mnt/user/appdata/obsidian/vault/amygdala/<filename>.md"
+ssh <your-vault-host> "rm <your-vault-path>/amygdala/<filename>.md"
 # next /feed will refresh
 ```
 
@@ -226,7 +226,7 @@ kubectl -n argocd patch app <app-name> --type=merge \
 
 ## 15. <your-cluster-ip>:8080/health timing out
 
-**Symptom:** docker artifact-store on Anton can't reach embeddings.
+**Symptom:** an external docker consumer can't reach embeddings on its LoadBalancer IP.
 
 **Root cause:** `agentibrain-embeddings` Service either lost its LoadBalancer type or the MetalLB binding broke.
 

@@ -9,7 +9,7 @@
 
 ## Executive verdict
 
-**The nervous system is ALIVE and auditable.** The operator can dispatch brain-keeper from any interface (Telegram via anton-agent → AgentiBridge → brain-keeper, or direct LiteLLM `model: brain-keeper`, or `run_agent` from another session) and receive a structured markdown + CSV report that auto-mirrors to Google Drive within 60 seconds as a native Google Doc + Google Sheet. The reports are readable from a phone, sortable chronologically by filename (`brain-report-YYYY-MM-DD-HHMM.{md,csv}`), and brain-keeper itself can audit its own environment and flag misconfigurations the operator made.
+**The nervous system is ALIVE and auditable.** The operator can dispatch brain-keeper from any interface (Telegram via a router agent → AgentiBridge → brain-keeper, or direct LiteLLM `model: brain-keeper`, or `run_agent` from another session) and receive a structured markdown + CSV report that auto-mirrors to Google Drive within 60 seconds as a native Google Doc + Google Sheet. The reports are readable from a phone, sortable chronologically by filename (`brain-report-YYYY-MM-DD-HHMM.{md,csv}`), and brain-keeper itself can audit its own environment and flag misconfigurations the operator made.
 
 That closed loop — dispatch → audit → artifact → operator read → apply recommendations — is the 70%. The remaining 30% is polish, resilience, and self-flagged follow-ups.
 
@@ -36,7 +36,7 @@ That closed loop — dispatch → audit → artifact → operator read → apply
 
 - **Dispatch surface:** LiteLLM `POST /v1/chat/completions` with `model: brain-keeper` OR AgentiBridge `run_agent(brain-keeper-0, task)`.
 - **Command surface:** `tick`, `test`, `triage`, `enrich <arc>`, `replay <arc> --to <target>`, `extract clusters`, `dashboard`. Free-form prompts interpreted loosely.
-- **Report pipeline:** Markdown + CSV → artifact-store REST PUT → S3 (`anton-artifacts-prod/miscellaneous/brain-keeper/`) → drive-sync Lambda → Google Drive (`misc/brain-keeper/`) → auto-convert `.md → Google Doc` and `.csv → Google Sheet`.
+- **Report pipeline:** Markdown + CSV → artifact-store REST PUT → S3 (`<your-artifacts-bucket>/miscellaneous/brain-keeper/`) → drive-sync Lambda → Google Drive (`misc/brain-keeper/`) → auto-convert `.md → Google Doc` and `.csv → Google Sheet`.
 - **Timestamped naming:** `brain-report-YYYY-MM-DD-HHMM.{md,csv}` (UTC minute granularity). Chronologically sortable in Drive.
 - **Self-audit:** brain-keeper queries its own environment via ClickHouse, writes a 6-region report (Frontal/Amygdala/Broadcast/Hippocampus/Pineal/Hook Observability), emits PASS/WARN/FAIL per check, recommends fixes.
 - **Cost per run:** ~$0.15 (Sonnet 4.6, ~40 seconds wall time). Opus target would increase this 3-5×.
