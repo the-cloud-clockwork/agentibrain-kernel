@@ -144,7 +144,7 @@ The existing vision (`operator/references/OBSIDIAN-BRAIN.md`) defines `left/`, `
 | `nuclear` | All agents pause current work immediately and wait for operator ack. Production deploy failure, suspected compromise, credential exposure, full-cluster outage. Boom, and all of them boom boom shut down. |
 
 **Auto-firing signal sources**:
-- Production incidents: ArgoCD prod sync failures, CrashLoopBackOff on `anton-prod`, k8s node NotReady
+- Production incidents: ArgoCD prod sync failures, CrashLoopBackOff on `<your-namespace>`, k8s node NotReady
 - Supply chain attacks (e.g. LiteLLM v1.82.7 PyPI malware)
 - Credentials in context (accidental plaintext in any agent turn)
 - Burn-rate alarms, quota overruns (LiteLLM `/spend/logs` clustered 429s)

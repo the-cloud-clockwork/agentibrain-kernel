@@ -12,7 +12,7 @@ Top failure modes, ordered by how often they bite. Each entry: symptom, root cau
 
 **Fix:**
 ```bash
-NS=anton-prod
+NS=<your-namespace>
 kubectl -n $NS get pod -l 'app.kubernetes.io/instance=agentibrain-kb-router-prod'
 kubectl -n $NS get svc agentibrain-kb-router
 kubectl -n $NS exec <agent-pod> -- env | grep BRAIN_URL
@@ -31,11 +31,11 @@ kubectl -n $NS exec <agent-pod> -- env | grep BRAIN_URL
 **Fix:**
 ```bash
 # what kb-router expects
-kubectl -n anton-prod get secret agentibrain-router-secrets \
+kubectl -n <your-namespace> get secret agentibrain-router-secrets \
   -o jsonpath='{.data.KB_ROUTER_TOKEN}' | base64 -d | head -c 12
 
 # what the agent has
-kubectl -n anton-prod exec <agent-pod> -- sh -c 'echo "$KB_ROUTER_TOKEN" | head -c 12'
+kubectl -n <your-namespace> exec <agent-pod> -- sh -c 'echo "$KB_ROUTER_TOKEN" | head -c 12'
 ```
 If they don't match, restart the agent pod after fixing the chart values, OR update `agentibrain-router-secrets` to match what the chart deployed.
 
@@ -53,10 +53,10 @@ If they don't match, restart the agent pod after fixing the chart values, OR upd
 **Fix:**
 ```bash
 # describe shows the actual error
-kubectl -n anton-prod describe externalsecret embeddings-secrets | grep -E "Reason|Message" | head
+kubectl -n <your-namespace> describe externalsecret embeddings-secrets | grep -E "Reason|Message" | head
 
 # verify OpenBao path
-docker exec paramstore_openbao bao kv get secret/k8s/embeddings
+docker exec <your-secret-store-container> bao kv get secret/k8s/embeddings
 
 # check ESO auth
 kubectl -n external-secrets logs deploy/external-secrets --tail=50 | grep -i auth
@@ -72,7 +72,7 @@ kubectl -n external-secrets logs deploy/external-secrets --tail=50 | grep -i aut
 
 **Fix:**
 ```bash
-NS=anton-prod
+NS=<your-namespace>
 kubectl -n $NS describe pod <pod-name> | grep -E "Warning|Error" | head
 kubectl -n $NS get secret embeddings-secrets
 # if missing:
@@ -86,15 +86,15 @@ The Reloader controller (if installed) does this automatically.
 
 ## 5. tick-drain Job pods all "Failed"
 
-**Symptom:** `kubectl -n anton-ops get jobs | grep tick-drain` shows recent jobs as Failed.
+**Symptom:** `kubectl -n <your-ops-namespace> get jobs | grep tick-drain` shows recent jobs as Failed.
 
 **Root cause:** the tick-engine image is missing a Python module (Dockerfile drift), or the script crashed on a malformed request file in `ticks/requested/`.
 
 **Fix:**
 ```bash
 # read the latest pod's log
-POD=$(kubectl -n anton-ops get pod -o name | grep tick-drain | tail -1 | sed 's|pod/||')
-kubectl -n anton-ops logs $POD | tail -50
+POD=$(kubectl -n <your-ops-namespace> get pod -o name | grep tick-drain | tail -1 | sed 's|pod/||')
+kubectl -n <your-ops-namespace> logs $POD | tail -50
 ```
 - `ModuleNotFoundError`: rebuild image (see PR #3 in kernel for the precedent — `COPY *.py ./`).
 - malformed file: move the offending file out of `requested/` to `failed/` manually.
@@ -109,11 +109,11 @@ kubectl -n anton-ops logs $POD | tail -50
 
 **Fix:**
 ```bash
-kubectl -n anton-ops get cronjob agentibrain-brain-cron-tick-drain
+kubectl -n <your-ops-namespace> get cronjob agentibrain-brain-cron-tick-drain
 # Suspend=False, last successful time recent?
-kubectl -n anton-ops describe cronjob agentibrain-brain-cron-tick-drain | tail -20
+kubectl -n <your-ops-namespace> describe cronjob agentibrain-brain-cron-tick-drain | tail -20
 ```
-If suspended: `kubectl -n anton-ops patch cronjob agentibrain-brain-cron-tick-drain -p '{"spec":{"suspend":false}}'`.
+If suspended: `kubectl -n <your-ops-namespace> patch cronjob agentibrain-brain-cron-tick-drain -p '{"spec":{"suspend":false}}'`.
 
 ---
 
@@ -135,7 +135,7 @@ This is the bug from the 2026-04-24 prod cutover — see `MIGRATION.md`.
 
 **Root cause:** `/feed` doesn't read every vault file. It only reads `brain-feed/hot-arcs.md`, `brain-feed/inject.md`, `brain-feed/intent.md`, etc. Lessons + decisions land in their own directories and don't show up in feed until the next tick promotes a related arc.
 
-**Fix:** wait for the next 2 h tick, OR force a tick: `kubectl -n anton-ops create job --from=cronjob/agentibrain-brain-cron agentibrain-brain-cron-manual-$(date +%s)`.
+**Fix:** wait for the next 2 h tick, OR force a tick: `kubectl -n <your-ops-namespace> create job --from=cronjob/agentibrain-brain-cron agentibrain-brain-cron-manual-$(date +%s)`.
 
 ---
 
@@ -150,7 +150,7 @@ This is the bug from the 2026-04-24 prod cutover — see `MIGRATION.md`.
 
 **Fix:**
 ```bash
-NS=anton-prod
+NS=<your-namespace>
 kubectl -n $NS exec agentibrain-embeddings-0 -- env | grep POSTGRES_URL | head -c 60
 ssh anton "docker exec dataplane_postgres psql -U embeddings -d embeddings -c 'SELECT 1;'"
 ssh anton "docker exec dataplane_postgres psql -U embeddings -d embeddings -c '\\dx vector'"
@@ -198,7 +198,7 @@ ssh anton "rm /mnt/user/appdata/obsidian/vault/amygdala/<filename>.md"
 
 **Symptom:** Grafana / Alertmanager fires for the kernel embeddings probe.
 
-**Root cause:** probe URL drifted vs reality. Check `k8s/charts/blackbox-exporter/values-targets.yaml` — port 8080, path `/health`, host `agentibrain-embeddings.anton-prod.svc.cluster.local`.
+**Root cause:** probe URL drifted vs reality. Check `k8s/charts/blackbox-exporter/values-targets.yaml` — port 8080, path `/health`, host `agentibrain-embeddings.<your-namespace>.svc.cluster.local`.
 
 **Fix:** correct the URL in values-targets.yaml + redeploy blackbox.
 
@@ -224,7 +224,7 @@ kubectl -n argocd patch app <app-name> --type=merge \
 
 ---
 
-## 15. 10.10.30.203:8080/health timing out
+## 15. <your-cluster-ip>:8080/health timing out
 
 **Symptom:** docker artifact-store on Anton can't reach embeddings.
 
@@ -232,8 +232,8 @@ kubectl -n argocd patch app <app-name> --type=merge \
 
 **Fix:**
 ```bash
-kubectl -n anton-prod get svc agentibrain-embeddings -o jsonpath='type={.spec.type} ip={.status.loadBalancer.ingress[0].ip}'
-# expect: type=LoadBalancer ip=10.10.30.203
+kubectl -n <your-namespace> get svc agentibrain-embeddings -o jsonpath='type={.spec.type} ip={.status.loadBalancer.ingress[0].ip}'
+# expect: type=LoadBalancer ip=<your-cluster-ip>
 ```
 If it shows ClusterIP, the values-prod.yaml LB config didn't apply — check ArgoCD sync state.
 

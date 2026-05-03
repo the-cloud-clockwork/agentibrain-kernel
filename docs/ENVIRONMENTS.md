@@ -1,5 +1,13 @@
 # Environments
 
+> **Note:** This doc uses the operator's reference setup (namespaces `anton-dev`,
+> `anton-prod`, `anton-ops`; LiteLLM at `litellm.anton-prod.svc`; OpenBao at
+> `10.10.30.130`) as a concrete walk-through. **None of those names are baked
+> into the kernel.** Substitute your own namespaces, gateway URLs, and host
+> addresses everywhere — the kernel charts default to empty / placeholder
+> values and accept whatever your overlay sets. See `docs/DEPLOYMENT.md` for
+> the generic placeholders.
+
 The kernel is deployed twice in the operator's reference setup: `anton-dev` and `anton-prod`. This doc lays out what differs and how the values overlay achieves it.
 
 ## What separates dev from prod

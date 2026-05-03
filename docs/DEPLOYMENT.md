@@ -39,7 +39,7 @@ For non-GitOps installs:
 helm install brain-cron \
   oci://ghcr.io/the-cloud-clock-work/charts/brain-cron \
   --version 0.1.0 \
-  -n anton-ops -f values-anton.yaml
+  -n <your-ops-namespace> -f values-anton.yaml
 ```
 
 Pros: simplest. Cons: no GitOps trail.
@@ -64,7 +64,7 @@ Before pods come up, populate:
 1. **OpenBao** path `secret/k8s/embeddings(-dev)` with the embeddings env vars
    (postgres URL, LLM endpoint, embed model, log level, bearer keys).
    See `SECRETS.md`.
-2. **K8s ClusterSecretStore** named `openbao` pointing ESO at your OpenBao instance. The kernel chart's ExternalSecret references it.
+2. **K8s ClusterSecretStore** named after your secret store (the operator reference uses `openbao`) pointing ESO at your secret-store instance. The kernel chart's ExternalSecret references it.
 3. **K8s Secret** `agentibrain-router-secrets` in each namespace, with the kb-router bearer token. Either kubectl-create directly or wire another ES.
 4. **NFS export or PVC** for `/vault`. Read-write from the kernel pods, read-only from agent pods if you mount the vault elsewhere.
 5. **MetalLB IP pool** if you want a static LoadBalancer IP. Set the IP via `service.annotations.metallb.universe.tf/loadBalancerIPs` in your values overlay.
@@ -87,7 +87,7 @@ tpl:
   service:
     type: LoadBalancer
     annotations:
-      metallb.universe.tf/loadBalancerIPs: "10.10.30.203"
+      metallb.universe.tf/loadBalancerIPs: "<your-cluster-ip>"
 ```
 
 Helm merge semantics: maps merge, lists replace. If your base `values.yaml` has an `env.extra` list, your overlay's `extra:` will REPLACE it, not append. Reproduce the base list explicitly.
@@ -126,7 +126,7 @@ Branch → tag: push to `dev` → `:dev`, push to `main` → `:latest`. ArgoCD i
 ## Smoke tests post-deploy
 
 ```bash
-NS=anton-prod
+NS=<your-namespace>
 URL=http://agentibrain-kb-router.$NS.svc:8080
 
 kubectl -n $NS exec <agent-pod> -c agenticore -- sh -c \
