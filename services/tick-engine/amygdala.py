@@ -33,8 +33,8 @@ except ImportError:
     redis = None
 
 _DEFAULT_STREAMS = "events:health,events:host,events:deploy,events:system,events:brain"
-# Operators with an existing namespaced prefix (e.g. anton:events:*) override via
-# AMYGDALA_STREAMS="anton:events:health,anton:events:host,...".
+# Operators with an existing namespaced prefix (e.g. <prefix>:events:*) override via
+# AMYGDALA_STREAMS="<prefix>:events:health,<prefix>:events:host,...".
 STREAMS = [s.strip() for s in os.getenv("AMYGDALA_STREAMS", _DEFAULT_STREAMS).split(",") if s.strip()]
 GROUP = "amygdala"
 CONSUMER = os.getenv("AMYGDALA_CONSUMER", "amygdala-cron")

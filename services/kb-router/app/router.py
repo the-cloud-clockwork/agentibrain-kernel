@@ -28,7 +28,7 @@ log = logging.getLogger("kb_router")
 
 # ARTIFACT_STORE_URL is optional. When unset, binary-blob ingest raises a
 # clear error rather than silently hitting a non-existent DNS name. Operators
-# point this at their storage plane (antoncore's artifact-store, an S3 gateway,
+# point this at their storage plane (an upstream artifact-store, an S3 gateway,
 # or any OpenAPI-compatible blob service).
 ARTIFACT_STORE_URL = os.getenv("ARTIFACT_STORE_URL", "")
 ARTIFACT_STORE_KEY = os.getenv("ARTIFACT_STORE_KEY", "")
@@ -250,7 +250,7 @@ async def _upload_bytes_to_artifact_store(
     if not ARTIFACT_STORE_URL:
         raise RuntimeError(
             "ARTIFACT_STORE_URL is not configured; binary ingest is disabled. "
-            "Point it at your storage plane (antoncore artifact-store, S3 gateway, "
+            "Point it at your storage plane (an upstream artifact-store, S3 gateway, "
             "or any OpenAPI-compatible blob service) to enable blob upload."
         )
     files = {"file": (filename, raw, content_type)}

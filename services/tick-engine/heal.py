@@ -35,7 +35,7 @@ CLICKHOUSE_URL = os.getenv("CLICKHOUSE_URL", "")
 CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER", "default")
 CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD", "")
 # LITELLM_URL is optional — when unset, heal skips LLM-backed checks.
-# Operators configure this via env; friends may leave it empty.
+# Operators configure this via env; leave empty for local / no-LLM setups.
 LITELLM_URL = os.getenv("LITELLM_URL", "")
 LITELLM_KEY = os.getenv("LITELLM_KEY", "")
 

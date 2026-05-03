@@ -1,4 +1,4 @@
-"""Anton Embeddings — centralized embedding service for semantic search."""
+"""agentibrain Embeddings — centralized embedding service for semantic search."""
 
 import logging
 import os

@@ -1,1 +1,1 @@
-"""Anton KB Router — ingest service."""
+"""agentibrain KB Router — ingest service."""
