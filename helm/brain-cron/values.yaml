@@ -1,8 +1,8 @@
 # Generic defaults for brain-cron (tick CronJob + amygdala Deployment).
 #
 # Ticks every 2 hours by default. The tick-engine image is ghcr.io/the-cloud-clock-work/agentibrain-tick-engine.
-# Operators override environment-specific values (NFS server, INFERENCE_URL, secrets);
-# see values-anton.yaml for the operator's production reference.
+# Operators override environment-specific values (NFS server, INFERENCE_URL, secrets)
+# in their per-env values overlay (e.g. values-prod.yaml).
 
 schedule: "7 */2 * * *"
 
@@ -111,7 +111,7 @@ resources:
 #        nfsVault: { server: 10.x.y.z, path: /exports/vault }
 #        nfsShared: { server: 10.x.y.z, path: /exports/shared }
 #
-#   2. PVC (friends / standard K8s — use a PVC you've pre-provisioned):
+#   2. PVC (standard K8s — use a PVC you've pre-provisioned):
 #        vaultPVC: my-vault-pvc
 #        sharedPVC: my-shared-pvc
 #

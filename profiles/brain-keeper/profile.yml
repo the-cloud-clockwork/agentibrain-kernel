@@ -11,8 +11,8 @@ enabledMcpServers:
   - tools-notifications
 
 otel:
-  # Leave endpoint blank for friends / local dev — the agenticore runtime skips
-  # OTel export when the endpoint is empty. Operators override in their
+  # Leave endpoint blank for local dev / fresh installs — the agenticore runtime
+  # skips OTel export when the endpoint is empty. Operators override in their
   # deployment via the agent's env (OTEL_EXPORTER_OTLP_ENDPOINT) or via an
   # overlay profile.
   enabled: true

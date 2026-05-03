@@ -1,9 +1,8 @@
 # Architecture
 
-Canonical design docs for the brain nervous system. These files were first
-authored in `antoncore/docs/brain/` and have been promoted here as the
-source-of-truth for the kernel. The antoncore copies now carry a deprecation
-header pointing back at this directory.
+Canonical design docs for the brain nervous system. This directory is the
+source-of-truth for the kernel — any older copies in downstream platform
+repos point back here.
 
 | File | Scope |
 |---|---|

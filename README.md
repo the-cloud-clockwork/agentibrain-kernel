@@ -1,12 +1,12 @@
 # agentibrain-kernel
 
-> A standalone brain + knowledge-base kernel for AI fleets. Bring your own vault, your own LLM keys, your own embeddings. Runs on a laptop, a server, or a Kubernetes cluster. Built to be installed by friends, not just by its author.
+> A standalone brain + knowledge-base kernel for AI fleets. Bring your own vault, your own LLM keys, your own embeddings. Runs on a laptop, a server, or a Kubernetes cluster.
 
 `agentibrain` is a pillar of the **agenti ecosystem** alongside
 [`agenticore`](https://github.com/The-Cloud-Clock-Work/agenticore) ·
 [`agentihooks`](https://github.com/The-Cloud-Clock-Work/agentihooks) ·
 [`agentibridge`](https://github.com/The-Cloud-Clock-Work/agentibridge) ·
-[`agentihub`](https://github.com/The-Cloud-Clock-Work/agentihub) — and the **brain layer** every other pillar plugs into. It packages everything that used to live scattered across those repos into one pluggable memory + KB substrate that any fleet of Claude Code / Codex / Gemini agents can read from and write back to.
+[`agentihub`](https://github.com/The-Cloud-Clock-Work/agentihub) — and the **brain layer** every other pillar plugs into. It packages everything that used to live scattered across those repos into one pluggable memory + KB substrate that any fleet of Claude Code agents can read from and write back to.
 
 ---
 
@@ -279,9 +279,9 @@ Branching: `dev` is the working branch. PRs go `dev` → `main`. `main` ships `:
 
 ## Status
 
-**v0.1.1 — first stable.** Dev + prod deploys live, brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds — every embed flows through `POST /index_artifact`). HTTP contract frozen at v1. Generic OpenAI gateway contract — the kernel speaks chat-completions to any compatible upstream (LiteLLM, OpenAI, Ollama). Five Helm charts shipped, generic `examples/` tree on-board for forkers (8 sample value overlays + 10 ArgoCD `Application` CRs + root). The kernel is the **canonical and exclusive** source of truth for everything brain-related — downstream consumers (`agentihub`, `agentihooks-bundle`, `antoncore`) carry no vendored copies.
+**v0.1.1 — first stable.** Dev + prod deploys live, brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds — every embed flows through `POST /index_artifact`). HTTP contract frozen at v1. Generic OpenAI gateway contract — the kernel speaks chat-completions to any compatible upstream (LiteLLM, OpenAI, Ollama). Five Helm charts shipped, generic `examples/` tree on-board for forkers (8 sample value overlays + 10 ArgoCD `Application` CRs + root). The kernel is the **canonical and exclusive** source of truth for everything brain-related — downstream consumers clone from here rather than vendoring.
 
-Decoupling cutover (2026-04-30 → 2026-05-03): all operator-specific deployment plumbing (anton namespaces, claude-max-* model names, OpenBao paths, NFS hosts) lives in the operator's platform repo. Kernel is generic and clone-and-deploy.
+Decoupling cutover (2026-04-30 → 2026-05-03): all deployment-specific plumbing (cluster namespaces, model name aliases, secret-store paths, NFS hosts) lives in your own platform repo. Kernel is generic and clone-and-deploy.
 
 Maturity tracking lives in [`operator/`](operator/):
 - [`operator/VISION.md`](operator/VISION.md) — what 100% means

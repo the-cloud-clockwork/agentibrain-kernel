@@ -13,7 +13,7 @@ The kernel ships an MCP server — `agentibrain-mcp` — that exposes brain + KB
 
 Tool source: `services/mcp/app/tools/{arcs.py,kb.py}`.
 
-`kb_dispatch` and `kb_converse` are Phase 2 — they need the `anton-bundles` and `anton-themes` Python packages. Currently they remain in the antoncore `artifact-store` MCP.
+`kb_dispatch` and `kb_converse` are Phase 2 — they need bundle + theme assembler packages that currently live in the upstream `artifact-store` MCP.
 
 ## Image
 
@@ -45,12 +45,12 @@ Auth is two-layered:
 
 The kernel does not ship a Helm chart for the MCP. Operators deploy it using whatever generic MCP-proxy chart they have.
 
-Reference deploy (operator's antoncore repo, `k8s/argocd/{dev,prod}/mcp-agentibrain.yaml`):
+Reference deploy (in your platform repo, e.g. `k8s/argocd/{dev,prod}/mcp-agentibrain.yaml`):
 
 ```yaml
 spec:
   source:
-    path: k8s/charts/mcp-proxy        # operator's generic mcp-proxy chart
+    path: k8s/charts/mcp-proxy        # your generic mcp-proxy chart
     helm:
       valuesObject:
         tpl:
@@ -76,7 +76,7 @@ Pod listens on port 8080. Expose as `ClusterIP` for in-cluster consumers (e.g. L
 
 Register `agentibrain` as an MCP server pointing at the in-cluster service URL. Bind it to the relevant unit (e.g. `tools-knowledge`) so agents see the tools as `mcp__<unit>__agentibrain-<tool>`.
 
-GitOps path (operator's `litellm-state` repo):
+GitOps path (in your `litellm-state` repo):
 1. `servers/agentibrain.json` — server entry with `url: http://mcp-agentibrain.<ns>:8080/mcp`, `transport: http`, `auth_type: api_key`.
 2. `teams/<team>.json` — add `agentibrain` to the team's server allowlist.
 3. `units/<unit>.json` — add `agentibrain` under `servers` and list the 4 tool names under `tools.agentibrain`.
@@ -98,16 +98,13 @@ Smoke tests: `pytest services/mcp/tests/`.
 
 ## Phase 2 — likely deprecated
 
-`kb_dispatch` and `kb_converse` build a `JobBundle` (theme + focus + custom + audience + sources) and dispatch it to mediagen / notebooklm / paper2slides via `anton-jobs`. The bundle assembler and theme registry live in:
-
-- `packages/anton-bundles` (~700 LOC)
-- `packages/anton-themes` (~260 LOC)
+`kb_dispatch` and `kb_converse` build a `JobBundle` (theme + focus + custom + audience + sources) and dispatch it to mediagen / notebooklm / paper2slides via an upstream job-runner. The bundle assembler and theme registry live in upstream packages (~700 LOC + ~260 LOC).
 
 **Status (2026-04-26):** these tools were made **brain-blind** in artifact-store:
 they reject `obsidian://` source refs and never call `kb_brief`. The clean
 boundary now justifies leaving them in artifact-store permanently — brain owns
 retrieval (`kb_search` / `kb_brief` / `brain_*` here), artifact-store owns
-artifact CRUD and media dispatch. Phase 2 (vendoring `anton-bundles` +
-`anton-themes` into the kernel and moving the dispatch tools here) is no longer
+artifact CRUD and media dispatch. Phase 2 (vendoring the bundle/theme packages
+into the kernel and moving the dispatch tools here) is no longer
 required by the boundary contract; it would only consolidate code, not change
 responsibilities.

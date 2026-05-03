@@ -4,7 +4,7 @@
 # are all empty/disabled by default so `helm install` works on a fresh
 # cluster with only a `secretRef` Opaque Secret. Operators override env
 # values, vault mount, and ESO via their own values overlay (see
-# operator/values-overlays/agentibrain-kb-router/ for the Anton reference).
+# `examples/values-overlays/` for sample overlays).
 tpl:
   fullnameOverride: agentibrain-kb-router
   enableServiceLinks: false

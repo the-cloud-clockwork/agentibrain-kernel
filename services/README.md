@@ -32,5 +32,4 @@ the unified compose rendered by `brain up` (Phase 5).
   which work inside the kernel compose network.
 - Secrets and required config (`OPENAI_API_KEY`, `KB_ROUTER_TOKEN`) come from
   env; services fail fast with a clear error if missing.
-- Legacy `ANTON_*` env var aliases are stripped; BrainSettings (see
-  `agentibrain/config.py`) is the authoritative schema.
+- BrainSettings (see `agentibrain/config.py`) is the authoritative env-var schema.

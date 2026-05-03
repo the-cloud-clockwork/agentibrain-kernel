@@ -182,8 +182,8 @@ docker compose down -v
 
 ## Pre-built images
 
-The compose builds images locally (`:local` tag). To use the operator's
-pre-built images instead, edit `compose.yml`:
+The compose builds images locally (`:local` tag). To use the published GHCR
+images instead, edit `compose.yml`:
 
 ```yaml
 # Replace each `build:` block with:

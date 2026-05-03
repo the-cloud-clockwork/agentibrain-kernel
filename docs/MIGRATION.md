@@ -1,6 +1,6 @@
 # Migration — Swapping a Legacy Brain for the Kernel
 
-This is the playbook the operator used 2026-04-21 → 2026-04-25 to swap their pre-kernel implementation (legacy `anton-*` services) for `agentibrain-kernel`. Captured here because every other operator onboarding will hit the same shape.
+This is the playbook for swapping a pre-kernel brain implementation (legacy custom services) for `agentibrain-kernel`. Captured here because every operator onboarding hits the same shape.
 
 ## Pre-conditions
 
@@ -47,7 +47,7 @@ With kernel responding from inside the fleet, scale legacy StatefulSets to 0, de
 Open dev→main PRs in: kernel, agentihooks, agentihooks-bundle, agentihub (any repo with kernel-touching code). Tag `v0.1.0` after merges land.
 
 ### 1E — Post-merge cleanup
-Delete the legacy chart directories from your antoncore repo (or equivalent). ArgoCD prunes the orphans.
+Delete the legacy chart directories from your platform repo. ArgoCD prunes the orphans.
 
 ## Block 2 — Prod cutover
 
@@ -60,11 +60,11 @@ Mirror dev:
 
 ### 2B — Deploy
 Open new ArgoCD apps under `k8s/argocd/prod/` for the 5 kernel services.
-**Critical: name them with a `-prod` suffix to avoid collision with dev app CRs.** The 2026-04-24 incident: copying dev YAMLs without renaming meant `app-of-apps-prod` hijacked the dev CRs and pruned dev pods.
+**Critical: name them with a `-prod` suffix to avoid collision with dev app CRs.** Copying dev YAMLs without renaming lets `app-of-apps-prod` hijack the dev CRs and prune dev pods.
 
 ### 2C — Client cutover
 Three things flip from legacy → kernel:
-1. **K8s consumers** of legacy `anton-embeddings` etc. — update each chart's URL env var (e.g. `mcp-artifact-store` `EMBEDDINGS_URL`) to point at `agentibrain-embeddings.<your-namespace>.svc:8080`.
+1. **K8s consumers** of legacy embeddings/router services — update each chart's URL env var (e.g. `mcp-artifact-store` `EMBEDDINGS_URL`) to point at `agentibrain-embeddings.<your-namespace>.svc:8080`.
 2. **Agent BRAIN_URL** — flip `values-prod.yaml` from empty string to `http://agentibrain-kb-router.<your-namespace>.svc:8080`.
 3. **Docker / external consumers** — see "Service alias bridge" below.
 
@@ -91,12 +91,12 @@ Delete the legacy Service shell. Done.
 ### Option 2 — Keep the legacy-named Service as an alias
 Patch the legacy Service's selector to point at kernel pods:
 ```bash
-kubectl -n <your-namespace> patch svc anton-embeddings --type=merge -p \
+kubectl -n <your-namespace> patch svc <legacy-embeddings-svc> --type=merge -p \
   '{"spec":{"selector":{"app.kubernetes.io/instance":"agentibrain-embeddings-prod","app.kubernetes.io/name":"tpl"}}}'
 ```
 The IP stays the same; traffic flows to kernel pods. Use this when you can't easily change the consumer's config.
 
-The 2026-04-24 cutover used Option 2 first (zero-config bridge), then Option 1 once everything was stable.
+A typical cutover uses Option 2 first (zero-config bridge), then Option 1 once everything is stable.
 
 ## Common gotchas
 

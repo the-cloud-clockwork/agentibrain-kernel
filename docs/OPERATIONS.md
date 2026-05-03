@@ -32,7 +32,7 @@ kubectl -n <your-ops-namespace> get jobs | grep agentibrain-brain-cron | tail -1
 kubectl -n <your-ops-namespace> get jobs | grep agentibrain-brain-cron-tick-drain | tail -10
 
 # pending tick queue
-ssh anton "ls /mnt/user/appdata/obsidian/vault/brain-feed/ticks/requested/ 2>/dev/null | wc -l"
+ssh <your-vault-host> "ls <your-vault-path>/brain-feed/ticks/requested/ 2>/dev/null | wc -l"
 
 # kb-router request volume (last 200 log lines)
 kubectl -n <your-namespace> logs agentibrain-kb-router-0 --tail=200 | grep -c "POST\|GET"
@@ -68,7 +68,7 @@ kubectl -n <your-namespace> scale sts/agentibrain-kb-router --replicas=3
 
 The vault is the canonical KB. Three storage planes need backup:
 
-1. **Vault NFS** — `/mnt/user/appdata/obsidian/vault`. Snapshot daily (Unraid CA Backup or `rsync` to a second target).
+1. **Vault NFS** — your vault root path. Snapshot daily (filesystem snapshot, `rsync`, or restic to a second target).
 2. **Postgres embeddings DB** — `pg_dump` schedule. The embeddings table is the only schema-bearing data.
 3. **OpenBao** — backup is built into the OpenBao snapshot API; daily snapshot to S3 is recommended.
 

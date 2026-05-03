@@ -1,6 +1,6 @@
 # Brain System — Memory Nervous System
 
-The brain system is the memory layer for the Anton ecosystem. It captures the operator's work as structured **arcs** (narrative units with ignition, timeline, resolution, and edges), compartmentalizes them by region and heat, and injects the hottest context into every agent session at startup.
+The brain system is the memory layer for an AI agent fleet. It captures the operator's work as structured **arcs** (narrative units with ignition, timeline, resolution, and edges), compartmentalizes them by region and heat, and injects the hottest context into every agent session at startup.
 
 Design principle: **80% deterministic, 20% AI.** Parsing, heat computation, file promotion, and feed generation are pure Python (~5ms). Edge discovery, merge suggestions, signal escalation, and intent inference are LLM (~24s, ~$0.05). The deterministic layer prepares a compressed context; the AI layer reasons over it.
 
@@ -37,7 +37,7 @@ The tick runs as a K8s CronJob every 2h at HH:07 UTC (12 ticks/day). Full extrac
 
 ### 1. Tick Engine (`services/tick-engine/`)
 
-Python scripts, pure stdlib on the runtime side (no pip dependencies beyond `redis` for the amygdala consumer), packaged as `ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:latest` (built from `services/tick-engine/`). These were historically named `brain-tools` in antoncore — same code, new location.
+Python scripts, pure stdlib on the runtime side (no pip dependencies beyond `redis` for the amygdala consumer), packaged as `ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:latest` (built from `services/tick-engine/`).
 
 | Script | Purpose | Time |
 |--------|---------|------|
@@ -121,7 +121,7 @@ synthesized: true                # false = stub, true = Timeline/Lessons/Resolut
 
 ### 4. Vault Compartments
 
-The brain lives in the Obsidian vault on Anton NFS at `/mnt/user/appdata/obsidian/vault/`:
+The brain lives in the Obsidian vault on shared storage at `<your-vault-path>/`:
 
 | Compartment | Path | Purpose | Population |
 |---|---|---|---|
@@ -183,8 +183,8 @@ BRAIN_REFRESH_INTERVAL: "30"      # turns between refresh checks
 ```
 
 **Currently wired on:**
-- K8s agents: agenticore, anton-agent, publisher, brain-keeper (all 4 pods in <your-namespace>, env vars in Helm values)
-- Local fleet (WSL2): all repos with `.agentihooks.json` containing `"channels": ["brain", "amygdala"]`. Brain-feed synced via rsync cron (`*/5 * * * *`) from Anton NFS to `~/.agentihooks/brain-feed/`. Env vars in `~/.claude/settings.json`.
+- K8s agents: agenticore + your fleet's agents (env vars in Helm values, all in `<your-namespace>`).
+- Local fleet (WSL2 / laptop): all repos with `.agentihooks.json` containing `"channels": ["brain", "amygdala"]`. Brain-feed synced via rsync cron (`*/5 * * * *`) from your vault NFS export to `~/.agentihooks/brain-feed/`. Env vars in `~/.claude/settings.json`.
 
 **Channel subscription required:** Broadcast system reads `.agentihooks.json` from project CWD for `channels` array. Without `["brain", "amygdala"]`, brain messages are published but filtered out at delivery.
 
@@ -202,7 +202,7 @@ python3 /app/extract.py --since 26h --min-turns 5 \
 python3 /app/brain_tick.py --vault /vault --brain-feed /vault/brain-feed
 ```
 
-**Deployment:** `helm/brain-cron/` (CronJob). Operators pick a namespace; antoncore uses `<your-ops-namespace>`.
+**Deployment:** `helm/brain-cron/` (CronJob). Operators pick a namespace (e.g. `<your-ops-namespace>`).
 **Image:** `ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:latest`
 **Vault mount:** RW at `/vault` (NFS or PVC — see `helm/brain-cron/values.yaml`). Shared-FS at `/shared` (RO) is optional and only needed when co-located with agenticore runtime pods.
 
@@ -287,7 +287,7 @@ extraVolumeMounts:
 | Agent | BRAIN_ENABLED | NFS mount | Verified |
 |---|---|---|---|
 | agenticore | true | /vault/brain-feed | ✓ SessionStart injection confirmed |
-| anton-agent | true | /vault/brain-feed | ✓ |
+| your router agent | true | /vault/brain-feed | ✓ |
 | publisher | true | /vault/brain-feed | ✓ |
 | brain-keeper | true | /vault/brain-feed + full /vault (RW) | ✓ |
 
@@ -299,8 +299,7 @@ Operators pick one of:
 
 - **NFS share** — one export for the full vault (RW) that the tick-engine
   CronJob and brain-keeper StatefulSet both mount at `/vault`. Brain-feed is a
-  subtree; agents can mount just the subtree read-only. Example antoncore
-  exports:
+  subtree; agents can mount just the subtree read-only. Example exports:
   ```
   "/path/to/vault"            -async,no_subtree_check,fsid=301 10.0.0.0/24
   "/path/to/vault/brain-feed" -async,no_subtree_check,fsid=302 10.0.0.0/24
@@ -328,7 +327,7 @@ helm/brain-cron/     ← CronJob + amygdala Deployment (HH:07 every 2h)
 helm/brain-keeper/   ← StatefulSet chart (agenticore agent for AI tasks)
 
 # ArgoCD Application manifests are operator-specific and live in each
-# operator's deployment repo (antoncore keeps k8s/argocd/{dev,prod}/brain-*.yaml).
+# operator's deployment repo (typical layout: k8s/argocd/{dev,prod}/brain-*.yaml).
 ```
 
 ---
@@ -390,7 +389,7 @@ Dispatched agents (via `home-bridge dispatch_task`) receive brain broadcasts if:
 4. **`.agentihooks.json`** exists at the dispatched agent's CWD with `"channels": ["brain", "amygdala"]`
 5. **SessionStart hook order:** brain_adapter publishes → broadcast injection reads → context injected
 
-**Critical:** Dispatched sessions land in CWD `/home/iamroot/` (project `-home-iamroot`), NOT the `project` param path. The `project` param sets CLAUDE.md context only. So `/home/iamroot/.agentihooks.json` must exist with channel subscriptions.
+**Critical:** Dispatched sessions land in CWD `$HOME/` (the launcher's home dir), NOT the `project` param path. The `project` param sets CLAUDE.md context only. So `$HOME/.agentihooks.json` must exist with channel subscriptions.
 
 Without `.agentihooks.json` at CWD, `register_session()` finds no channels, and all brain/amygdala broadcasts are filtered out.
 

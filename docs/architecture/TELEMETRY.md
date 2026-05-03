@@ -2,7 +2,7 @@
 
 > **Shipped:** 2026-04-13
 > **Scope:** Full 5-layer OTel pipeline + deterministic smoke test
-> **Companion docs:** `docs/brain/ARCHITECTURE.md`, `operator/BRAIN-MVP.md`
+> **Companion docs:** `docs/architecture/ARCHITECTURE.md`
 
 ## Why
 
@@ -47,7 +47,7 @@ LAYER 4 — Data plane
 LAYER 5 — Visualization
   Grafana dashboard /d/<your-dashboard-slug>/brain-nervous-system
     4 new panels: inject latency, marker write rate, delivery coverage, error rate
-  Langfuse https://langfuse.homeofanton.com
+  Langfuse <your-langfuse-host>
     Per-session trace view: claude_code.user_prompt → brain.inject → brain.delivery(×N)
 ```
 
@@ -117,8 +117,8 @@ ORDER BY Timestamp DESC LIMIT 20;
 
 ## Langfuse usage
 
-1. Navigate to `https://langfuse.homeofanton.com`
-2. Filter service → `claude-code-home` (the WSL node) or `agentihooks` (hook-emitted spans)
+1. Navigate to `<your-langfuse-host>`
+2. Filter service → your Claude Code service name (e.g. `claude-code-home`) or `agentihooks` (hook-emitted spans)
 3. Pick a session trace → expand to see the causal graph:
    - `claude_code.user_prompt` (root)
      - `brain.inject` (from SessionStart/refresh)
@@ -133,7 +133,7 @@ Use Langfuse for "what did this specific session experience" — ClickHouse for 
 Run after any change to brain code:
 
 ```bash
-cd /home/iamroot/dev/tccw-ecosystem/agentihooks
+cd <path-to>/agentihooks
 ./scripts/brain-smoke                # 4 core tests, offline
 ./scripts/brain-smoke --otel-check   # + ClickHouse span verification (5 tests)
 
@@ -160,9 +160,9 @@ Exit 0 on all-pass, 1 on any fail. Runs in ~1.5 s. Wired into CI at `agentihooks
 
 **Langfuse is empty**
 - Langfuse only receives from the `otlphttp/langfuse` exporter in the collector
-- Verify collector config (antoncore example): `ssh root@${OTEL_HOST} "grep -A3 langfuse /mnt/user/appdata/antoncore/stacks/observability/otelcol.yaml"`
-- Verify credentials env (antoncore example): `ssh root@${OTEL_HOST} "docker exec observability_otel-collector printenv | grep LANGFUSE"`
-- For K8s pods: see `k8s/charts/otel-collector/values-prod.yaml` — langfuse exporter is wired but requires `secret/k8s/otel-collector-prod` populated in OpenBao
+- Verify collector config: `ssh <otel-host> "grep -A3 langfuse <path-to-collector>/otelcol.yaml"`
+- Verify credentials env: `ssh <otel-host> "docker exec <otel-collector-container> printenv | grep LANGFUSE"`
+- For K8s pods: configure your `otel-collector` chart's langfuse exporter with credentials from your secret store (e.g. `secret/k8s/otel-collector-prod`)
 
 **ClickHouse lag > 30s**
 - Check collector batch processor: default `timeout: 5s` — spans may batch for up to 5s before flush
@@ -186,13 +186,13 @@ Exit 0 on all-pass, 1 on any fail. Runs in ~1.5 s. Wired into CI at `agentihooks
 | 2 | `agentihooks/hooks/context/brain_writer_hook.py:168` |
 | 2 | `agentihooks/hooks/context/broadcast.py:500` |
 | 3 | `agentihooks/hooks/common.py:102` (`log()` fan-out) |
-| 4 | `antoncore/stacks/observability/otelcol.yaml` (Docker collector) |
-| 4 | `antoncore/k8s/charts/otel-collector/values-{dev,prod}.yaml` (K8s collector) |
-| 4 | `antoncore/k8s/charts/otel-collector/templates/external-secret.yaml` |
-| 5 | `antoncore/stacks/observability/provisioning/dashboards/AI Platform/brain-health.json` (4 new panels, ids 101-104) |
+| 4 | `<your-platform-repo>/stacks/observability/otelcol.yaml` (Docker collector) |
+| 4 | `<your-platform-repo>/k8s/charts/otel-collector/values-{dev,prod}.yaml` (K8s collector) |
+| 4 | `<your-platform-repo>/k8s/charts/otel-collector/templates/external-secret.yaml` |
+| 5 | `<your-platform-repo>/stacks/observability/provisioning/dashboards/<your-dashboard>/brain-health.json` (4 new panels, ids 101-104) |
 | 5 | `agentihooks/scripts/brain-smoke` |
 | 5 | `agentihooks/.github/workflows/brain-smoke.yml` |
-| 5 | `antoncore/.claude/skills/brain-smoke/SKILL.md` |
+| 5 | `<your-platform-repo>/.claude/skills/brain-smoke/SKILL.md` |
 
 ## Operator one-time setup
 
@@ -202,7 +202,7 @@ Exit 0 on all-pass, 1 on any fail. Runs in ~1.5 s. Wired into CI at `agentihooks
    bao kv put secret/k8s/otel-collector-prod \
      CLICKHOUSE_USER=default \
      CLICKHOUSE_PASSWORD=<password> \
-     LANGFUSE_OTEL_ENDPOINT=https://langfuse.homeofanton.com/api/public/otel \
+     LANGFUSE_OTEL_ENDPOINT=<your-langfuse-host>/api/public/otel \
      LANGFUSE_OTEL_AUTH=<base64 of pk:sk>
    ```
 3. **ArgoCD sync `otel-collector`** to pick up the new exporter config.

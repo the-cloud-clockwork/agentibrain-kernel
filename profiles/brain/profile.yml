@@ -5,7 +5,7 @@ mcp_categories: []
 enabledMcpServers: []
 
 # This profile is meant to be CHAINED, not used standalone.
-# Example: AGENTIHOOKS_PROFILE=anton,brain
+# Example: AGENTIHOOKS_PROFILE=<base-profile>,brain
 # or: AGENTIHOOKS_PROFILE=agenticore,brain
 #
 # It adds:
