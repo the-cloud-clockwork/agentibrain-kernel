@@ -12,26 +12,19 @@ Tackle one block at a time, top to bottom. Each checkbox has an acceptance crite
 
 ---
 
-## Block 1 — Dev→main + PyPI publish (Tier 1, in-flight)
+## Block 1 — Dev→main (closed 2026-05-03)
 
-**Status:** code is on dev. Operator-gated PR + tag work pending.
-**Gate to next block:** all items ticked, 24h parity green, `v0.1.0` tag published to PyPI.
+**Status:** closed. PyPI publish + downstream pin bumps descoped.
+**Gate met:** kernel dev→main merged (PR #8, HEAD `8d934c8`); antoncore legacy dirs removed.
 
-### 1D — PR + publish (closes Block 1)
-- [ ] Open dev→main PR on `agentibrain-kernel` with README + `operator/` + Streams 1-4 + `v0.1.0` version bump.
-      **Accept:** PR URL in operator's hands; CI green.
-- [ ] Open 4 downstream dev→main PRs after kernel merges (agentihooks, agentihub, agentihooks-bundle, antoncore) bumping kernel pin.
-      **Accept:** 4 PR URLs listed in BLOCKS.md with "open" status.
-- [ ] Drift-check CI job on downstream repos fails loud on stale vendored copies.
-      **Accept:** temporarily mutate a vendored file in a throwaway branch → CI goes red with `kernel_drift_detected`.
-- [ ] Cut `v0.1.0` tag on `agentibrain-kernel/main` → confirm `publish.yml` fires → verify `agentibrain==0.1.0` on PyPI.
-      **Accept:** `pip index versions agentibrain` shows `0.1.0`.
+### 1D — ~~PR + PyPI publish~~ (descoped)
+- ~~Open 4 downstream dev→main PRs bumping kernel pin~~ — **n/a**: no downstream repo declares `agentibrain` in `pyproject.toml`. Kernel consumption is Helm chart + container image, not pip.
+- ~~Drift-check CI on downstream repos~~ — **n/a**: same reason.
+- ~~Cut `v0.1.0` tag → publish.yml → PyPI~~ — **descoped 2026-05-03**. Friend-install / PyPI moves to Block 3 if/when external adoption becomes a priority. `publish.yml` stays in place (dormant — fires only on future `v*.*.*` tag push).
 
-### 1E — Post-merge cleanup (closes dev swap)
-- [ ] Delete legacy chart directories from antoncore: `k8s/charts/anton-kb-router`, `anton-obsidian-reader`, `anton-tick-engine` (anton-embeddings already gone in 1C).
-      **Accept:** `ls k8s/charts/ | grep -c '^anton-.*\(router\|reader\|embeddings\|tick\)'` returns `0`.
-- [ ] ArgoCD prunes 4 legacy apps cleanly.
-      **Accept:** `kubectl get sts,svc -n anton-dev | grep anton-kb-router` returns empty. No orphans.
+### 1E — Post-merge cleanup (done)
+- [x] Legacy chart directories absent from antoncore (`k8s/charts/anton-{kb-router,obsidian-reader,tick-engine,embeddings}` — verified 2026-05-03, none present).
+- [x] No legacy ArgoCD apps in `antoncore/k8s/argocd/{dev,prod}/` matching `anton-{kb-router,obsidian-reader,tick-engine,embeddings}`.
 
 ---
 
@@ -76,7 +69,7 @@ Tackle one block at a time, top to bottom. Each checkbox has an acceptance crite
 
 ## Block 3 — Friend-install story (Tier 2, queued)
 
-**Status:** not started. Depends on `v0.1.0` on PyPI (Block 1D).
+**Status:** paused 2026-05-03. PyPI publish was descoped from Block 1, so the friend-install story (which assumes `pip install agentibrain`) effectively pauses too. Pull from Tier 3 backlog when external adoption becomes a priority.
 **Gate to next block:** a friend (or operator on a clean machine) can `pip install agentibrain && brain init --local && brain up && brain scaffold` and get a working vault + 4 healthy services in under 10 minutes, without consulting the author.
 
 ### 3A — Install smoke on clean machine
