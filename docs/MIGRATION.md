@@ -54,9 +54,9 @@ Delete the legacy chart directories from your antoncore repo (or equivalent). Ar
 ### 2A — Storage + secrets in prod
 Mirror dev:
 - Populate OpenBao path `secret/k8s/embeddings` with the prod values.
-- Create `agentibrain-router-secrets` K8s Secret in `anton-prod` with the bearer token.
+- Create `agentibrain-router-secrets` K8s Secret in `<your-namespace>` with the bearer token.
 - Provision the NFS export / PVC for the prod vault.
-- Reserve the MetalLB IP (e.g. 10.10.30.203) you want kernel embeddings to claim.
+- Reserve the MetalLB IP (e.g. <your-cluster-ip>) you want kernel embeddings to claim.
 
 ### 2B — Deploy
 Open new ArgoCD apps under `k8s/argocd/prod/` for the 5 kernel services.
@@ -64,19 +64,19 @@ Open new ArgoCD apps under `k8s/argocd/prod/` for the 5 kernel services.
 
 ### 2C — Client cutover
 Three things flip from legacy → kernel:
-1. **K8s consumers** of legacy `anton-embeddings` etc. — update each chart's URL env var (e.g. `mcp-artifact-store` `EMBEDDINGS_URL`) to point at `agentibrain-embeddings.anton-prod.svc:8080`.
-2. **Agent BRAIN_URL** — flip `values-prod.yaml` from empty string to `http://agentibrain-kb-router.anton-prod.svc:8080`.
+1. **K8s consumers** of legacy `anton-embeddings` etc. — update each chart's URL env var (e.g. `mcp-artifact-store` `EMBEDDINGS_URL`) to point at `agentibrain-embeddings.<your-namespace>.svc:8080`.
+2. **Agent BRAIN_URL** — flip `values-prod.yaml` from empty string to `http://agentibrain-kb-router.<your-namespace>.svc:8080`.
 3. **Docker / external consumers** — see "Service alias bridge" below.
 
 ### 2D — Smoke + retire
-Smoke from prod agent pods (same matrix as 1B but `-n anton-prod`). After 24-48 h of green:
+Smoke from prod agent pods (same matrix as 1B but `-n <your-namespace>`). After 24-48 h of green:
 - scale legacy StatefulSets to 0
 - delete legacy ArgoCD apps `cascade=foreground`
 - delete legacy chart dirs
 
 ## Service alias bridge — for external (docker) consumers
 
-If a non-K8s consumer (Unraid docker stack, external service) was hardcoded to a legacy service IP like `http://10.10.30.203:8080`, you have two options:
+If a non-K8s consumer (Unraid docker stack, external service) was hardcoded to a legacy service IP like `http://<your-cluster-ip>:8080`, you have two options:
 
 ### Option 1 — Move the IP to the kernel Service directly (clean)
 Make the kernel embeddings Service a LoadBalancer with the static IP via MetalLB:
@@ -84,14 +84,14 @@ Make the kernel embeddings Service a LoadBalancer with the static IP via MetalLB
 service:
   type: LoadBalancer
   annotations:
-    metallb.universe.tf/loadBalancerIPs: "10.10.30.203"
+    metallb.universe.tf/loadBalancerIPs: "<your-cluster-ip>"
 ```
 Delete the legacy Service shell. Done.
 
 ### Option 2 — Keep the legacy-named Service as an alias
 Patch the legacy Service's selector to point at kernel pods:
 ```bash
-kubectl -n anton-prod patch svc anton-embeddings --type=merge -p \
+kubectl -n <your-namespace> patch svc anton-embeddings --type=merge -p \
   '{"spec":{"selector":{"app.kubernetes.io/instance":"agentibrain-embeddings-prod","app.kubernetes.io/name":"tpl"}}}'
 ```
 The IP stays the same; traffic flows to kernel pods. Use this when you can't easily change the consumer's config.

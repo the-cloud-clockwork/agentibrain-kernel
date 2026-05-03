@@ -93,6 +93,6 @@ Full grammar: `architecture/MARKERS.md`.
 
 ## Environment
 
-**dev** — `anton-dev` namespace, image tag `:dev`, ArgoCD source branch `dev`, OpenBao paths suffixed `-dev`.
+**dev** — `<your-namespace>` namespace, image tag `:dev`, ArgoCD source branch `dev`, OpenBao paths suffixed `-dev`.
 
-**prod** — `anton-prod` namespace, image tag `:latest`, ArgoCD source branch `main`, no OpenBao suffix.
+**prod** — `<your-namespace>` namespace, image tag `:latest`, ArgoCD source branch `main`, no OpenBao suffix.

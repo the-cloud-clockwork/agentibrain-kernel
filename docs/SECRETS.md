@@ -52,9 +52,9 @@ Holds the bearer token used by the kb-router and by every agent fleet pod that c
 
 ## ESO requirements
 
-Your cluster must have External Secrets Operator installed and a `ClusterSecretStore` named `openbao`. The CR points ESO at OpenBao with a token that has read access on `secret/k8s/*`. The token lives in a K8s Secret in the `external-secrets` namespace.
+Your cluster must have External Secrets Operator installed and a `ClusterSecretStore` (named `openbao` in the operator reference; substitute your own). The CR points ESO at OpenBao with a token that has read access on `secret/k8s/*`. The token lives in a K8s Secret in the `external-secrets` namespace.
 
-Standard ESO shape: `provider.vault` block, `path: "secret"`, `version: "v2"`, `auth.tokenSecretRef` referencing the openbao-token K8s Secret.
+Standard ESO shape: `provider.vault` block, `path: "secret"`, `version: "v2"`, `auth.tokenSecretRef` referencing the secret-store auth token K8s Secret (named `openbao-token` in the operator reference).
 
 ## Populating OpenBao
 
@@ -65,12 +65,12 @@ The operator populates paths once via the bao CLI inside the OpenBao container. 
 1. Update the OpenBao path with `bao kv patch`.
 2. ESO refresh tick (≤ 30 s) updates the K8s Secret.
 3. The Reloader controller (chart `podAnnotations.reloader.stakater.com/auto: "true"`) restarts pods that mount the Secret.
-4. Without Reloader: `kubectl rollout restart sts/agentibrain-embeddings -n anton-prod`.
+4. Without Reloader: `kubectl rollout restart sts/agentibrain-embeddings -n <your-namespace>`.
 
 ## Verifying
 
 ```bash
-NS=anton-prod
+NS=<your-namespace>
 kubectl -n $NS get externalsecret embeddings-secrets \
   -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
 # expect: True

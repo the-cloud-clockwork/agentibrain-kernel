@@ -23,34 +23,34 @@ The shipped `agentibrain-parity` CronJob does the kb-router + embeddings probe e
 
 ```bash
 # pod overview
-kubectl -n anton-prod get pod -l 'app.kubernetes.io/instance in (agentibrain-kb-router,agentibrain-embeddings,agentibrain-obsidian-reader,agentibrain-brain-keeper)'
+kubectl -n <your-namespace> get pod -l 'app.kubernetes.io/instance in (agentibrain-kb-router,agentibrain-embeddings,agentibrain-obsidian-reader,agentibrain-brain-keeper)'
 
 # tick history (last 10 fires)
-kubectl -n anton-ops get jobs | grep agentibrain-brain-cron | tail -10
+kubectl -n <your-ops-namespace> get jobs | grep agentibrain-brain-cron | tail -10
 
 # tick-drain history
-kubectl -n anton-ops get jobs | grep agentibrain-brain-cron-tick-drain | tail -10
+kubectl -n <your-ops-namespace> get jobs | grep agentibrain-brain-cron-tick-drain | tail -10
 
 # pending tick queue
 ssh anton "ls /mnt/user/appdata/obsidian/vault/brain-feed/ticks/requested/ 2>/dev/null | wc -l"
 
 # kb-router request volume (last 200 log lines)
-kubectl -n anton-prod logs agentibrain-kb-router-0 --tail=200 | grep -c "POST\|GET"
+kubectl -n <your-namespace> logs agentibrain-kb-router-0 --tail=200 | grep -c "POST\|GET"
 ```
 
 ## Restart / rollout
 
 ```bash
 # kb-router
-kubectl -n anton-prod rollout restart sts/agentibrain-kb-router
+kubectl -n <your-namespace> rollout restart sts/agentibrain-kb-router
 
 # all kernel pods in a namespace
 for sts in agentibrain-kb-router agentibrain-embeddings agentibrain-obsidian-reader agentibrain-brain-keeper; do
-  kubectl -n anton-prod rollout restart sts/$sts
+  kubectl -n <your-namespace> rollout restart sts/$sts
 done
 
 # tick-engine cron (force a run NOW instead of waiting for cadence)
-kubectl -n anton-ops create job --from=cronjob/agentibrain-brain-cron \
+kubectl -n <your-ops-namespace> create job --from=cronjob/agentibrain-brain-cron \
   agentibrain-brain-cron-manual-$(date +%s)
 ```
 
@@ -59,7 +59,7 @@ kubectl -n anton-ops create job --from=cronjob/agentibrain-brain-cron \
 The kernel services are stateless to the K8s scheduler — their state is the vault NFS mount + the embeddings Postgres. You can scale `agentibrain-kb-router` horizontally:
 
 ```bash
-kubectl -n anton-prod scale sts/agentibrain-kb-router --replicas=3
+kubectl -n <your-namespace> scale sts/agentibrain-kb-router --replicas=3
 ```
 
 `obsidian-reader` and `embeddings` similarly. `tick-engine` is a CronJob, single-fire.
@@ -93,13 +93,13 @@ The kernel itself stores nothing of value beyond what's in those three. Pods can
 
 ```bash
 # critical fallback warning (agentihooks emits this when BRAIN_URL is unset on a K8s pod)
-kubectl -n anton-prod logs <agent-pod> | grep brain_http_disabled_in_k8s
+kubectl -n <your-namespace> logs <agent-pod> | grep brain_http_disabled_in_k8s
 
 # ESO sync errors
 kubectl -n external-secrets logs deploy/external-secrets | grep -i "openbao\|secretsync"
 
 # kb-router 4xx/5xx
-kubectl -n anton-prod logs agentibrain-kb-router-0 --tail=500 | grep -E "HTTP/1.1\" [45]"
+kubectl -n <your-namespace> logs agentibrain-kb-router-0 --tail=500 | grep -E "HTTP/1.1\" [45]"
 ```
 
 ## Drain mode
@@ -107,10 +107,10 @@ kubectl -n anton-prod logs agentibrain-kb-router-0 --tail=500 | grep -E "HTTP/1.
 To stop accepting traffic on a single kb-router pod (e.g. for upgrade):
 
 ```bash
-kubectl -n anton-prod label pod agentibrain-kb-router-0 ready=false --overwrite
+kubectl -n <your-namespace> label pod agentibrain-kb-router-0 ready=false --overwrite
 # then patch the Service selector to add ready=true to keep traffic off this pod
 # … after upgrade …
-kubectl -n anton-prod label pod agentibrain-kb-router-0 ready- --overwrite
+kubectl -n <your-namespace> label pod agentibrain-kb-router-0 ready- --overwrite
 ```
 
 For full kernel drain (all services): scale all sts to 0, wait, scale back. Vault NFS stays intact.
@@ -118,7 +118,7 @@ For full kernel drain (all services): scale all sts to 0, wait, scale back. Vaul
 ## Upgrade procedure
 
 1. Update tag in chart `image.tag` (or let ArgoCD image-updater do it).
-2. Watch rollout: `kubectl -n anton-prod rollout status sts/agentibrain-<svc>`.
+2. Watch rollout: `kubectl -n <your-namespace> rollout status sts/agentibrain-<svc>`.
 3. Smoke `/feed` from inside an agent pod.
 4. Watch `agentibrain-parity` next fire — should still be green.
 
