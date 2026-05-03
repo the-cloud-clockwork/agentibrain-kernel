@@ -88,19 +88,62 @@ Full local guide — inference modes, port overrides, vault bind to your existin
 
 Same `compose.yml` works on any Linux box with Docker. Bind the vault to a real path, expose `8103` behind your reverse proxy of choice (Traefik, Caddy, nginx), point your fleet at it via `BRAIN_URL`. No Kubernetes required.
 
-### 3. Kubernetes (Helm)
+### 3. Kubernetes (Helm) — three steps
 
-Charts ship in [`helm/`](helm/):
+Charts ship in [`helm/`](helm/) — `kb-router`, `obsidian-reader`, `embeddings`, `brain-cron`, `brain-keeper`. All five inherit from `tccw-k8s-service-template v0.3.6` (v1beta1 ESO).
 
+#### Step 1 — Scaffold the vault on persistent storage
+
+The vault is a markdown directory tree (~30 folders + ~52 templates + a `.brain-schema` marker). Pick where it lives — NFS export, PVC, or hostpath — then scaffold it:
+
+```bash
+pip install ./agentibrain-kernel       # or pip install agentibrain when on PyPI
+brain scaffold --vault /mnt/<your-export>
 ```
-helm/kb-router/
-helm/obsidian-reader/
-helm/embeddings/
-helm/brain-cron/
-helm/brain-keeper/
+
+Idempotent. Or copy `agentibrain/templates/vault-layout/` straight onto the volume — same result.
+
+#### Step 2 — Drop a Secret in your cluster
+
+Required keys (operator picks naming):
+
+| Key | Purpose |
+|---|---|
+| `KB_ROUTER_TOKEN` | Bearer for the HTTP contract |
+| `INFERENCE_API_KEY` | LLM gateway auth (LiteLLM virtual key, OpenAI key, empty for trusted-LAN Ollama) |
+| `LLM_API_KEY` | Embeddings provider auth (optional — empty disables semantic search) |
+
+Either via your secret manager + ESO `ClusterSecretStore` (recommended — see `docs/SECRETS.md`) or a plain Opaque Secret.
+
+#### Step 3 — `helm install` the five charts
+
+```bash
+helm install agentibrain-kb-router       ./helm/kb-router        -f values-kb-router.yaml
+helm install agentibrain-embeddings      ./helm/embeddings       -f values-embeddings.yaml
+helm install agentibrain-obsidian-reader ./helm/obsidian-reader  -f values-obsidian-reader.yaml
+helm install agentibrain-brain-keeper    ./helm/brain-keeper     -f values-brain-keeper.yaml
+helm install agentibrain-brain-cron      ./helm/brain-cron       -f values-brain-cron.yaml   # singleton, deploy ONCE per cluster
 ```
 
-All five inherit from `tccw-k8s-service-template v0.3.6` (v1beta1 ESO). Consume them as ArgoCD Applications with a values overlay, or `helm install` directly. Sample overlays + `Application` CRs in [`examples/`](examples/). Architecture reference: [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md).
+Each `values-*.yaml` overlay sets:
+* `extraVolumes` → NFS server + path or PVC claim for the vault from step 1
+* `env.variables.INFERENCE_URL` + `BRAIN_CLASSIFY_MODEL` + `BRAIN_BRIEF_MODEL` → your LLM gateway + model names
+* `secrets.external.secretRef` → the Secret from step 2
+
+Sample overlays + ArgoCD `Application` CRs ship in [`examples/`](examples/) — copy, replace every `<your-*>` placeholder, deploy.
+
+#### Optional — ArgoCD instead of `helm install`
+
+Same outcome, declarative. Copy `examples/argocd/` into your platform repo, swap placeholders, `kubectl apply -f` the `agentibrain-root.yaml`. ArgoCD picks up the per-service Apps and the chart sources point back at this kernel repo.
+
+Once running, every agent in your fleet gets two env vars and consumes the brain over HTTP:
+
+```yaml
+BRAIN_URL: http://agentibrain-kb-router.<your-namespace>.svc:8080
+KB_ROUTER_TOKEN: <from-the-secret-in-step-2>
+```
+
+Architecture reference: [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md). Generic deployment guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ---
 
