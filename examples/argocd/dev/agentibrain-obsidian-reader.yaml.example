@@ -1,0 +1,32 @@
+# Sample ArgoCD Application — agentibrain-obsidian-reader (dev).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentibrain-obsidian-reader
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    # Chart source — kernel
+    - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+      targetRevision: dev
+      path: helm/obsidian-reader
+      helm:
+        releaseName: agentibrain-obsidian-reader
+        valueFiles:
+          - $values/values-overlays/obsidian-reader/values-dev.yaml
+    # $values source — your platform repo
+    - repoURL: <your-platform-repo>
+      targetRevision: <your-revision>
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <your-dev-namespace>
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

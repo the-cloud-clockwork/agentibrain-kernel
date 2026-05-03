@@ -1,0 +1,44 @@
+# Sample overlay — agentibrain-kb-router (dev).
+# Layered on top of agentibrain-kernel/helm/kb-router/values.yaml.
+# Copy to your platform repo, replace every <your-*> placeholder, drop .example.
+tpl:
+  global:
+    environment: dev
+  app:
+    image:
+      tag: dev
+  env:
+    variables:
+      OBSIDIAN_READER_URL: http://agentibrain-obsidian-reader.<your-dev-namespace>.svc:8080
+      EMBEDDINGS_URL: http://agentibrain-embeddings.<your-dev-namespace>.svc:8080
+
+      # OpenAI-compatible LLM gateway. Empty = no AI classification (regex fallback).
+      INFERENCE_URL: http://<your-llm-gateway>.<your-dev-namespace>.svc:4000
+
+      # Model names the gateway resolves to whatever upstream you want.
+      # See docs/GATEWAY-CONTRACT.md.
+      BRAIN_CLASSIFY_MODEL: <your-classify-model>
+      BRAIN_BRIEF_MODEL: <your-brief-model>
+
+  # ESO opt-in. If you don't run ESO, set enabled: false and create the
+  # K8s Opaque Secret manually (see local/k8s-bootstrap.sh).
+  externalSecret:                                  # nosecret
+    enabled: true                                  # nosecret
+    storeName: <your-secret-store>                 # nosecret
+    secretPath: <your-secret-path>/agentibrain-router-dev   # nosecret
+    targetSecretName: agentibrain-router-secrets   # nosecret
+    data:                                          # nosecret
+      - secretKey: INFERENCE_API_KEY               # nosecret
+        remoteRef:                                 # nosecret
+          key: <your-secret-path>/brain-inference  # nosecret
+          property: INFERENCE_API_KEY              # nosecret
+
+  # Vault mount — pick ONE pattern (NFS or PVC). NFS shown.
+  extraVolumes:
+    - name: nfs-vault
+      nfs:
+        server: <your-host>
+        path: <your-vault-path>
+  extraVolumeMounts:
+    - name: nfs-vault
+      mountPath: /vault

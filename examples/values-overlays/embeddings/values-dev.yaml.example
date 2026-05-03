@@ -1,0 +1,18 @@
+# Sample overlay — agentibrain-embeddings (dev).
+tpl:
+  global:
+    environment: dev
+  app:
+    image:
+      tag: dev
+  env:
+    variables:
+      LLM_API_BASE: <your-embeddings-api-base>           # e.g. https://api.openai.com/v1
+      LLM_EMBED_MODEL: text-embedding-3-small
+      POSTGRES_URL: postgresql://<user>:<pass>@<host>:5432/<db>
+
+  externalSecret:                                  # nosecret
+    enabled: true                                  # nosecret
+    storeName: <your-secret-store>                 # nosecret
+    secretPath: <your-secret-path>/agentibrain-embeddings-dev   # nosecret
+    targetSecretName: agentibrain-embeddings-secrets   # nosecret

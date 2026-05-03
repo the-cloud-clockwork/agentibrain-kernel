@@ -1,0 +1,20 @@
+# Sample overlay — agentibrain-obsidian-reader (dev).
+tpl:
+  global:
+    environment: dev
+  app:
+    image:
+      tag: dev
+  externalSecret:                                  # nosecret
+    enabled: true                                  # nosecret
+    storeName: <your-secret-store>                 # nosecret
+    secretPath: <your-secret-path>/agentibrain-reader-dev   # nosecret
+    targetSecretName: agentibrain-reader-secrets   # nosecret
+  extraVolumes:
+    - name: nfs-vault
+      nfs:
+        server: <your-host>
+        path: <your-vault-path>
+  extraVolumeMounts:
+    - name: nfs-vault
+      mountPath: /vault
