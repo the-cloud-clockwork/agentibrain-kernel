@@ -69,7 +69,7 @@ def test_marker_milestone_routes_to_project_when_present(vault: Path, client):
 def test_marker_signal_creates_new_file(vault: Path, client):
     body = {
         "type": "signal",
-        "content": "Disk full on Anton.",
+        "content": "Disk full on host-01.",
         "attrs": {"severity": "critical", "source": "ops"},
     }
     resp = client.post("/marker", json=body)

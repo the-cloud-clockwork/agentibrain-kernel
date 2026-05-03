@@ -81,7 +81,7 @@ def write_env_file(settings: BrainSettings, token: str) -> Path:
 
     This .env is the single source of truth for the stack — compose reads it
     via ``--env-file``. Includes generated defaults for bundled Postgres/MinIO
-    so the friend never has to guess.
+    so first-run users never have to guess.
     """
     cfg_dir = settings.config_dir.expanduser()
     cfg_dir.mkdir(parents=True, exist_ok=True)

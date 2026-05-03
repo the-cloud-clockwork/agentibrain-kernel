@@ -4,7 +4,7 @@ kb_search  - fan-out across agentibrain-embeddings (semantic) + agentibrain-obsi
 kb_brief   - kb_search + LLM synthesis via any OpenAI-compatible gateway, returns brief + candidate_refs.
 
 These tools are READ-ONLY. The kernel write surface (/feed /signal /marker /tick /ingest)
-is exposed by kb-router; for dispatch/build/converse see the antoncore artifact-store MCP.
+is exposed by kb-router; for dispatch/build/converse see your upstream artifact-store MCP.
 
 Inference contract: standard POST /v1/chat/completions with `Authorization: Bearer ${INFERENCE_API_KEY}`
 and `model: ${BRAIN_BRIEF_MODEL}`. Wire INFERENCE_URL at any OAI-compatible endpoint
