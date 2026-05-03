@@ -63,7 +63,7 @@ Plus an opt-in **brain-keeper** agent (ops oracle for triage, enrichment, replay
 git clone https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
 cd agentibrain-kernel
 ./local/bootstrap.sh           # writes .env (random tokens) + scaffolds ./vault
-docker compose up -d           # 8 containers come up
+docker compose up -d           # 10 containers come up
 ```
 
 Smoke test:
@@ -93,14 +93,14 @@ Same `compose.yml` works on any Linux box with Docker. Bind the vault to a real 
 Charts ship in [`helm/`](helm/):
 
 ```
-helm/agentibrain-kb-router/
-helm/agentibrain-obsidian-reader/
-helm/agentibrain-embeddings/
-helm/agentibrain-brain-cron/
-helm/agentibrain-brain-keeper/
+helm/kb-router/
+helm/obsidian-reader/
+helm/embeddings/
+helm/brain-cron/
+helm/brain-keeper/
 ```
 
-All five inherit from `tccw-k8s-service-template v0.3.4`. Consume them as ArgoCD Applications with a values overlay, or `helm install` directly. Architecture reference: [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md).
+All five inherit from `tccw-k8s-service-template v0.3.6` (v1beta1 ESO). Consume them as ArgoCD Applications with a values overlay, or `helm install` directly. Sample overlays + `Application` CRs in [`examples/`](examples/). Architecture reference: [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md).
 
 ---
 
@@ -156,7 +156,11 @@ File-protocol: writes a request to `brain-feed/ticks/requested/`. The tick-engin
 
 ### `POST /ingest` — universal ingest
 
-Free-text in. Haiku classifies, fans URLs/repos/files to artifact-store, drops a markdown note in `raw/inbox/`. Spec: [`api/openapi.yaml`](api/openapi.yaml).
+Free-text in. The model named in `BRAIN_CLASSIFY_MODEL` classifies via your inference gateway (any OpenAI-compatible — see [GATEWAY-CONTRACT.md](docs/GATEWAY-CONTRACT.md)), fans URLs/repos/files to artifact-store, drops a markdown note in `raw/inbox/`. Spec: [`api/openapi.yaml`](api/openapi.yaml).
+
+### `POST /index_artifact` — sole brain-side embedding write
+
+Per-artifact embedding write surface. Called by ingest pipelines after artifact-store accepts a blob. The artifact-store no longer auto-embeds (brain-blind boundary, 2026-04-26) — every embed flows through this endpoint.
 
 ---
 
@@ -226,13 +230,15 @@ PYTHONPATH=services/kb-router:. pytest services/kb-router/tests -q   # 25 servic
 docker build -t agentibrain-kb-router:local services/kb-router
 ```
 
-Branching: `dev` is the working branch. PRs go `dev` → `main`. `main` ships `:latest` images and PyPI releases on tag push.
+Branching: `dev` is the working branch. PRs go `dev` → `main`. `main` ships `:latest` GHCR images. PyPI publish (`publish.yml`) is wired and dormant — fires on `v*.*.*` tag push when external distribution is needed; descoped from current critical path since the fleet consumes the kernel via Helm + image, not pip.
 
 ---
 
 ## Status
 
-**v0.1.1 — first stable.** Dev + prod deploys live, brain-blind boundary verified end-to-end (2026-04-27). Five Helm charts shipped, brain-keeper agent definition canonical, HTTP contract frozen at v1. The kernel is the **canonical and exclusive** source of truth for everything brain-related — downstream consumers (`agentihub`, `agentihooks-bundle`, `antoncore`) carry no vendored copies.
+**v0.1.1 — first stable.** Dev + prod deploys live, brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds — every embed flows through `POST /index_artifact`). HTTP contract frozen at v1. Generic OpenAI gateway contract — the kernel speaks chat-completions to any compatible upstream (LiteLLM, OpenAI, Ollama). Five Helm charts shipped, generic `examples/` tree on-board for forkers (8 sample value overlays + 10 ArgoCD `Application` CRs + root). The kernel is the **canonical and exclusive** source of truth for everything brain-related — downstream consumers (`agentihub`, `agentihooks-bundle`, `antoncore`) carry no vendored copies.
+
+Decoupling cutover (2026-04-30 → 2026-05-03): all operator-specific deployment plumbing (anton namespaces, claude-max-* model names, OpenBao paths, NFS hosts) lives in the operator's platform repo. Kernel is generic and clone-and-deploy.
 
 Maturity tracking lives in [`operator/`](operator/):
 - [`operator/VISION.md`](operator/VISION.md) — what 100% means
