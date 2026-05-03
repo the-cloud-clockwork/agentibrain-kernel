@@ -10,8 +10,8 @@ updated: 2026-04-30
 
 ## Now (next gates)
 
-1. **Block 2 — prod cutover** — antoncore dev→main merge flips prod ArgoCD source from `agentibrain-kernel.git@main` to `antoncore.git/k8s/argocd/prod/agentibrain`, then prod parity smoke + 24h observation.
-2. **Block 5 — decoupling residuals** — opportunistic. Kernel docs anton-namespace scrub, `examples/` tree for forkers, diagnose pre-existing `agentibrain-brain-cron` Degraded since `2026-04-30T16:13Z`.
+1. **Block 2 close-out** — antoncore PR `chore/block2-close-prod-cutover` merge → ArgoCD prunes prod brain-cron App → re-verify all 6 prod brain apps Synced+Healthy. Smoke already green (2026-05-03). 24h observation re-check 2026-05-04.
+2. **Block 5 — decoupling residuals** — opportunistic. Kernel docs anton-namespace scrub (11 files), `examples/` tree for forkers, diagnose stuck `brain_tick.py` 2h jobs (`0/1` at 4h+).
 
 ## Soon (post-prod-cutover)
 

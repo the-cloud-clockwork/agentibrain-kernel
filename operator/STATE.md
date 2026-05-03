@@ -14,7 +14,7 @@ updated: 2026-04-30
 See `BLOCKS.md` for the active block list and `ENHANCEMENTS.md` for the Tier 3-5 backlog. Top-of-mind:
 
 - **Block 1** — closed 2026-05-03. PyPI publish + downstream pin bumps descoped (kernel reaches consumers via Helm + image, not pip). 1E legacy-dir cleanup verified done on disk.
-- **Block 2** — prod cutover (dev→main on antoncore + kernel flips prod ArgoCD source from kernel to antoncore). Next gate.
+- **Block 2** — prod cutover de-facto done; closing on brain-cron singleton + smoke + 24h observation (2D). Antoncore PR `chore/block2-close-prod-cutover` removes the conflicting prod ArgoCD app.
 - **Block 5** — decoupling residuals (kernel docs anton-namespace scrub, `examples/` tree, brain-cron Degraded diagnosis). Opportunistic.
 - **Block 3** — friend-install story. Effectively paused (gated on PyPI publish, which is descoped). Pull from Tier 3 backlog when external adoption becomes a priority.
 
@@ -29,7 +29,7 @@ See `BLOCKS.md` for the active block list and `ENHANCEMENTS.md` for the Tier 3-5
 | Resilience | 40 | No backup or DR playbook documented |
 | Docs | 75 | Architecture + GATEWAY-CONTRACT.md + portability docs shipped; quickstart still missing; doc-bleed in SECRETS/TROUBLESHOOTING/OPERATIONS |
 | Distribution | 35 | PyPI publish descoped 2026-05-03 — Helm chart + container image distribution is sufficient for current fleet. OCI Helm publish still on Tier 3 backlog. |
-| Prod | 50 | Dev cutover complete; prod still kernel-sourced until dev→main merge |
+| Prod | 85 | Antoncore main carries prod overlays + ArgoCD apps; ≥5 prod brain pods Running 29h+. Pending: brain-cron singleton SharedResourceWarning fix + prod smoke + 24h observation (Block 2D). |
 
 **Weighted average: ~80%.**
 

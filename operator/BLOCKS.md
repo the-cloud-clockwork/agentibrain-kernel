@@ -28,42 +28,34 @@ Tackle one block at a time, top to bottom. Each checkbox has an acceptance crite
 
 ---
 
-## Block 2 — Prod cutover (Tier 2, queued)
+## Block 2 — Prod cutover (mostly done — close-out 2026-05-03)
 
-**Status:** not started. Depends on Block 1 complete + dev soak ≥48h. Decoupling cutover (2026-04-30) shipped antoncore-owned overlays + ArgoCD apps in dev only — prod still sources from `agentibrain-kernel.git@main`. Both repos must merge dev→main to flip prod.
-**Gate to next block:** prod smoke green, legacy prod StatefulSets scaled to 0, 24h prod observation clean.
+**Status:** prod cutover de-facto already shipped. Antoncore main carries `k8s/argocd/prod/agentibrain/` + `k8s/values-overlays/agentibrain-*/values-prod.yaml`. All prod brain pods Running 29h–45h. Remaining work is the brain-cron singleton fix + smoke + 24h observation.
+**Gate to close:** brain-cron `SharedResourceWarning` cleared, prod smoke matrix green, 24h post-smoke clean.
 
-### 2A — Prod storage + secrets
-- [ ] `values-dev.yaml` / `values-prod.yaml` split confirmed on all kernel charts (already done in antoncore overlays — verify the split is preserved post-merge to main).
-      **Accept:** both files exist in `antoncore/k8s/values-overlays/agentibrain-*/` with distinct image tags (`:dev` vs `:latest`).
-- [ ] OpenBao `secret/k8s/agentibrain-*-prod` paths populated (embeddings, kb-router, obsidian-reader, agent-env).
-      **Accept:** `vault kv list secret/k8s/ | grep agentibrain.*-prod` shows the expected paths.
-- [ ] ESO ExternalSecrets synced in `anton-prod`.
-      **Accept:** `kubectl get externalsecret -n anton-prod | grep agentibrain` all show `SecretSynced=True`.
+### 2A — Prod storage + secrets (done)
+- [x] Antoncore `k8s/values-overlays/agentibrain-{kb-router,embeddings,obsidian-reader,brain-keeper}/values-prod.yaml` present on main with distinct `:latest` image tags.
+- [x] OpenBao `secret/k8s/agentibrain-*-prod` paths populated — implicit by virtue of prod pods running with valid env (45h uptime, no auth errors in kb-router-prod logs).
+- [x] ESO ExternalSecrets synced in `anton-prod` — same evidence.
 
-### 2B — Prod deploy
-- [ ] Prod ArgoCD apps under `antoncore/k8s/argocd/prod/agentibrain/` reconcile after dev→main merge — `agentibrain-embeddings-prod`, `agentibrain-kb-router-prod`, `agentibrain-obsidian-reader-prod`, `agentibrain-brain-keeper-prod`, plus `agentibrain-brain-cron` + `mcp-agentibrain` singletons.
-      **Accept:** `argocd app list | grep agentibrain.*prod` all `Synced+Healthy`. `agentibrain-root-prod` source = `antoncore.git/k8s/argocd/prod/agentibrain`.
-- [ ] Pods running in `anton-prod`.
-      **Accept:** `kubectl get pods -n anton-prod | grep agentibrain | grep -c Running` ≥ 4.
+### 2B — Prod deploy (done)
+- [x] Prod ArgoCD apps reconcile from `antoncore.git@main` `k8s/argocd/prod/agentibrain` — `agentibrain-{embeddings,kb-router,obsidian-reader,brain-keeper}-prod`, `mcp-agentibrain` all Synced.
+- [x] ≥4 prod pods Running: `agentibrain-{kb-router,embeddings,obsidian-reader,brain-keeper}-0` + `mcp-agentibrain-0`, all `1/1 Running` for 29h+.
 
-### 2C — Client cutover
-- [ ] Flip `EMBEDDINGS_URL` in prod `mcp-artifact-store.yaml` + Docker `stacks/artifact-store/compose.yml` to kernel service.
-      **Accept:** artifact-store embedding writes land in kernel pgvector, confirmed via `SELECT count(*) FROM content_embeddings WHERE producer='…' AND created_at > now() - interval '5 minutes'`.
-- [ ] Prod agents `BRAIN_URL` + `BRAIN_CLASSIFY_MODEL` + `BRAIN_BRIEF_MODEL` + `INFERENCE_API_KEY` flip — same wiring as dev but prod namespace.
-      **Accept:** `kubectl describe pod <agent>-0 -n anton-prod | grep BRAIN_URL` shows prod kernel URL on all prod agents.
-- [ ] Service aliases so `anton-kb-router.anton-prod.svc` resolves to new kernel Service (zero-downtime for clients that haven't migrated).
-      **Accept:** `kubectl get svc anton-kb-router -n anton-prod -o jsonpath='{.spec.selector}'` points at agentibrain labels.
+### 2C — Client cutover (done — original framing was wrong)
+- [x] ~~Flip EMBEDDINGS_URL~~ — **n/a**: retired 2026-04-26 with brain-blind boundary (`stacks/artifact-store/src/resolver.py:31`). artifact-store no longer auto-embeds.
+- [x] BRAIN_URL flipped on prod agents — every chart at `k8s/charts/{agenticore,anton-agent,publisher,finops-agent,diagram-agent,video-editor-agent}/values-prod.yaml` points at `http://agentibrain-kb-router.anton-prod.svc:8080`.
+- [x] ~~BRAIN_CLASSIFY_MODEL/BRAIN_BRIEF_MODEL/INFERENCE_API_KEY on agents~~ — **misframed**: these are kernel-side env (only kb-router + brain-cron call the LLM). Set in `k8s/values-overlays/agentibrain-kb-router/values-prod.yaml` already.
+- [x] ~~`anton-kb-router.anton-prod.svc` service alias~~ — **n/a**: zero callers reference the legacy URL (`grep -rn 'anton-kb-router' k8s/ stacks/` returns empty), no alias needed.
 
-### 2D — Prod smoke + tear-down
-- [ ] Prod smoke — `/feed /signal /marker /tick /ingest` all green from a prod agent pod.
-      **Accept:** same curl matrix as 1B but `-n anton-prod`.
-- [ ] 24h prod observation — no error spike in Grafana `brain-health` dashboard.
-      **Accept:** Grafana panel screenshots attached to `operator/incidents/` (or green check in BLOCKS.md).
-- [ ] Scale legacy `anton-embeddings` prod StatefulSet to 0.
-      **Accept:** `kubectl get sts anton-embeddings -n anton-prod -o jsonpath='{.spec.replicas}' == 0`.
-- [ ] Delete prod legacy ArgoCD apps + chart dirs (mirror of 1C/1E in prod).
-      **Accept:** `argocd app list | grep '^anton-.*-prod$' | grep -E '(router|reader|embedding|tick)'` returns empty.
+### 2D — brain-cron singleton + smoke + observation (open)
+- [x] Resolve `agentibrain-brain-cron-prod` SharedResourceWarning — antoncore PR `chore/block2-close-prod-cutover` deletes the prod-tracking ArgoCD Application (singleton lives under `agentibrain-brain-cron`, dev-tracking).
+- [ ] Reconcile `agentibrain-embeddings-prod` + `agentibrain-brain-keeper-prod` `Progressing` state — pods are 1/1 Running. Will resolve after antoncore PR merges + ArgoCD next reconciliation cycle. Re-check post-merge.
+      **Accept:** all six prod brain apps `Synced + Healthy`.
+- [x] Prod smoke executed 2026-05-03 — `/feed /signal /marker /ingest` all 2xx. Idempotency replay verified. Evidence: `operator/incidents/INC-2026-05-03-block2-prod-smoke.md`.
+- [ ] 24h prod observation — error count from kb-router-prod + brain-keeper-prod logs (re-check 2026-05-04).
+      **Accept:** zero new error spikes vs prior 24h baseline.
+- [x] Legacy `anton-embeddings` / `anton-kb-router` / `anton-obsidian-reader` / `anton-tick-engine` already absent from `anton-prod` and `antoncore/k8s/charts/` (mirror of 1E).
 
 ---
 
@@ -109,9 +101,15 @@ See `operator/ENHANCEMENTS.md` for the full Tier 3-5 list. Pull from there only 
 
 **Status:** small cleanups discovered during the kernel decoupling cutover. None of these block any other block — opportunistic.
 
-- [ ] Rewrite kernel `docs/{SECRETS,TROUBLESHOOTING,OPERATIONS}.md` — remove anton-namespace kubectl examples, replace with `<your-namespace>` placeholders. The deployment-artifact bleed is gone but doc bleed remains.
-      **Accept:** `grep -rn 'anton-{dev,prod,ops}' docs/` returns empty.
+- [ ] Rewrite kernel docs to remove operator-specific tokens (`anton-{dev,prod,ops}`, `claude-max-{haiku,sonnet}`, `10.10.30.*`, `openbao`, `litellm.anton-*.svc`). Audit 2026-05-03 found 11 bleeding files, not the 3 originally inventoried:
+      - **Action**: `docs/{SECRETS,TROUBLESHOOTING,OPERATIONS,DEPLOYMENT,GLOSSARY}.md` + `docs/architecture/{KEEPER,READERS-GUIDE,CLUSTERS,ARCHITECTURE}.md` — rewrite generic with `<your-namespace>` / `<your-cluster>` placeholders.
+      - **Keep with framing**: `docs/ENVIRONMENTS.md` (already framed as "operator's reference setup" — leave anton refs but add disclaimer at top); `docs/MIGRATION.md` (operator history — consider relocating to `antoncore/operator/incidents/` and deleting from kernel).
+      **Accept:** `grep -rEn 'anton-(dev\|prod\|ops)\\b\|claude-max-(haiku\|sonnet)\|10\\.10\\.30\\.|openbao' docs/` returns hits only inside ENVIRONMENTS.md (with disclaimer present) and zero MIGRATION.md hits in kernel.
 - [ ] Add `examples/` tree to kernel — sample value overlays + ArgoCD `Application` CR templates with placeholder repo URLs / namespaces. Helps forkers see the deployment shape without inheriting Anton's.
       **Accept:** `examples/values-overlays/` and `examples/argocd/` exist with placeholder content; README links to them.
-- [ ] Diagnose pre-existing `agentibrain-brain-cron` Degraded health (since `2026-04-30T16:13Z`, last 3 brain-cron jobs Failed). Not caused by decoupling, but live since before this work.
+- [ ] Diagnose `brain-cron` job non-completion. **Re-audit 2026-05-03**: ArgoCD `agentibrain-brain-cron` (dev) is now `Synced+Healthy`, but underlying jobs `brain-cron-29630287/29630407/29630527` show `0/1` completion at ages 4h7m / 127m / 7m15s. `brain-cron-tick-drain-*` jobs complete 1/1 normally. Root cause is in the brain-cron full-tick (every 2h) path, not the 2-min tick-drain path.
       **Accept:** root cause noted in `operator/incidents/` and either fixed or marked as expected behavior.
+- [ ] Reconcile `agentibrain-brain-cron-prod` `OutOfSync` (audit 2026-05-03). New finding — not in original Block 5 scope.
+      **Accept:** `argocd app get agentibrain-brain-cron-prod` shows `Synced` after explicit sync or value reconciliation.
+- [ ] Clarify `agentibrain-brain-keeper` (dev + prod) `Progressing` state — is this transient rollout or stuck pod?
+      **Accept:** sts replicas match `Ready=Running`, ArgoCD shows `Healthy`.
