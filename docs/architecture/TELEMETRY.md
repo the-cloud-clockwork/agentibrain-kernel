@@ -45,7 +45,7 @@ LAYER 4 — Data plane
   Langfuse via otlphttp/langfuse exporter (traces only)
 
 LAYER 5 — Visualization
-  Grafana dashboard /d/anton-brain-health/brain-nervous-system
+  Grafana dashboard /d/<your-dashboard-slug>/brain-nervous-system
     4 new panels: inject latency, marker write rate, delivery coverage, error rate
   Langfuse https://langfuse.homeofanton.com
     Per-session trace view: claude_code.user_prompt → brain.inject → brain.delivery(×N)

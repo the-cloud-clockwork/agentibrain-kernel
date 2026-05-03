@@ -1,0 +1,31 @@
+# Sample ArgoCD Application — agentibrain-brain-cron (singleton).
+# Cluster-wide; deploy ONCE. Tracks dev tag for faster code iteration.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentibrain-brain-cron
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+      targetRevision: dev
+      path: helm/brain-cron
+      helm:
+        releaseName: agentibrain-brain-cron
+        valueFiles:
+          - $values/values-overlays/brain-cron/values.yaml
+    - repoURL: <your-platform-repo>
+      targetRevision: <your-revision>
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <your-ops-namespace>
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

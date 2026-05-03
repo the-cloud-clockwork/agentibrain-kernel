@@ -183,7 +183,7 @@ BRAIN_REFRESH_INTERVAL: "30"      # turns between refresh checks
 ```
 
 **Currently wired on:**
-- K8s agents: agenticore, anton-agent, publisher, brain-keeper (all 4 pods in anton-dev, env vars in Helm values)
+- K8s agents: agenticore, anton-agent, publisher, brain-keeper (all 4 pods in <your-namespace>, env vars in Helm values)
 - Local fleet (WSL2): all repos with `.agentihooks.json` containing `"channels": ["brain", "amygdala"]`. Brain-feed synced via rsync cron (`*/5 * * * *`) from Anton NFS to `~/.agentihooks/brain-feed/`. Env vars in `~/.claude/settings.json`.
 
 **Channel subscription required:** Broadcast system reads `.agentihooks.json` from project CWD for `channels` array. Without `["brain", "amygdala"]`, brain messages are published but filtered out at delivery.
@@ -202,7 +202,7 @@ python3 /app/extract.py --since 26h --min-turns 5 \
 python3 /app/brain_tick.py --vault /vault --brain-feed /vault/brain-feed
 ```
 
-**Deployment:** `helm/brain-cron/` (CronJob). Operators pick a namespace; antoncore uses `anton-ops`.
+**Deployment:** `helm/brain-cron/` (CronJob). Operators pick a namespace; antoncore uses `<your-ops-namespace>`.
 **Image:** `ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:latest`
 **Vault mount:** RW at `/vault` (NFS or PVC — see `helm/brain-cron/values.yaml`). Shared-FS at `/shared` (RO) is optional and only needed when co-located with agenticore runtime pods.
 
@@ -348,7 +348,7 @@ Operator-specific planning and rollout notes (e.g. `operator/BRAIN-MVP.md`)
 live in each operator's deployment repo.
 | `brain-etl/LEARNINGS.md` | ETL audit log (overnight run: 20 ticks) |
 | `docs/8E-MEMORY.md` | Memory stack hierarchy (auto-memory → AgentiBridge → brain arcs) |
-| `docs/9D-OPERATOR-CRONJOBS.md` | brain-cron listed in anton-ops workload table |
+| `docs/9D-OPERATOR-CRONJOBS.md` | brain-cron listed in <your-ops-namespace> workload table |
 
 ---
 

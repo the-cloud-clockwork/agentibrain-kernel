@@ -1,0 +1,17 @@
+# Sample overlay — agentibrain-brain-keeper (prod).
+# brain-keeper is typically prod-only (one ops oracle per cluster).
+tpl:
+  global:
+    environment: prod
+  app:
+    image:
+      tag: latest
+  env:
+    variables:
+      BRAIN_URL: http://agentibrain-kb-router.<your-namespace>.svc:8080
+      AGENTIBRIDGE_URL: http://<your-agentibridge>.<your-namespace>.svc:8080
+  externalSecret:                                  # nosecret
+    enabled: true                                  # nosecret
+    storeName: <your-secret-store>                 # nosecret
+    secretPath: <your-secret-path>/agentibrain-keeper   # nosecret
+    targetSecretName: agentibrain-keeper-secrets   # nosecret
