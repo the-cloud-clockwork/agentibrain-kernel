@@ -1,0 +1,34 @@
+# Sample overlay — agentibrain-kb-router (prod).
+tpl:
+  global:
+    environment: prod
+  app:
+    image:
+      tag: latest
+  env:
+    variables:
+      OBSIDIAN_READER_URL: http://agentibrain-obsidian-reader.<your-namespace>.svc:8080
+      EMBEDDINGS_URL: http://agentibrain-embeddings.<your-namespace>.svc:8080
+      INFERENCE_URL: http://<your-llm-gateway>.<your-namespace>.svc:4000
+      BRAIN_CLASSIFY_MODEL: <your-classify-model>
+      BRAIN_BRIEF_MODEL: <your-brief-model>
+
+  externalSecret:                                  # nosecret
+    enabled: true                                  # nosecret
+    storeName: <your-secret-store>                 # nosecret
+    secretPath: <your-secret-path>/agentibrain-router   # nosecret
+    targetSecretName: agentibrain-router-secrets   # nosecret
+    data:                                          # nosecret
+      - secretKey: INFERENCE_API_KEY               # nosecret
+        remoteRef:                                 # nosecret
+          key: <your-secret-path>/brain-inference  # nosecret
+          property: INFERENCE_API_KEY              # nosecret
+
+  extraVolumes:
+    - name: nfs-vault
+      nfs:
+        server: <your-host>
+        path: <your-vault-path>
+  extraVolumeMounts:
+    - name: nfs-vault
+      mountPath: /vault

@@ -1,0 +1,32 @@
+# Sample ArgoCD Application — agentibrain-brain-keeper (prod).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentibrain-brain-keeper-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    # Chart source — kernel
+    - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+      targetRevision: main
+      path: helm/brain-keeper
+      helm:
+        releaseName: agentibrain-brain-keeper-prod
+        valueFiles:
+          - $values/values-overlays/brain-keeper/values-prod.yaml
+    # $values source — your platform repo
+    - repoURL: <your-platform-repo>
+      targetRevision: <your-revision>
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <your-namespace>
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,32 @@
+# Sample ArgoCD Application — agentibrain-kb-router (prod).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentibrain-kb-router-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    # Chart source — kernel
+    - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+      targetRevision: main
+      path: helm/kb-router
+      helm:
+        releaseName: agentibrain-kb-router-prod
+        valueFiles:
+          - $values/values-overlays/kb-router/values-prod.yaml
+    # $values source — your platform repo
+    - repoURL: <your-platform-repo>
+      targetRevision: <your-revision>
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <your-namespace>
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

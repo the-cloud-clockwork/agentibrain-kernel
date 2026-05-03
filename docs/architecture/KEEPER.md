@@ -7,7 +7,7 @@
 ## Identity
 
 - **Kind:** K8s StatefulSet running the agenticore image with `AGENT_MODE=true`
-- **Namespace/pod:** operator-chosen (antoncore uses `anton-prod/brain-keeper-0`, with a dev mirror in `anton-dev`)
+- **Namespace/pod:** operator-chosen (typical: `<your-prod-namespace>/brain-keeper-0` with a dev mirror in `<your-dev-namespace>`)
 - **Port:** `8200` (HTTP OpenAI-compat + `/health`)
 - **Profile:** `brain-keeper` — canonical source lives in this repo under `profiles/brain-keeper/`. Agentihooks-bundle clones at install time.
 - **Package:** `agents/brain-keeper/` in this repo — `agent.yml`, `package/system.md`, `package/.agentihooks.json`. Agentihub clones at install time.
@@ -60,7 +60,7 @@ run_agent(agent_id="brain-keeper-0", task="run brain test", wait=False)
 ```
 
 - `wait=False` returns `job_id` immediately — poll job state via `/shared/job-state/{job_id}.json` on the pod or use `get_dispatch_job` from AgentiBridge.
-- `wait=True` blocks up to **600s** (bumped from 30s — PR #36 merged to agentibridge/dev and live-patched on both anton-dev + anton-prod pods). Override with `AGENTIBRIDGE_AGENT_TIMEOUT` env var.
+- `wait=True` blocks up to **600s** (bumped from 30s — PR #36 merged to agentibridge/dev and live-patched on both <your-namespace> + <your-namespace> pods). Override with `AGENTIBRIDGE_AGENT_TIMEOUT` env var.
 
 ### 3. Cron tick
 

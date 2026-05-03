@@ -1,0 +1,26 @@
+# Sample ArgoCD app-of-apps — pick ONE env (dev or prod).
+# Loads every per-service Application from the matching subdir.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentibrain-root-<your-env>
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: <your-platform-repo>
+    targetRevision: <your-revision>
+    path: argocd/<your-env>          # examples/argocd/dev or .../prod once you copy
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
