@@ -3,7 +3,7 @@ id: agentibrain-kernel-blocks
 title: agentibrain-kernel — Active Blocks
 project: agentibrain-kernel
 status: active
-updated: 2026-04-30
+updated: 2026-05-03
 ---
 
 # agentibrain-kernel — Active Blocks

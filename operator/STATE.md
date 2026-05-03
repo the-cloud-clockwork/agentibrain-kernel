@@ -3,39 +3,40 @@ id: agentibrain-kernel-state
 title: agentibrain-kernel — State
 project: agentibrain-kernel
 status: active
-maturity: 80%
-updated: 2026-04-30
+maturity: 85%
+updated: 2026-05-03
 ---
 
-# agentibrain-kernel — State (2026-04-30, ~80%)
+# agentibrain-kernel — State (2026-05-03, ~85%)
 
 ## What's still open
 
 See `BLOCKS.md` for the active block list and `ENHANCEMENTS.md` for the Tier 3-5 backlog. Top-of-mind:
 
-- **Block 1** — closed 2026-05-03. PyPI publish + downstream pin bumps descoped (kernel reaches consumers via Helm + image, not pip). 1E legacy-dir cleanup verified done on disk.
-- **Block 2** — prod cutover de-facto done; closing on brain-cron singleton + smoke + 24h observation (2D). Antoncore PR `chore/block2-close-prod-cutover` removes the conflicting prod ArgoCD app.
-- **Block 5** — decoupling residuals (kernel docs anton-namespace scrub, `examples/` tree, brain-cron Degraded diagnosis). Opportunistic.
+- **Block 1** — closed 2026-05-03. PyPI publish + downstream pin bumps descoped.
+- **Block 2** — closed 2026-05-03 except 24h log re-check (calendar-gated to 2026-05-04). Prod smoke matrix all 2xx; antoncore brain-cron singleton fix shipped to main; legacy chart dirs absent.
+- **Block 5** — closed 2026-05-03. Doc anton-scrub (12 files), `examples/` tree (8 overlays + 10 ArgoCD CRs + root), brain-cron Phase 3 AI failure root-caused (stale INFERENCE_API_KEY post-NVMe recovery) and fixed via new `rotate_file` dispatch in litellm-state.
 - **Block 3** — friend-install story. Effectively paused (gated on PyPI publish, which is descoped). Pull from Tier 3 backlog when external adoption becomes a priority.
 
 ## Maturity scoring
 
 | Axis | % | Notes |
 |---|---|---|
-| Feature surface | 95 | 4 services + HTTP contract + tick consumer + gateway contract all shipped |
-| Pipeline | 90 | E2E from kb-router → LiteLLM → claude-max-haiku verified post-cutover |
+| Feature surface | 95 | 4 services + HTTP contract (incl. `/index_artifact`) + tick consumer + gateway contract all shipped |
+| Pipeline | 95 | E2E ingest → classify → embed → /feed verified prod 2026-05-03; brain-cron Phase 3 AI restored post key rotation |
 | Observability | 60 | OTel spans present, no dashboards/alerts yet |
 | Self-healing | 30 | Parity harness + retry hooks; no auto-remediation |
 | Resilience | 40 | No backup or DR playbook documented |
-| Docs | 75 | Architecture + GATEWAY-CONTRACT.md + portability docs shipped; quickstart still missing; doc-bleed in SECRETS/TROUBLESHOOTING/OPERATIONS |
-| Distribution | 35 | PyPI publish descoped 2026-05-03 — Helm chart + container image distribution is sufficient for current fleet. OCI Helm publish still on Tier 3 backlog. |
-| Prod | 85 | Antoncore main carries prod overlays + ArgoCD apps; ≥5 prod brain pods Running 29h+. Pending: brain-cron singleton SharedResourceWarning fix + prod smoke + 24h observation (Block 2D). |
+| Docs | 85 | Architecture + GATEWAY-CONTRACT.md + portability docs + 12-file anton-scrub + `examples/` tree all shipped; quickstart still missing |
+| Distribution | 35 | PyPI publish descoped — Helm chart + container image distribution is sufficient for current fleet. OCI Helm publish on Tier 3 backlog. |
+| Prod | 95 | Antoncore main carries prod overlays + ArgoCD apps; 5 prod brain pods Running. Smoke green; brain-cron singleton fix shipped. Open: 24h log re-check 2026-05-04. |
 
-**Weighted average: ~80%.**
+**Weighted average: ~85%.**
 
-## Boundary state (2026-04-30)
+## Boundary state (2026-05-03)
 
-- Kernel deployment-artifact bleed: **zero**. `helm/`, `services/`, `operator/values-overlays/` (deleted) and `k8s/argocd/` (deleted) carry no anton/claude-max/openbao tokens. Kernel is generic and clone-and-deploy.
-- Antoncore owns: `k8s/values-overlays/agentibrain-*/` (5 overlay dirs), `k8s/argocd/{dev,prod}/agentibrain/` (6 ArgoCD `Application` CRs each), `agentibrain-root-{dev,prod}` repointed at antoncore's own subdir.
+- Kernel deployment-artifact bleed: **zero**. `helm/`, `services/`, `docs/` (12 files scrubbed today), and operator/ tree carry no anton/claude-max/openbao tokens outside `docs/ENVIRONMENTS.md` (kept as the operator-reference walk-through with a generic disclaimer). Kernel is generic and clone-and-deploy.
+- Antoncore owns: `k8s/values-overlays/agentibrain-*/` (5 overlay dirs), `k8s/argocd/{dev,prod}/agentibrain/` (5 prod + 6 dev ArgoCD `Application` CRs after singleton fix). `agentibrain-root-{dev,prod}` source antoncore's own subdir.
 - Brain HTTP contract: standard OpenAI chat-completions to any compatible gateway (LiteLLM, OpenAI, Ollama). See `docs/GATEWAY-CONTRACT.md` and `operator/brain-models.yaml`.
-- Brain-blind boundary: artifact-store no longer auto-embeds; brain writes happen only via deliberate `kb_ingest` MCP tool calls.
+- Brain-blind boundary: artifact-store no longer auto-embeds; brain writes happen only via deliberate `kb_ingest` MCP tool calls or kb-router `POST /index_artifact`.
+- litellm-state ships rotate-single-file dispatch input (PR #7, 2026-05-03) for targeted virtual-key rotations like the brain-inference recovery.

@@ -10,17 +10,17 @@ created: 2026-04-22
 
 ## What it is
 
-The 6th agenti* ecosystem pillar. A standalone, pip-installable brain + knowledge-base kernel that packages everything that used to live inside antoncore's brain stack (kb-router, obsidian-reader, embeddings, tick-engine, brain-keeper, brain profile) as one shippable unit.
+The 6th agenti* ecosystem pillar. A standalone, Helm-chart + container-image (and optionally pip-installable) brain + knowledge-base kernel that packages everything that used to live inside antoncore's brain stack (kb-router, obsidian-reader, embeddings, tick-engine, brain-keeper, brain profile) as one shippable unit.
 
 **Repo:** `github.com/The-Cloud-Clock-Work/agentibrain-kernel`
-**Tag (current):** `v0.1.0` (Phase 1-6 + HUMAN CHECKPOINT scaffold rebuild)
-**Dev deploy:** 5 pods in `anton-dev` — `agentibrain-{kb-router,obsidian-reader,embeddings,brain-keeper,parity}`.
+**Tag (current):** `v0.1.1` (HTTP contract v1, brain-blind boundary, generic OpenAI gateway contract, decoupling cutover)
+**Live deploy (operator reference):** 5 pods per env — `agentibrain-{kb-router,obsidian-reader,embeddings,brain-keeper,mcp}-0` in dev + prod, plus the singleton `brain-cron` CronJob set + `amygdala` Deployment in `<your-ops-namespace>`.
 
 ## What "100% mature" means
 
 A friend can `pip install agentibrain`, run `brain init` + `brain up`, and stand up the full brain on their own machine (local compose OR k8s) with their own vault, their own LLM keys, their own embeddings provider — zero dependency on antoncore. Concretely:
 
-1. **Shippable** — PyPI package + Helm chart in a public registry + Docker images on GHCR with semver tags.
+1. **Shippable** — Helm chart + Docker images on GHCR with semver tags. PyPI publish wired (`publish.yml`) and dormant; lights up when external pip-install adoption is in scope.
 2. **Dev+prod parity** — kernel runs in both `anton-dev` and `anton-prod`, legacy `anton-*` brain stacks fully retired.
 3. **Self-install** — README quickstart works end-to-end on a fresh machine with <10 minutes of operator input.
 4. **Observable** — Grafana dashboards + Prometheus alerts for all 4 services; vault write audit trail queryable.
