@@ -1,0 +1,32 @@
+# Sample ArgoCD Application — agentibrain-embeddings (prod).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentibrain-embeddings-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    # Chart source — kernel
+    - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+      targetRevision: main
+      path: helm/embeddings
+      helm:
+        releaseName: agentibrain-embeddings-prod
+        valueFiles:
+          - $values/values-overlays/embeddings/values-prod.yaml
+    # $values source — your platform repo
+    - repoURL: <your-platform-repo>
+      targetRevision: <your-revision>
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <your-namespace>
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

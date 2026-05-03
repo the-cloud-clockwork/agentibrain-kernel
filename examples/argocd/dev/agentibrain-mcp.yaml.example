@@ -1,0 +1,29 @@
+# Sample ArgoCD Application — mcp-agentibrain (singleton).
+# The MCP server (kb_search/kb_brief/kb_dispatch) is cluster-wide.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mcp-agentibrain
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+      targetRevision: dev
+      path: services/mcp/helm
+      helm:
+        releaseName: mcp-agentibrain
+    - repoURL: <your-platform-repo>
+      targetRevision: <your-revision>
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: <your-namespace>
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
