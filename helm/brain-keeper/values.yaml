@@ -118,7 +118,7 @@ tpl:
       BRAIN_REFRESH_INTERVAL: '10'
       AMYGDALA_ENABLED: 'true'
       AMYGDALA_SIGNAL_PATH: /vault/brain-feed/amygdala-active.md
-      # ARTIFACT_STORE_URL — operator override (see values-anton.yaml)
+      # ARTIFACT_STORE_URL — operator override (set in your per-env values overlay)
       # AGENTIBRIDGE_URL — operator-only feature; empty by default. Operators
       # with an AgentiBridge dispatch service set this in their overlay.
       AGENTIBRIDGE_URL: ""

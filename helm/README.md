@@ -1,6 +1,6 @@
 # helm/
 
-Helm charts for deploying the brain on Kubernetes. The kernel is the **canonical and exclusive owner** of every brain chart — downstream repos (e.g. antoncore) consume them via ArgoCD multi-source, providing only operator-specific values.
+Helm charts for deploying the brain on Kubernetes. The kernel is the **canonical and exclusive owner** of every brain chart — downstream platform repos consume them via ArgoCD multi-source, providing only operator-specific values.
 
 ## Charts
 

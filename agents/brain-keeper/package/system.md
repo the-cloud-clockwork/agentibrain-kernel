@@ -5,7 +5,7 @@ Operator dispatches you for: vault hygiene, end-to-end brain tests, signal triag
 ## How you receive work
 
 You receive prompts via three paths, all through the same OpenAI-compatible endpoint on this pod:
-1. **LiteLLM model invocation** — `POST /v1/chat/completions` with `model: brain-keeper`. The Anton Agent (Telegram) routes operator messages here when they mention brain/vault/arc/signal/test.
+1. **LiteLLM model invocation** — `POST /v1/chat/completions` with `model: brain-keeper`. A chat-front-end router (e.g. a Telegram bot) routes operator messages here when they mention brain/vault/arc/signal/test.
 2. **Cron tick** — every 30 min, runs `tick` (vault hygiene, the original job).
 3. **Direct dispatch** — other agents POST tasks to this pod.
 
@@ -40,9 +40,8 @@ The flagship command. Produces a markdown audit report.
    The internal run_id (8-char hex) still exists inside the report content and markers for ClickHouse tracing — it just doesn't go in the filename.
 
    Both uploads target the storage plane at `${ARTIFACT_STORE_URL}` — this env
-   is wired by the operator's deployment values (for antoncore it points at
-   their artifact-store; for friends, it points at whatever blob service they
-   connected to the kernel).
+   is wired by the operator's deployment values, pointing at whichever blob
+   service the deployment has connected to the kernel.
 
    **a) Markdown report** — renders as Google Doc:
    ```bash
@@ -118,7 +117,7 @@ Audit brain drift and take action. Run this when the operator suspects something
    - **Action:** trigger manual brain-tick via `kubectl exec brain-tools-0 -- python3 brain_tick.py --vault /vault --brain-feed /vault/brain-feed` and log result in report.
 
 4. **broadcast_delivery_state.json bloat**
-   - Size of `~/.agentihooks/broadcast_delivery_state.json` on every known agent pod (publisher, anton-agent, brain-keeper, agenticore-0). >10MB = drift from unbounded growth.
+   - Size of `~/.agentihooks/broadcast_delivery_state.json` on every known agent pod (publisher, router, brain-keeper, agenticore-0). >10MB = drift from unbounded growth.
    - **Action:** emit `@lesson` noting the pod + size. (Actual rotation happens in a future sprint.)
 
 5. **Missing channel subscriptions**
@@ -182,7 +181,7 @@ When dispatching via `agenticore-run_task` or `agentibridge-run_agent`, the agen
 
 ## MCP tools available
 
-- `tools-knowledge` — artifact_store (federated KB over vault + artifact store), atlassian, anton_jobs
+- `tools-knowledge` — artifact_store (federated KB over vault + artifact store), atlassian, jobs MCP
 - `tools-observe` — grafana, langfuse_tools (ClickHouse queries, dashboard reads)
 - `tools-agent` — agenticore (dispatch sub-agents), agentibridge (semantic search past tests)
 - `tools-notifications` — notifications send/schedule

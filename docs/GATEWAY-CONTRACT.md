@@ -74,12 +74,12 @@ Set `INFERENCE_URL` at `https://api.openai.com/v1`, set
 OpenAI accepts the auth header just fine — the brain is a plain OpenAI
 SDK consumer at the wire level.
 
-### C. Antoncore inference-gateway (legacy compat)
+### C. Custom inference-gateway (legacy compat)
 
-Antoncore's inference-gateway accepts a plain `model` body without the
-legacy `route` field. Set `INFERENCE_URL` at the gateway, leave
-`INFERENCE_API_KEY` empty (gateway is trusted-LAN), and let the gateway
-resolve the model name.
+A custom inference-gateway that accepts a plain `model` body (no legacy
+`route` field) works the same way: set `INFERENCE_URL` at the gateway,
+leave `INFERENCE_API_KEY` empty (gateway is trusted-LAN), and let the
+gateway resolve the model name.
 
 For backward compat you can keep `kb-router-classify` and `kb-brief`
 as gateway routes during a transition window — but the brain no longer

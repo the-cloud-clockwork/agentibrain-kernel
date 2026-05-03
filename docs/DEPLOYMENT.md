@@ -39,7 +39,7 @@ For non-GitOps installs:
 helm install brain-cron \
   oci://ghcr.io/the-cloud-clock-work/charts/brain-cron \
   --version 0.1.0 \
-  -n <your-ops-namespace> -f values-anton.yaml
+  -n <your-ops-namespace> -f values-prod.yaml
 ```
 
 Pros: simplest. Cons: no GitOps trail.

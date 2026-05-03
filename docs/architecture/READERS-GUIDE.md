@@ -14,11 +14,11 @@ Use this when:
 
 The brain is five cooperating systems:
 
-1. **Clusters (vault)** — arcs = narrative units of work. One arc = one theme, accumulated over time. Stored as markdown at `/vault/clusters/YYYY-MM-DD/<slug>.md` on Anton NFS.
+1. **Clusters (vault)** — arcs = narrative units of work. One arc = one theme, accumulated over time. Stored as markdown at `<vault>/clusters/YYYY-MM-DD/<slug>.md` on shared storage.
 2. **Ticks (cron)** — every 2h at HH:07 UTC, `brain-cron` scans arcs, computes heat, writes `brain-feed/*.md`, tombstones stale signals.
 3. **Brain-feed (outbox)** — plaintext summary files (`hot-arcs.md`, `signals.md`, `inject.md`, `intent.md`, `last-tick-diff.md`, `health.jsonl`). Synced to every machine via rsync every 5min.
 4. **Agentihooks (injection)** — on `UserPromptSubmit`, reads `brain-feed/*.md`, injects as `BROADCAST` blocks into Claude's context. Emits OTel spans per inject + delivery + marker-write.
-5. **Brain-keeper (ops agent)** — first-class agent at `brain-keeper.<namespace>.svc:8200` (antoncore: `<your-namespace>`). Runs triage, heal, replay, test via LiteLLM model `brain-keeper`.
+5. **Brain-keeper (ops agent)** — first-class agent at `brain-keeper.<your-namespace>.svc:8200`. Runs triage, heal, replay, test via LiteLLM model `brain-keeper`.
 
 Data flows: `sessions → clusters → tick → brain-feed → hooks → broadcast → new sessions (+ markers flow back)`.
 
@@ -126,13 +126,13 @@ Three independent signals must all agree:
 
 **Signal 1 — Pod health**
 ```bash
-KUBECONFIG=/home/iamroot/.kube/config-k3s kubectl get pods -A | grep -E "brain|amygdala"
+kubectl get pods -A | grep -E "brain|amygdala"
 ```
 Expect 4 brain-keeper + 1 amygdala, all Running. If any CrashLoopBackOff → describe, logs.
 
 **Signal 2 — Last tick**
 ```bash
-KUBECONFIG=/home/iamroot/.kube/config-k3s kubectl -n <your-ops-namespace> logs $(kubectl -n <your-ops-namespace> get pods -l job-name -o name | grep brain-cron | head -1) --tail=60 | grep -E 'arcs_scanned|signals_|total_ms'
+kubectl -n <your-ops-namespace> logs $(kubectl -n <your-ops-namespace> get pods -l job-name -o name | grep brain-cron | head -1) --tail=60 | grep -E 'arcs_scanned|signals_|total_ms'
 ```
 Expect values. `total_ms` under 30000. `dry_run: false` on the live phase.
 
@@ -162,7 +162,7 @@ SLUG="<arc-slug>"   # e.g. 2026-04-15-983af4cc-writer
 DATE="$(date -u +%Y-%m-%d)"
 
 # 1. File exists on vault
-ssh anton "ls /mnt/user/appdata/obsidian/vault/clusters/$DATE/ | grep $SLUG"
+ssh <your-vault-host> "ls <your-vault-path>/clusters/$DATE/ | grep $SLUG"
 
 # 2. Broadcast references it (means tick picked it up)
 grep -l "$SLUG" ~/.agentihooks/brain-feed/hot-arcs.md
@@ -231,7 +231,7 @@ Content to inject into brain-feed directly.
 - All markers are HTML comments → invisible in rendered markdown.
 - Max 5 per session (hook enforces for primary markers).
 - Hook scans transcript on Stop → writes to `~/.agentihooks/brain-outbox/`.
-- `@milestone` and `@signal` also XADD to Redis `anton:events:brain` for real-time delivery.
+- `@milestone` and `@signal` also XADD to Redis stream `events:brain` for real-time delivery.
 - Next tick ingests outbox → becomes part of the arc narrative.
 - Full spec: `docs/brain/MARKERS.md` (7 types with regex patterns and attributes).
 
@@ -285,14 +285,14 @@ Commands (send as task prompt):
 
 | Question | Authoritative source |
 |---|---|
-| What arcs exist? | `/vault/clusters/*/` on Anton NFS |
+| What arcs exist? | `<vault>/clusters/*/` on shared storage |
 | What are current hot arcs? | `/vault/brain-feed/hot-arcs.md` (synced to `~/.agentihooks/brain-feed/`) |
 | What signals are active? | `/vault/brain-feed/signals.md` |
 | When did tick X run? | `~/.agentihooks/brain-feed/ticks/YYYY-MM-DDTHH-MM-SSZ-ai-output.md` |
 | Tick health history | `~/.agentihooks/brain-feed/health.jsonl` (one line per tick) |
 | Span events | ClickHouse `otel.otel_traces` |
 | Log events | ClickHouse `otel.otel_logs` |
-| Causal trace graph | Langfuse `https://langfuse.homeofanton.com` |
+| Causal trace graph | Langfuse `<your-langfuse-host>` |
 
 ---
 
@@ -350,7 +350,7 @@ dispatch_task("python3 -c 'from scripts.overlay import overlay_add, overlay_remo
 ### Test 4: Redis XADD
 ```bash
 dispatch_task("Emit: <!-- @signal severity=info source=test -->Test<!-- @/signal -->")
-# Check: docker exec dataplane_redis redis-cli -n 11 XLEN anton:events:brain
+# Check: docker exec <redis-container> redis-cli -n 11 XLEN events:brain
 ```
 
 ### Test 5: Concurrent load
@@ -362,14 +362,14 @@ dispatch_task("Emit: <!-- @signal severity=info source=test -->Test<!-- @/signal
 ### Test 6: Forensic transcript check
 ```bash
 # get_session MCP only returns user+assistant turns, NOT hook attachments
-# For hook forensics, read raw JSONL: ~/.claude/projects/-home-iamroot/<session_id>.jsonl
+# For hook forensics, read raw JSONL: ~/.claude/projects/<project-dir>/<session_id>.jsonl
 # Check attachment entries with hookName=SessionStart for brain content
 ```
 
 ### Common failure modes
 | Symptom | Root cause | Fix |
 |---------|-----------|-----|
-| No broadcasts in dispatched agent | Missing `.agentihooks.json` at CWD | Create `/home/iamroot/.agentihooks.json` with channels |
+| No broadcasts in dispatched agent | Missing `.agentihooks.json` at CWD | Create `$HOME/.agentihooks.json` with channels |
 | `BRAIN_ENABLED=false` | Stale `.pyc` cache | `find agentihooks -name __pycache__ -exec rm -rf {} +` |
 | brain_adapter publishes but broadcasts empty | SessionStart ordering wrong | brain_adapter BEFORE broadcast in hook_manager.py |
 | Overlay blocked | Profile not in `allowedOverlays` | Add to profile.yml |

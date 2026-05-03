@@ -40,8 +40,9 @@ clusters with no override.
 
 ## Operator overlays
 
-The Anton reference deploy layers NFS + ESO + MetalLB on top of these
-defaults. See `operator/values-overlays/agentibrain-*/` for the full set.
+A typical platform deploy layers NFS + ESO + MetalLB on top of these
+defaults. See `examples/values-overlays/` for sample overlays you can copy
+into your own deployment repo.
 
 ## Troubleshooting
 

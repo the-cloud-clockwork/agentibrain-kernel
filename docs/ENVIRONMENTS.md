@@ -1,28 +1,29 @@
 # Environments
 
-> **Note:** This doc uses the operator's reference setup (namespaces `anton-dev`,
-> `anton-prod`, `anton-ops`; LiteLLM at `litellm.anton-prod.svc`; OpenBao at
-> `10.10.30.130`) as a concrete walk-through. **None of those names are baked
-> into the kernel.** Substitute your own namespaces, gateway URLs, and host
-> addresses everywhere — the kernel charts default to empty / placeholder
-> values and accept whatever your overlay sets. See `docs/DEPLOYMENT.md` for
-> the generic placeholders.
+> **Note:** This doc walks through a reference dev/prod split (namespaces
+> `<your-dev-ns>`, `<your-prod-ns>`, `<your-ops-ns>`; LiteLLM at
+> `litellm.<your-prod-ns>.svc`; OpenBao at `<your-secret-store-ip>`) as a
+> concrete example. **None of those names are baked into the kernel.**
+> Substitute your own namespaces, gateway URLs, and host addresses everywhere
+> — the kernel charts default to empty / placeholder values and accept
+> whatever your overlay sets. See `docs/DEPLOYMENT.md` for the generic
+> placeholders.
 
-The kernel is deployed twice in the operator's reference setup: `anton-dev` and `anton-prod`. This doc lays out what differs and how the values overlay achieves it.
+The kernel is deployed twice in the reference setup: `<your-dev-ns>` and `<your-prod-ns>`. This doc lays out what differs and how the values overlay achieves it.
 
 ## What separates dev from prod
 
 | Axis | dev | prod |
 |---|---|---|
-| K8s namespace | `anton-dev` | `anton-prod` |
-| Cron namespace | `anton-ops` (shared) | `anton-ops` (shared, `-prod` suffix on CR name) |
+| K8s namespace | `<your-dev-ns>` | `<your-prod-ns>` |
+| Cron namespace | `<your-ops-ns>` (shared) | `<your-ops-ns>` (shared, `-prod` suffix on CR name) |
 | Image tag | `:dev` | `:latest` |
 | ArgoCD source branch | `dev` | `main` |
 | ArgoCD app CR names | un-suffixed (`agentibrain-kb-router`) | `-prod` suffix (`agentibrain-kb-router-prod`) |
 | OpenBao path | `secret/k8s/embeddings-dev` | `secret/k8s/embeddings` |
 | Vault NFS path | shared (single dual-hemisphere vault) | shared |
-| LiteLLM service URL | `litellm.anton-prod.svc` (intentional — only one LiteLLM) | `litellm.anton-prod.svc` |
-| MetalLB IP for embeddings | none (ClusterIP only) | `10.10.30.203` |
+| LiteLLM service URL | `litellm.<your-prod-ns>.svc` (intentional — only one LiteLLM) | `litellm.<your-prod-ns>.svc` |
+| MetalLB IP for embeddings | none (ClusterIP only) | `<your-cluster-ip>` |
 | Replica count | 1 | 1 (scale up if load demands) |
 | Resource limits | smaller (cpu 300m, mem 512Mi) | normal (cpu 500m, mem 1Gi) |
 
@@ -41,8 +42,8 @@ Historical artifact. The legacy implementation only had a single embeddings serv
 Every kernel chart in this repo follows:
 
 ```
-values.yaml          ← dev defaults (env=dev, image tag :dev, cluster URLs anton-dev.svc)
-values-prod.yaml     ← prod overlay (env=prod, image tag :latest, cluster URLs anton-prod.svc)
+values.yaml          ← dev defaults (env=dev, image tag :dev, cluster URLs <your-dev-ns>.svc)
+values-prod.yaml     ← prod overlay (env=prod, image tag :latest, cluster URLs <your-prod-ns>.svc)
 ```
 
 ArgoCD apps reference both:
@@ -70,7 +71,7 @@ metadata:
   name: agentibrain-kb-router-prod
 ```
 
-If both have the same name, `app-of-apps-dev` (which reads `dev/`) and `app-of-apps-prod` (which reads `prod/`) will fight over the same K8s CR. Whoever syncs last wins; the loser's pods get pruned. This bit the operator on 2026-04-24.
+If both have the same name, `app-of-apps-dev` (which reads `dev/`) and `app-of-apps-prod` (which reads `prod/`) will fight over the same K8s CR. Whoever syncs last wins; the loser's pods get pruned.
 
 ## Promoting dev → prod
 
@@ -84,7 +85,7 @@ For a config-only change (no image rebuild needed):
 
 For an image change:
 1. Push to `dev` branch → CI builds `:dev`
-2. Test in `anton-dev`
+2. Test in `<your-dev-ns>`
 3. PR `dev` → `main` → CI builds `:latest`
 4. ArgoCD image-updater bumps the `agentibrain-X-prod` app digest
 5. Pod rollout
@@ -96,7 +97,7 @@ If you only have one cluster (no dev/prod split):
 2. Use one ArgoCD app per service, tracking `main`.
 3. Set `BRAIN_URL` on agents to the single namespace.
 
-The kernel doesn't require dev/prod separation; the operator's reference setup does because they want blue-green safety.
+The kernel doesn't require dev/prod separation; the reference setup splits them for blue-green safety.
 
 ## Local laptop install
 
