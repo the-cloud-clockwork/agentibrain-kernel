@@ -3,7 +3,7 @@ name: obsidian-reader
 description: Vault read/write FastAPI service — agentibrain-kernel image
 version: 0.1.1
 dependencies:
-  - name: tccw-k8s-service-template
+  - name: tcc-k8s-service-template
     version: "0.3.6"
     repository: "oci://ghcr.io/the-cloud-clockwork"
     alias: tpl
