@@ -7,7 +7,7 @@ name: publish
 #
 # Authentication: PyPI trusted publishing via OIDC. Configure once in PyPI:
 #   Project → Publishing → Add a trusted publisher
-#     owner: The-Cloud-Clock-Work
+#     owner: The-Cloud-Clockwork
 #     repo:  agentibrain-kernel
 #     workflow: publish.yml
 #     environment: pypi

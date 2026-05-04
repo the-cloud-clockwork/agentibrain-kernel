@@ -18,7 +18,7 @@ tpl:
     name: agenticore
     type: statefulset
     image:
-      repository: ghcr.io/the-cloud-clock-work/agenticore
+      repository: ghcr.io/the-cloud-clockwork/agenticore
       tag: latest
       pullPolicy: Always
     replicaCount: 1
@@ -99,11 +99,11 @@ tpl:
       # editable overlay; otherwise it falls back to PyPI which lags the dev tip
       # (e.g. PyPI 1.10.0 lacks the `init --force` flag agenticore boot relies on).
       # Prod overlays should override these to `main`.
-      AGENTICORE_AGENTIHOOKS_URL: https://github.com/The-Cloud-Clock-Work/agentihooks
+      AGENTICORE_AGENTIHOOKS_URL: https://github.com/The-Cloud-Clockwork/agentihooks
       AGENTICORE_AGENTIHOOKS_BRANCH: dev
-      AGENTICORE_AGENTIHOOKS_BUNDLE_URL: https://github.com/The-Cloud-Clock-Work/agentihooks-bundle
+      AGENTICORE_AGENTIHOOKS_BUNDLE_URL: https://github.com/The-Cloud-Clockwork/agentihooks-bundle
       AGENTICORE_AGENTIHOOKS_BUNDLE_BRANCH: dev
-      AGENTICORE_AGENTIHUB_URL: https://github.com/The-Cloud-Clock-Work/agentihub
+      AGENTICORE_AGENTIHUB_URL: https://github.com/The-Cloud-Clockwork/agentihub
       AGENTICORE_AGENTIHUB_BRANCH: dev
       AGENTICORE_AGENTIHOOKS_SYNC_INTERVAL: '30'
       AGENTICORE_AGENTIHOOKS_BUNDLE_SYNC_INTERVAL: '30'

@@ -78,7 +78,7 @@ services:
 {% endif %}
 
   embeddings:
-    image: {{ embeddings_image | default("ghcr.io/the-cloud-clock-work/agentibrain-embeddings:latest") }}
+    image: {{ embeddings_image | default("ghcr.io/the-cloud-clockwork/agentibrain-embeddings:latest") }}
     container_name: agentibrain_embeddings
     restart: unless-stopped
     depends_on:
@@ -96,7 +96,7 @@ services:
       start_period: 15s
 
   obsidian-reader:
-    image: {{ obsidian_reader_image | default("ghcr.io/the-cloud-clock-work/agentibrain-obsidian-reader:latest") }}
+    image: {{ obsidian_reader_image | default("ghcr.io/the-cloud-clockwork/agentibrain-obsidian-reader:latest") }}
     container_name: agentibrain_obsidian_reader
     restart: unless-stopped
     environment:
@@ -117,7 +117,7 @@ services:
       start_period: 10s
 
   kb-router:
-    image: {{ kb_router_image | default("ghcr.io/the-cloud-clock-work/agentibrain-kb-router:latest") }}
+    image: {{ kb_router_image | default("ghcr.io/the-cloud-clockwork/agentibrain-kb-router:latest") }}
     container_name: agentibrain_kb_router
     restart: unless-stopped
     depends_on:

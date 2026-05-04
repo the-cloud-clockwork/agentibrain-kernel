@@ -16,7 +16,7 @@ Single ArgoCD app, two sources: kernel as base, your repo as overlay.
 ```yaml
 spec:
   sources:
-    - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+    - repoURL: https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
       targetRevision: v0.1.0
       path: helm/brain-cron
       ref: kernel
@@ -37,7 +37,7 @@ For non-GitOps installs:
 
 ```bash
 helm install brain-cron \
-  oci://ghcr.io/the-cloud-clock-work/charts/brain-cron \
+  oci://ghcr.io/the-cloud-clockwork/charts/brain-cron \
   --version 0.1.0 \
   -n <your-ops-namespace> -f values-prod.yaml
 ```
@@ -115,11 +115,11 @@ Each kernel service has its own image, tagged per branch:
 
 | Service | Image |
 |---|---|
-| kb-router | `ghcr.io/the-cloud-clock-work/agentibrain-kb-router:dev|latest` |
-| obsidian-reader | `ghcr.io/the-cloud-clock-work/agentibrain-obsidian-reader:dev|latest` |
-| embeddings | `ghcr.io/the-cloud-clock-work/agentibrain-embeddings:dev|latest` |
-| tick-engine | `ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:dev|latest` |
-| brain-keeper | `ghcr.io/the-cloud-clock-work/agenticore:dev|latest` (uses agenticore base; brain-keeper is an agenticore agent, not its own image) |
+| kb-router | `ghcr.io/the-cloud-clockwork/agentibrain-kb-router:dev|latest` |
+| obsidian-reader | `ghcr.io/the-cloud-clockwork/agentibrain-obsidian-reader:dev|latest` |
+| embeddings | `ghcr.io/the-cloud-clockwork/agentibrain-embeddings:dev|latest` |
+| tick-engine | `ghcr.io/the-cloud-clockwork/agentibrain-tick-engine:dev|latest` |
+| brain-keeper | `ghcr.io/the-cloud-clockwork/agenticore:dev|latest` (uses agenticore base; brain-keeper is an agenticore agent, not its own image) |
 
 Branch → tag: push to `dev` → `:dev`, push to `main` → `:latest`. ArgoCD image-updater watches the tag regex per app and bumps the digest.
 

@@ -12,7 +12,7 @@ Helm charts for deploying the brain on Kubernetes. The kernel is the **canonical
 | `brain-keeper` | Brain-ops agent (runs on agenticore image). | `tccw-k8s-service-template` v0.3.4 |
 | `brain-cron` | Scheduled tick (CronJob) + amygdala signal consumer (Deployment) + tick-drain (CronJob). | Custom 3-template chart, no base. |
 
-`tccw-k8s-service-template` is pulled from `oci://ghcr.io/the-cloud-clock-work` at chart-build time (`helm dep update`). The `.tgz` is vendored under each chart's `charts/` for offline use.
+`tccw-k8s-service-template` is pulled from `oci://ghcr.io/the-cloud-clockwork` at chart-build time (`helm dep update`). The `.tgz` is vendored under each chart's `charts/` for offline use.
 
 All charts version `0.1.1` (current). Bump on every breaking change to chart shape.
 
@@ -21,7 +21,7 @@ All charts version `0.1.1` (current). Bump on every breaking change to chart sha
 ```yaml
 spec:
   sources:
-    - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+    - repoURL: https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
       targetRevision: v0.1.1
       path: helm/<chart>
       helm:
@@ -64,7 +64,7 @@ metadata:
   labels:
     image-updater/image: agentibrain-kb-router
   annotations:
-    argocd-image-updater.argoproj.io/image-list: router=ghcr.io/the-cloud-clock-work/agentibrain-kb-router:latest
+    argocd-image-updater.argoproj.io/image-list: router=ghcr.io/the-cloud-clockwork/agentibrain-kb-router:latest
     argocd-image-updater.argoproj.io/router.update-strategy: digest
     argocd-image-updater.argoproj.io/router.helm.image-name: tpl.app.image.repository
     argocd-image-updater.argoproj.io/router.helm.image-tag: tpl.app.image.tag

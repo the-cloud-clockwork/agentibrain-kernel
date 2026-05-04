@@ -10,7 +10,7 @@ spec:
   project: default
   sources:
     # Chart source — kernel
-    - repoURL: https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+    - repoURL: https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
       targetRevision: dev
       path: helm/obsidian-reader
       helm:

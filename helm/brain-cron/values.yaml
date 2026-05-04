@@ -1,13 +1,13 @@
 # Generic defaults for brain-cron (tick CronJob + amygdala Deployment).
 #
-# Ticks every 2 hours by default. The tick-engine image is ghcr.io/the-cloud-clock-work/agentibrain-tick-engine.
+# Ticks every 2 hours by default. The tick-engine image is ghcr.io/the-cloud-clockwork/agentibrain-tick-engine.
 # Operators override environment-specific values (NFS server, INFERENCE_URL, secrets)
 # in their per-env values overlay (e.g. values-prod.yaml).
 
 schedule: "7 */2 * * *"
 
 image:
-  repository: ghcr.io/the-cloud-clock-work/agentibrain-tick-engine
+  repository: ghcr.io/the-cloud-clockwork/agentibrain-tick-engine
   tag: latest
   pullPolicy: Always
 

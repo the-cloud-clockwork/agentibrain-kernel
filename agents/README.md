@@ -13,7 +13,7 @@ own copy:
 
 ```bash
 # agentihub install script
-git clone --depth=1 https://github.com/The-Cloud-Clock-Work/agentibrain-kernel /tmp/abk
+git clone --depth=1 https://github.com/The-Cloud-Clockwork/agentibrain-kernel /tmp/abk
 cp -r /tmp/abk/agents/brain-keeper/* <agentihub-root>/agents/brain-keeper/
 rm -rf /tmp/abk
 ```

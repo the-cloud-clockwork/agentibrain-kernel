@@ -50,7 +50,7 @@ services:
     build:
       context: ./services/obsidian-reader
       dockerfile: Dockerfile
-    image: ghcr.io/the-cloud-clock-work/agentibrain-obsidian-reader:local
+    image: ghcr.io/the-cloud-clockwork/agentibrain-obsidian-reader:local
     container_name: agentibrain_obsidian_reader
     restart: unless-stopped
     environment:
@@ -74,7 +74,7 @@ services:
     build:
       context: ./services/embeddings
       dockerfile: Dockerfile
-    image: ghcr.io/the-cloud-clock-work/agentibrain-embeddings:local
+    image: ghcr.io/the-cloud-clockwork/agentibrain-embeddings:local
     container_name: agentibrain_embeddings
     restart: unless-stopped
     depends_on:
@@ -100,7 +100,7 @@ services:
     build:
       context: ./services/kb-router
       dockerfile: Dockerfile
-    image: ghcr.io/the-cloud-clock-work/agentibrain-kb-router:local
+    image: ghcr.io/the-cloud-clockwork/agentibrain-kb-router:local
     container_name: agentibrain_kb_router
     restart: unless-stopped
     depends_on:
@@ -134,7 +134,7 @@ services:
     build:
       context: ./services/tick-engine
       dockerfile: Dockerfile
-    image: ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:local
+    image: ghcr.io/the-cloud-clockwork/agentibrain-tick-engine:local
     container_name: agentibrain_tick_cron
     restart: unless-stopped
     depends_on:
@@ -176,7 +176,7 @@ services:
     build:
       context: ./services/tick-engine
       dockerfile: Dockerfile
-    image: ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:local
+    image: ghcr.io/the-cloud-clockwork/agentibrain-tick-engine:local
     container_name: agentibrain_amygdala
     restart: unless-stopped
     depends_on:
@@ -204,7 +204,7 @@ services:
     build:
       context: ./services/mcp
       dockerfile: Dockerfile
-    image: ghcr.io/the-cloud-clock-work/agentibrain-mcp:local
+    image: ghcr.io/the-cloud-clockwork/agentibrain-mcp:local
     container_name: agentibrain_mcp
     restart: unless-stopped
     depends_on:
