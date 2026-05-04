@@ -10,7 +10,7 @@ tpl:
     name: agentibrain-obsidian-reader
     type: statefulset
     image:
-      repository: ghcr.io/the-cloud-clock-work/agentibrain-obsidian-reader
+      repository: ghcr.io/the-cloud-clockwork/agentibrain-obsidian-reader
       tag: latest
       pullPolicy: Always
     replicaCount: 1

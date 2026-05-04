@@ -42,7 +42,7 @@ Dev-first flow:
 - Work on `dev` → PR to `main` → merge.
 - `main` is the release trunk; CI publishes `:latest` images on every merge.
 - `dev` carries the in-flight changes; CI publishes `:dev` images on every push.
-- Image builds go to `ghcr.io/the-cloud-clock-work/agentibrain-*`.
+- Image builds go to `ghcr.io/the-cloud-clockwork/agentibrain-*`.
 
 ## Downstream consumers
 

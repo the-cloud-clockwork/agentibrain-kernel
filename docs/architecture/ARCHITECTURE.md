@@ -37,7 +37,7 @@ The tick runs as a K8s CronJob every 2h at HH:07 UTC (12 ticks/day). Full extrac
 
 ### 1. Tick Engine (`services/tick-engine/`)
 
-Python scripts, pure stdlib on the runtime side (no pip dependencies beyond `redis` for the amygdala consumer), packaged as `ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:latest` (built from `services/tick-engine/`).
+Python scripts, pure stdlib on the runtime side (no pip dependencies beyond `redis` for the amygdala consumer), packaged as `ghcr.io/the-cloud-clockwork/agentibrain-tick-engine:latest` (built from `services/tick-engine/`).
 
 | Script | Purpose | Time |
 |--------|---------|------|
@@ -203,7 +203,7 @@ python3 /app/brain_tick.py --vault /vault --brain-feed /vault/brain-feed
 ```
 
 **Deployment:** `helm/brain-cron/` (CronJob). Operators pick a namespace (e.g. `<your-ops-namespace>`).
-**Image:** `ghcr.io/the-cloud-clock-work/agentibrain-tick-engine:latest`
+**Image:** `ghcr.io/the-cloud-clockwork/agentibrain-tick-engine:latest`
 **Vault mount:** RW at `/vault` (NFS or PVC — see `helm/brain-cron/values.yaml`). Shared-FS at `/shared` (RO) is optional and only needed when co-located with agenticore runtime pods.
 
 ### 8. brain-keeper (K8s StatefulSet)

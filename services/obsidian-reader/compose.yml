@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/the-cloud-clock-work/agentibrain-obsidian-reader:local
+    image: ghcr.io/the-cloud-clockwork/agentibrain-obsidian-reader:local
     container_name: agentibrain_obsidian_reader
     restart: unless-stopped
     environment:
