@@ -1,0 +1,40 @@
+# Compose overlay — LiteLLM gateway (recommended for multi-provider setups).
+#
+# Wires the brain services at an existing LiteLLM proxy. Useful when you
+# already run LiteLLM elsewhere and want a single virtual key to fan out to
+# multiple LLM providers (Anthropic, OpenAI, Bedrock, Ollama, etc.).
+#
+#   echo "LITELLM_URL=http://your-litellm:4000" >> .env
+#   echo "LITELLM_KEY=sk-litellm-virtual-key"   >> .env
+#   docker compose -f compose.yml -f examples/compose/compose.litellm.yaml.example up -d
+#
+# In LiteLLM, register two model aliases (any backing model you want):
+#   - brain-classify  (Haiku-class, JSON-mode capable)
+#   - brain-brief     (Sonnet-class, synthesis tier)
+#
+# See docs/GATEWAY-CONTRACT.md for the full contract.
+
+services:
+  kb-router:
+    environment:
+      INFERENCE_URL: ${LITELLM_URL:-}
+      INFERENCE_API_KEY: ${LITELLM_KEY:-}
+      BRAIN_CLASSIFY_MODEL: ${BRAIN_CLASSIFY_MODEL:-brain-classify}
+
+  tick-cron:
+    environment:
+      INFERENCE_URL: ${LITELLM_URL:-}
+      INFERENCE_API_KEY: ${LITELLM_KEY:-}
+      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}
+
+  mcp:
+    environment:
+      INFERENCE_URL: ${LITELLM_URL:-}
+      INFERENCE_API_KEY: ${LITELLM_KEY:-}
+      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}
+
+  embeddings:
+    environment:
+      LLM_API_BASE: ${LITELLM_URL:-}
+      LLM_API_KEY: ${LITELLM_KEY:-}
+      LLM_EMBED_MODEL: ${LLM_EMBED_MODEL:-text-embedding-3-small}

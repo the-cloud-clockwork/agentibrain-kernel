@@ -1,6 +1,6 @@
 apiVersion: v2
-name: embeddings
-description: Embeddings service — agentibrain-kernel image, pgvector storage
+name: mcp
+description: MCP retrieval gateway (kb_search / kb_brief / brain_search_arcs / brain_get_arc) — agentibrain-kernel image
 version: 0.1.1
 dependencies:
   - name: tcc-k8s-service-template

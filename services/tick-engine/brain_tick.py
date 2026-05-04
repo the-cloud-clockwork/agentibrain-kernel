@@ -46,7 +46,11 @@ import brain_tick_prompt
 # INFERENCE_URL is optional — when empty, the AI reasoning phase is skipped and
 # the tick runs deterministic-only. Operators configure this via env.
 INFERENCE_URL = os.getenv("INFERENCE_URL", "")
-CLICKHOUSE_URL = os.getenv("CLICKHOUSE_URL", "http://localhost:8123")
+# CLICKHOUSE_URL is optional. Empty by default so local Docker stacks
+# (where ClickHouse is not running) skip the push entirely instead of
+# burning 5s on a connection-refused timeout every tick. Set this to a
+# real ClickHouse base URL in production to enable tick-health metrics.
+CLICKHOUSE_URL = os.getenv("CLICKHOUSE_URL", "")
 
 
 def _push_clickhouse(report: dict) -> None:
@@ -227,8 +231,10 @@ def run_tick(
 
     report["total_ms"] = int((time.time() - t0) * 1000)
 
-    # Push metrics to ClickHouse (best-effort, never fail the tick)
-    if not dry_run:
+    # Push metrics to ClickHouse (best-effort, never fail the tick).
+    # Gated on CLICKHOUSE_URL being set so local stacks without ClickHouse
+    # don't pay a 5s timeout per tick.
+    if not dry_run and CLICKHOUSE_URL:
         try:
             _push_clickhouse(report)
         except Exception as e:
