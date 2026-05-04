@@ -1,10 +1,10 @@
 # Pineal — Joy & Breakthrough Region
 
-Arcs marked by success, breakthrough, or unexpected delight land here. This is the memory the system returns to when the operator asks "what was good this week".
+Arcs marked by success, breakthrough, or unexpected delight land here. This is the memory the system returns to when the user asks "what was good this week".
 
 ## Entry rules
 - joy_markers > threshold AND error_markers low
-- operator exclamation markers (nice, beautiful, perfect, genius, finally)
+- user exclamation markers (nice, beautiful, perfect, genius, finally)
 - completion under expected time
 
 ## Why

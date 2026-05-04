@@ -1,7 +1,7 @@
 # Vault Rules for AI Agents
 
 ## Identity
-This vault is the external brain of the operator. Read `identity/` first for context on any task.
+This vault is the user's external brain. Read `identity/` first for context on any task.
 
 ## Structure
 - `left/` = technical, systematic, engineering
@@ -9,7 +9,7 @@ This vault is the external brain of the operator. Read `identity/` first for con
 - `bridge/` = connections between both hemispheres
 - `raw/` = unprocessed ingest, never edit directly
 - `daily/` = chronological logs, append-only
-- `identity/` = who the operator is — the root node
+- `identity/` = who the user is — the root node
 - `templates/` = mandatory templates for new notes
 
 ## Rules
