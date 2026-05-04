@@ -9,5 +9,5 @@ Active incidents mid-resolution live here. Every file in this folder is a signal
 
 ## Severity
 - **nuclear** — halts all non-critical work across the fleet
-- **critical** — agents pause on matching intent; operator notified immediately
+- **critical** — agents pause on matching intent; user notified immediately
 - **warning** — logged, escalation threshold
