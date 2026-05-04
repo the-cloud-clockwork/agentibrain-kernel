@@ -24,7 +24,7 @@ on dev→main merge — see Block 1D + Block 2.
 - [ ] **Architecture SVG/mermaid** in README. 4 services + tick engine + vault layout, clickable component legend. ~1 h.
 - [ ] **`api/openapi.yaml`** aligned with reality — /feed /signal /marker /tick specs currently lag. ~1 h.
 - [ ] **`CONTRIBUTING.md`** + migration guide from existing antoncore installs. ~2 h.
-- [ ] **Helm chart publishing** — OCI registry at ghcr.io/the-cloud-clock-work/charts. Lets friends `helm install agentibrain`. ~3 h.
+- [ ] **Helm chart publishing** — OCI registry at ghcr.io/the-cloud-clockwork/charts. Lets friends `helm install agentibrain`. ~3 h.
 
 ## Tier 4 — Production hardening
 
