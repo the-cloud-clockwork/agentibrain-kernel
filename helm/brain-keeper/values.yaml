@@ -18,6 +18,10 @@ tpl:
     name: agenticore
     type: statefulset
     image:
+      # The agenticore image is published by the upstream agenticore repo
+      # (https://github.com/The-Cloud-Clockwork/agenticore), NOT by this kernel.
+      # CI in that repo pushes :latest on main and :dev on dev. brain-keeper
+      # runs the same image with AGENT_MODE=true env (set below).
       repository: ghcr.io/the-cloud-clockwork/agenticore
       tag: latest
       pullPolicy: Always

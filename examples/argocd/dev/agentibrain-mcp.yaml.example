@@ -1,26 +1,31 @@
-# Sample ArgoCD Application — mcp-agentibrain (singleton).
-# The MCP server (kb_search/kb_brief/kb_dispatch) is cluster-wide.
+# Sample ArgoCD Application — agentibrain-mcp (singleton; one per cluster).
+# The MCP server (kb_search / kb_brief / brain_search_arcs / brain_get_arc)
+# is the retrieval surface for any agent that wants to read the brain.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: mcp-agentibrain
+  name: agentibrain-mcp
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   sources:
+    # Chart source — kernel
     - repoURL: https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
       targetRevision: dev
-      path: services/mcp/helm
+      path: helm/mcp
       helm:
-        releaseName: mcp-agentibrain
+        releaseName: agentibrain-mcp
+        valueFiles:
+          - $values/values-overlays/mcp/values-dev.yaml
+    # $values source — your platform repo
     - repoURL: <your-platform-repo>
       targetRevision: <your-revision>
       ref: values
   destination:
     server: https://kubernetes.default.svc
-    namespace: <your-namespace>
+    namespace: <your-dev-namespace>
   syncPolicy:
     automated:
       prune: true

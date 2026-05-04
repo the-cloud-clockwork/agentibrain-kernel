@@ -3,4 +3,4 @@ dependencies:
   repository: oci://ghcr.io/the-cloud-clockwork
   version: 0.3.8
 digest: sha256:d0965c3a5c8982b9e2b050de7037e1c7c49542ddb6ed67830b1cdc027f05db88
-generated: "2026-05-04T22:05:19.326178967+02:00"
+generated: "2026-05-04T22:15:51.490776566+02:00"

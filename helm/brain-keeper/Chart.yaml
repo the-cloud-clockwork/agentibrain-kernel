@@ -3,6 +3,6 @@ name: brain-keeper
 version: 0.1.1
 dependencies:
   - name: tcc-k8s-service-template
-    version: "0.3.6"
+    version: "0.3.8"
     repository: "oci://ghcr.io/the-cloud-clockwork"
     alias: tpl

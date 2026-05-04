@@ -1,0 +1,36 @@
+# Compose overlay — OpenAI direct.
+#
+# Wires the brain services at api.openai.com. Set OPENAI_API_KEY in your
+# .env (or shell) before bringing the stack up:
+#
+#   echo "OPENAI_API_KEY=sk-..." >> .env
+#   docker compose -f compose.yml -f examples/compose/compose.openai.yaml.example up -d
+#
+# Cost note: each tick fires `BRAIN_CLASSIFY_MODEL` (cheap, gpt-4o-mini class)
+# on every ingest, and `BRAIN_BRIEF_MODEL` (Sonnet/4o class) once per 2-hour
+# cycle. Budget ~$0.05–$0.50/day depending on vault activity.
+
+services:
+  kb-router:
+    environment:
+      INFERENCE_URL: https://api.openai.com/v1
+      INFERENCE_API_KEY: ${OPENAI_API_KEY:-}
+      BRAIN_CLASSIFY_MODEL: ${BRAIN_CLASSIFY_MODEL:-gpt-4o-mini}
+
+  tick-cron:
+    environment:
+      INFERENCE_URL: https://api.openai.com/v1
+      INFERENCE_API_KEY: ${OPENAI_API_KEY:-}
+      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-gpt-4o}
+
+  mcp:
+    environment:
+      INFERENCE_URL: https://api.openai.com/v1
+      INFERENCE_API_KEY: ${OPENAI_API_KEY:-}
+      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-gpt-4o}
+
+  embeddings:
+    environment:
+      LLM_API_BASE: https://api.openai.com/v1
+      LLM_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_EMBED_MODEL: ${LLM_EMBED_MODEL:-text-embedding-3-small}

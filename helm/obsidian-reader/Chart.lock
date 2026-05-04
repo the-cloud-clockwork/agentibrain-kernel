@@ -1,6 +1,6 @@
 dependencies:
-- name: tccw-k8s-service-template
+- name: tcc-k8s-service-template
   repository: oci://ghcr.io/the-cloud-clockwork
-  version: 0.3.6
-digest: sha256:d89bea30b7e47a2f961a34c5368ed0f14fafea272617ed1d8fd3bac3ef54e729
-generated: "2026-05-01T23:14:33.523155825+02:00"
+  version: 0.3.8
+digest: sha256:d0965c3a5c8982b9e2b050de7037e1c7c49542ddb6ed67830b1cdc027f05db88
+generated: "2026-05-04T22:05:21.76869462+02:00"
