@@ -6,7 +6,7 @@ deploy for laptops. This directory holds the compose entry point.
 ## Quickstart
 
 ```bash
-git clone https://github.com/The-Cloud-Clock-Work/agentibrain-kernel.git
+git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
 ./local/bootstrap.sh              # writes .env + scaffolds ./vault
 docker compose up -d              # 8 containers come up
@@ -187,7 +187,7 @@ images instead, edit `compose.yml`:
 
 ```yaml
 # Replace each `build:` block with:
-image: ghcr.io/the-cloud-clock-work/agentibrain-<service>:latest
+image: ghcr.io/the-cloud-clockwork/agentibrain-<service>:latest
 ```
 
 Available services: `kb-router`, `obsidian-reader`, `embeddings`,

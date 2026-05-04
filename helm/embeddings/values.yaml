@@ -12,7 +12,7 @@ tpl:
     name: agentibrain-embeddings
     type: statefulset
     image:
-      repository: ghcr.io/the-cloud-clock-work/agentibrain-embeddings
+      repository: ghcr.io/the-cloud-clockwork/agentibrain-embeddings
       tag: latest
       pullPolicy: Always
     replicaCount: 1
