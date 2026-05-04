@@ -1,8 +1,47 @@
 # Secrets — How They Flow
 
-The kernel never stores credentials in code or images. Three things hold operator-supplied state: **OpenBao** (canonical), **External Secrets Operator** (bridge), **K8s Secret** (consumed by pods).
+The kernel never stores credentials in code or images. Operators have **two
+supported paths** depending on whether they run a secret manager:
 
-## End-to-end flow
+1. **Without ESO — plain Opaque Secrets** (simplest; first-class supported)
+2. **With ESO — OpenBao / AWS SM / Vault as the source of truth** (GitOps-friendly)
+
+Pick whichever fits your cluster. The kernel charts ship with `externalSecret.enabled: false` by default, so the Opaque-Secret path works out of the box on a fresh cluster.
+
+## Path 1 — Without ESO (plain Opaque Secret)
+
+The kernel ships [`local/k8s-bootstrap.sh`](../local/k8s-bootstrap.sh) — a
+helper that mints random tokens and creates the three Opaque Secrets the
+charts expect:
+
+```bash
+./local/k8s-bootstrap.sh                       # dry-run — prints commands
+./local/k8s-bootstrap.sh --apply -n <your-ns>  # actually creates the Secrets
+```
+
+The script creates:
+- `agentibrain-router-secrets` — `KB_ROUTER_TOKEN`, `OBSIDIAN_READER_TOKEN`, `EMBEDDINGS_API_KEY`
+- `embeddings-secrets` — `POSTGRES_URL`, `LLM_API_KEY`, `LLM_API_BASE`, `LLM_EMBED_MODEL`, `EMBEDDINGS_API_KEYS`
+- `agenticore-secrets` — only consumed by brain-keeper
+
+Tokens land in `local/.k8s-tokens` (gitignored) so you can re-source them
+when wiring agent fleet pods. Re-running the script is idempotent.
+
+After the Secrets exist, `helm install` for each chart works without
+touching ExternalSecrets at all. This is the path most external users take.
+
+The rest of this doc covers Path 2 — ESO + OpenBao — for operators who
+prefer GitOps-tracked secret rotation.
+
+---
+
+## Path 2 — With External Secrets Operator (ESO)
+
+OpenBao + ESO + K8s Secret. Secrets live once in OpenBao, ESO syncs them
+into K8s Secrets every 30s, pods consume the K8s Secrets via `envFrom`.
+Flip `externalSecret.enabled: true` in your chart overlay to enable.
+
+### End-to-end flow
 
 ```
                  (operator writes once, GitOps-tracked)
