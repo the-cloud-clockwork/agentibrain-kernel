@@ -2,7 +2,7 @@
 
 Runtime services shipped by `agentibrain-kernel`. Each service has its own
 `Dockerfile` and publishes a container image to
-`ghcr.io/the-cloud-clock-work/agentibrain-<name>` via
+`ghcr.io/the-cloud-clockwork/agentibrain-<name>` via
 `.github/workflows/docker-build.yml`.
 
 | Service | Port | Purpose |

@@ -9,7 +9,7 @@ description = "Standalone brain + knowledge-base kernel (agenti ecosystem)"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-authors = [{ name = "The Cloud Clock Work" }]
+authors = [{ name = "The Cloud Clockwork" }]
 keywords = ["brain", "knowledge-base", "agenti", "memory", "rag"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -41,9 +41,9 @@ dev = [
 brain = "agentibrain.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/The-Cloud-Clock-Work/agentibrain-kernel"
-Repository = "https://github.com/The-Cloud-Clock-Work/agentibrain-kernel"
-Issues = "https://github.com/The-Cloud-Clock-Work/agentibrain-kernel/issues"
+Homepage = "https://github.com/The-Cloud-Clockwork/agentibrain-kernel"
+Repository = "https://github.com/The-Cloud-Clockwork/agentibrain-kernel"
+Issues = "https://github.com/The-Cloud-Clockwork/agentibrain-kernel/issues"
 
 [tool.setuptools.packages.find]
 include = ["agentibrain*"]
