@@ -90,7 +90,7 @@ Same `compose.yml` works on any Linux box with Docker. Bind the vault to a real 
 
 ### 3. Kubernetes (Helm) — three steps
 
-Charts ship in [`helm/`](helm/) — `kb-router`, `obsidian-reader`, `embeddings`, `brain-cron`, `brain-keeper`. All five inherit from `tccw-k8s-service-template v0.3.6` (v1beta1 ESO).
+Charts ship in [`helm/`](helm/) — `kb-router`, `obsidian-reader`, `embeddings`, `brain-cron`, `brain-keeper`. All five inherit from `tcc-k8s-service-template v0.3.6` (v1beta1 ESO).
 
 #### Step 1 — Scaffold the vault on persistent storage
 
