@@ -1,0 +1,54 @@
+# Sample overlay — agentibrain-mcp (dev).
+# Layered on top of agentibrain-kernel/helm/mcp/values.yaml.
+# Copy to your platform repo, replace every <your-*> placeholder, drop .example.
+#
+# This chart deploys the kernel's MCP retrieval gateway: 4 tools
+# (kb_search, kb_brief, brain_search_arcs, brain_get_arc) over HTTP.
+# Stateless — no vault mount needed.
+tpl:
+  global:
+    environment: dev
+  app:
+    image:
+      tag: dev
+  env:
+    variables:
+      KB_ROUTER_URL: http://agentibrain-kb-router.<your-dev-namespace>.svc:8080
+      OBSIDIAN_READER_URL: http://agentibrain-obsidian-reader.<your-dev-namespace>.svc:8080
+      EMBEDDINGS_URL: http://agentibrain-embeddings.<your-dev-namespace>.svc:8080
+
+      # OpenAI-compatible LLM gateway used by `kb_brief`. Empty = `kb_brief`
+      # returns an explanatory error string instead of synthesis.
+      INFERENCE_URL: http://<your-llm-gateway>.<your-dev-namespace>.svc:4000
+
+      # Model name the gateway resolves to whatever upstream you want.
+      # See docs/GATEWAY-CONTRACT.md.
+      BRAIN_BRIEF_MODEL: <your-brief-model>
+
+  # ESO opt-in. If you don't run ESO, set enabled: false and create the
+  # K8s Opaque Secret manually (see local/k8s-bootstrap.sh).
+  externalSecret:                                  # nosecret
+    enabled: true                                  # nosecret
+    storeName: <your-secret-store>                 # nosecret
+    secretPath: <your-secret-path>/agentibrain-mcp-dev      # nosecret
+    targetSecretName: agentibrain-mcp-secrets      # nosecret
+    data:                                          # nosecret
+      # Bearer mcp-proxy enforces on inbound callers.
+      - secretKey: MCP_PROXY_API_KEY               # nosecret
+        remoteRef:                                 # nosecret
+          key: <your-secret-path>/agentibrain-mcp-dev   # nosecret
+          property: MCP_PROXY_API_KEY              # nosecret
+      # Bearer kb_brief sends to the inference gateway.
+      - secretKey: INFERENCE_API_KEY               # nosecret
+        remoteRef:                                 # nosecret
+          key: <your-secret-path>/brain-inference  # nosecret
+          property: INFERENCE_API_KEY              # nosecret
+      # Bearer the MCP tools send to obsidian-reader + embeddings.
+      - secretKey: OBSIDIAN_READER_TOKEN           # nosecret
+        remoteRef:                                 # nosecret
+          key: <your-secret-path>/agentibrain-router-dev   # nosecret
+          property: OBSIDIAN_READER_TOKEN          # nosecret
+      - secretKey: EMBEDDINGS_API_KEY              # nosecret
+        remoteRef:                                 # nosecret
+          key: <your-secret-path>/agentibrain-router-dev   # nosecret
+          property: EMBEDDINGS_API_KEY             # nosecret
