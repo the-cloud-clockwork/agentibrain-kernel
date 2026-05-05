@@ -67,8 +67,13 @@ command:
     fi
 
     echo "Running amygdala check..."
+    # The amygdala consumes the canonical event bus on Redis DB 11 (CLAUDE.md
+    # § "Anton Job Engine — Redis Streams DB 11"). ops-runner-secrets ships
+    # REDIS_URL ending in /0 because most consumers default to DB 0; rewrite
+    # the trailing DB segment so the amygdala lands on the bus, not the cache.
+    AMYGDALA_DB="${AMYGDALA_DB:-11}"
     python3 /app/amygdala.py \
-      --redis-url "${REDIS_URL}" \
+      --redis-url "${REDIS_URL%/*}/${AMYGDALA_DB}" \
       --vault /vault --brain-feed /vault/brain-feed \
       || notify_failure "amygdala check"
     echo "Amygdala check complete."
