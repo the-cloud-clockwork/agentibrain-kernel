@@ -1,3 +1,7 @@
+---
+nav_exclude: true
+---
+
 # agentibrain-kernel — Documentation Index
 
 The kernel is a brain + KB substrate for AI fleets. This index is the entry point. Every doc here answers a single question.

@@ -1,3 +1,9 @@
+---
+title: Overview
+parent: Architecture
+nav_order: 1
+---
+
 # Brain System — Memory Nervous System
 
 The brain system is the memory layer for an AI agent fleet. It captures the operator's work as structured **arcs** (narrative units with ignition, timeline, resolution, and edges), compartmentalizes them by region and heat, and injects the hottest context into every agent session at startup.

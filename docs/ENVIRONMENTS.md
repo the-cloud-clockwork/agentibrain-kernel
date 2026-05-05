@@ -1,3 +1,9 @@
+---
+title: Environments
+parent: Operate
+nav_order: 3
+---
+
 # Environments
 
 > **Note:** This doc walks through a reference dev/prod split (namespaces
