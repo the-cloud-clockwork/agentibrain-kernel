@@ -1,9 +1,7 @@
 # Brain Clusters — Semantic Memory Compartments
 
-> **Author:** Nestor Colt
-> **Date:** 2026-04-09
 > **Status:** Living vision — cluster primitive + amygdala/pineal/frontal-lobe regions
-> **Complements:** `operator/references/OBSIDIAN-BRAIN.md` (left/right hemisphere architecture)
+> **Complements:** [`../VAULT-SCHEMA.md`](../VAULT-SCHEMA.md) (left/right hemisphere vault architecture)
 
 ---
 
@@ -44,7 +42,7 @@ cluster_id: 2026-04-09-litellm-mcp-self-service
 title: LiteLLM MCP Self-Service Arc
 region: left-hemisphere          # left | right | amygdala | pineal | frontal-lobe | raw
 status: complete                 # active | complete | stalled | abandoned
-ignition: anton-router agent gap — needed runtime fallbacks + capability flags
+ignition: router agent gap — needed runtime fallbacks + capability flags
 started_at: 2026-04-08T01:08:00Z
 ended_at: 2026-04-09T18:25:00Z
 duration_hours: 41.3
@@ -62,7 +60,7 @@ heat: 9                          # 0–10, decides frontal-lobe promotion
 # LiteLLM MCP Self-Service Arc
 
 ## Ignition
-- anton-router agent onboarding surfaced 5 gaps: capability flags, provider secrets, playground, inference logs, routing/fallbacks
+- router agent onboarding surfaced 5 gaps: capability flags, provider secrets, playground, inference logs, routing/fallbacks
 - Pre-existing 18 raw LiteLLM tools were too granular — agents shouldn't call `create_key` / `set_mcp_tool_permissions` directly
 - Mother thread: `7d031027` on 2026-04-06 → workflow-tool philosophy established
 
@@ -84,7 +82,7 @@ heat: 9                          # 0–10, decides frontal-lobe promotion
 
 ### 🏁 Resolution
 - 26 → 35 MCP tools on both dev + prod
-- 10 categories, full self-service surface for anton-router agent
+- 10 categories, full self-service surface for the router agent
 - Zero raw LiteLLM API calls required from any agent
 - 8 PRs merged cleanly (#270, #271, #272, #273, #274, #276, #277, #278)
 
@@ -129,7 +127,7 @@ The existing vision (`operator/references/OBSIDIAN-BRAIN.md`) defines `left/`, `
 **Two layers**:
 
 1. **Broadcast layer (real-time)** — agentihooks emits a `brain_amygdala_alarm` event on:
-   - Telegram (anton-agent bot posts to the operator channel)
+   - Telegram or chat sink (your agent bot posts to the operator channel)
    - `notifications` MCP (operator phone push)
    - Redis broadcast stream `amygdala:alarms` on DB 11
    All running sessions + agents subscribe via a SessionStart hook. On receive, the alarm is injected as a `<system-reminder>` into the agent's next turn.
@@ -285,7 +283,7 @@ The cluster primitive is **orthogonal** to MUBS (Minimal Unit of Brain Storage, 
 
 - **MUBS** = container for an ongoing project/idea (VISION.md, SPECS.md, BLOCKS.md, etc.)
 - **Cluster** = historical record of a task-in-action that touched one or more MUBS instances
-- Clusters reference MUBS via `edges: [mubs:left/projects/<your-project>]` (antoncore example: `mubs:left/projects/antoncore`)
+- Clusters reference MUBS via `edges: [mubs:left/projects/<your-project>]` (e.g. `mubs:left/projects/my-platform`)
 - A MUBS can list recent clusters in its `BLOCKS.md` under "Recent arcs"
 
 **Extraction sources**:

@@ -19,7 +19,6 @@ The kernel is a brain + KB substrate for AI fleets. This index is the entry poin
 - [`OPERATIONS.md`](OPERATIONS.md) — day-2: monitoring, scaling, restart, drain, backup.
 - [`SECRETS.md`](SECRETS.md) — how secrets flow OpenBao → ESO → pod, with concrete examples.
 - [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) — error → fix recipes for the top 15 things that break.
-- [`MIGRATION.md`](MIGRATION.md) — swapping a legacy brain implementation for the kernel.
 
 ## Architecture
 - [`architecture/README.md`](architecture/README.md) — start here for design.
