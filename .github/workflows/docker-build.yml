@@ -11,6 +11,7 @@ on:
     paths:
       - "services/**"
       - ".github/workflows/docker-build.yml"
+  workflow_dispatch: {}
 
 permissions:
   contents: read
