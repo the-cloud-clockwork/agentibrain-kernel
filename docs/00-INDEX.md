@@ -17,7 +17,7 @@ The kernel is a brain + KB substrate for AI fleets. This index is the entry poin
 
 ## Run
 - [`OPERATIONS.md`](OPERATIONS.md) — day-2: monitoring, scaling, restart, drain, backup.
-- [`SECRETS.md`](SECRETS.md) — how secrets flow OpenBao → ESO → pod, with concrete examples.
+- [`SECRETS.md`](SECRETS.md) — two supported paths: plain Opaque Secrets, or your secret store via ESO.
 - [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) — error → fix recipes for the top 15 things that break.
 
 ## Architecture

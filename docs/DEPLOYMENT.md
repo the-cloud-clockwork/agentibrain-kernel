@@ -50,24 +50,21 @@ Pros: simplest. Cons: no GitOps trail.
 |---|---|
 | Kubernetes ≥ 1.28 | Workload plane |
 | MetalLB or another LB | If you want kernel embeddings exposed on a static IP for docker consumers |
-| External Secrets Operator | Bridge OpenBao → K8s Secret |
-| OpenBao or Vault | Operator-side secret store |
+| External Secrets Operator (optional) | Bridge your secret store → K8s Secret |
+| Secret store (optional) | Vault, OpenBao, AWS SM, GCP SM, Azure KV — any ESO-supported backend |
 | Postgres + pgvector | Embeddings storage |
 | NFS or shared PVC | Vault filesystem (single writer or RWX) |
 | ArgoCD (optional) | If using GitOps |
 | Reloader (optional) | Auto-restart pods on Secret/CM change |
 
-## Operator-side state your install needs
+## Platform-side state your install needs
 
-Before pods come up, populate:
+Before pods come up, prepare:
 
-1. **OpenBao** path `secret/k8s/embeddings(-dev)` with the embeddings env vars
-   (postgres URL, LLM endpoint, embed model, log level, bearer keys).
-   See `SECRETS.md`.
-2. **K8s ClusterSecretStore** named after your secret store (the operator reference uses `openbao`) pointing ESO at your secret-store instance. The kernel chart's ExternalSecret references it.
-3. **K8s Secret** `agentibrain-router-secrets` in each namespace, with the kb-router bearer token. Either kubectl-create directly or wire another ES.
-4. **NFS export or PVC** for `/vault`. Read-write from the kernel pods, read-only from agent pods if you mount the vault elsewhere.
-5. **MetalLB IP pool** if you want a static LoadBalancer IP. Set the IP via `service.annotations.metallb.universe.tf/loadBalancerIPs` in your values overlay.
+1. **Secrets** — either via ESO (your secret store + a `ClusterSecretStore` ESO can reach) or as plain Opaque Secrets created by [`local/k8s-bootstrap.sh`](../local/k8s-bootstrap.sh). See [`SECRETS.md`](SECRETS.md).
+2. **K8s Secret** `agentibrain-router-secrets` in each namespace, with the kb-router bearer token. Either kubectl-create directly or wire it into your ESO setup.
+3. **NFS export or PVC** for `/vault`. Read-write from the kernel pods, read-only from agent pods if you mount the vault elsewhere.
+4. **LoadBalancer IP** (optional) if you want a static IP for kernel embeddings. Set via `service.annotations.<your-LB-controller>/loadBalancerIPs` in your values overlay.
 
 ## Per-environment values overlay
 
@@ -83,11 +80,11 @@ tpl:
     image:
       tag: latest
   externalSecret:                        # nosecret
-    awsSecretPath: k8s/embeddings        # nosecret  (populated OpenBao path)
+    awsSecretPath: <your-prefix>/embeddings  # nosecret  (path in your secret store)
   service:
     type: LoadBalancer
     annotations:
-      metallb.universe.tf/loadBalancerIPs: "<your-cluster-ip>"
+      <your-lb-controller>/loadBalancerIPs: "<your-cluster-ip>"
 ```
 
 Helm merge semantics: maps merge, lists replace. If your base `values.yaml` has an `env.extra` list, your overlay's `extra:` will REPLACE it, not append. Reproduce the base list explicitly.

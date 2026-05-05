@@ -49,7 +49,7 @@ duration_hours: 41.3
 tags: [litellm, mcp, unit-system, router-agent, hardening]
 edges:
   - 2026-04-07-agenticore-unit-debate
-  - 2026-04-09-openbao-provider-rename
+  - 2026-04-09-provider-rename-cleanup
   - 2026-04-09-traefik-middleware-cleanup
 source_sessions:
   - 7d031027-5bdc-478b-a558-442ac37ec5a0
@@ -72,7 +72,7 @@ heat: 9                          # 0–10, decides frontal-lobe promotion
 4. Inference logs — 1 tool (PR #277)
 5. Model health & routing — 4 tools, built by Opus sub-agent A in worktree (PR #278)
 6. Rate limits & guardrails — 5 tools, built by Opus sub-agent B in worktree (PR #278)
-7. OpenBao rename: `OPENAI_DIRECT_API_KEY` → `OPENAI_API_KEY` (convention enforcement)
+7. Secret-store rename: `OPENAI_DIRECT_API_KEY` → `OPENAI_API_KEY` (convention enforcement)
 8. Traefik middleware cleanup: dropped `mcp-wellknown-rewrite`
 
 ### ❌ Errors / learning
@@ -94,7 +94,7 @@ heat: 9                          # 0–10, decides frontal-lobe promotion
 
 ## Edges
 - [[2026-04-07-agenticore-unit-debate]] — parent. Where the unit system was born.
-- [[2026-04-09-openbao-provider-rename]] — spawned from this cluster, standalone sub-arc.
+- [[2026-04-09-provider-rename-cleanup]] — spawned from this cluster, standalone sub-arc.
 - [[2026-04-09-traefik-middleware-cleanup]] — hardening side-quest during a compact break.
 
 ## Source sessions
@@ -148,7 +148,7 @@ The existing vision (`operator/references/OBSIDIAN-BRAIN.md`) defines `left/`, `
 - Burn-rate alarms, quota overruns (LiteLLM `/spend/logs` clustered 429s)
 - Data-loss risks, deletions without backup
 - Legal / compliance flags
-- OpenBao audit anomalies
+- Secret-store audit anomalies
 - Cloudflare WAF block spikes
 
 **Rules**:
