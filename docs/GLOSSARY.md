@@ -89,11 +89,9 @@ Full grammar: `architecture/MARKERS.md`.
 
 ## Operations
 
-**Parity** — the dual-write window during a brain swap. Both legacy and kernel get writes; a parity CronJob compares.
-
 **Drain** — `kubectl rollout`-style restart, or, in tick context: emptying `brain-feed/ticks/requested/`.
 
-**Anchor svc** — a legacy-named K8s Service whose selector points at kernel pods, kept alive to avoid breaking external consumers (e.g. docker stacks bound to a static IP).
+**Anchor svc** — a K8s Service kept at a stable name so external consumers (e.g. docker stacks bound to a static IP or DNS) keep working when underlying pods change.
 
 ## Environment
 

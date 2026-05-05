@@ -116,4 +116,4 @@ The layout is Obsidian-compatible out of the box — wikilinks, backlinks, graph
 
 ## Upgrading
 
-A v1 → v2 schema migration tool will ship in a future kernel release. Until then, rely on `scaffold(..., force_upgrade=True)` and a short manual migration note under `pineal/`.
+The schema is versioned. Future kernel releases that change the layout ship upgrade tooling alongside; for now use `scaffold(..., force_upgrade=True)` to re-apply the canonical layout to an existing vault root.

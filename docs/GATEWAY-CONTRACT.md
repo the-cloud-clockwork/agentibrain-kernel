@@ -22,8 +22,7 @@ Three call sites, two model names:
 | `services/mcp/app/tools/kb.py` (`kb_brief`) | `BRAIN_BRIEF_MODEL` | `brain-brief` | Synthesize KB brief |
 | `services/tick-engine/brain_tick.py` | `BRAIN_BRIEF_MODEL` | `brain-brief` | Reason over hot arcs in the tick |
 
-Both tiers and their canonical names are also declared in
-[`operator/brain-models.yaml`](../operator/brain-models.yaml).
+Each deployment maps these canonical names (`brain-classify`, `brain-brief`) onto whichever upstream models its LLM gateway resolves them to.
 
 ## Required env (every deployment)
 
@@ -80,18 +79,7 @@ Set `INFERENCE_URL` at `https://api.openai.com/v1`, set
 OpenAI accepts the auth header just fine — the brain is a plain OpenAI
 SDK consumer at the wire level.
 
-### C. Custom inference-gateway (legacy compat)
-
-A custom inference-gateway that accepts a plain `model` body (no legacy
-`route` field) works the same way: set `INFERENCE_URL` at the gateway,
-leave `INFERENCE_API_KEY` empty (gateway is trusted-LAN), and let the
-gateway resolve the model name.
-
-For backward compat you can keep `kb-router-classify` and `kb-brief`
-as gateway routes during a transition window — but the brain no longer
-calls them.
-
-### D. Ollama (laptop / air-gapped dev)
+### C. Ollama (laptop / air-gapped)
 
 Set `INFERENCE_URL` at `http://ollama:11434/v1`, leave
 `INFERENCE_API_KEY` empty, override `BRAIN_CLASSIFY_MODEL` and
@@ -107,9 +95,8 @@ back to regex on malformed JSON, so degradation is graceful.
 2. Add an env var in the call site (e.g. `BRAIN_EXTRACT_MODEL`).
 3. Use the existing `_inference_chat` or `_call_router_llm` helper —
    each already handles the URL, body, auth header, and error fallback.
-4. Add the model to `operator/brain-models.yaml` with tier and purpose.
-5. Document it here under "What the brain calls".
-6. Operators add the alias to their gateway (LiteLLM model JSON, etc).
+4. Document it here under "What the brain calls".
+5. Add the alias on your gateway side (LiteLLM model JSON, OpenAI/Ollama mapping, etc.) so the canonical name resolves to a real upstream model.
 
 ## Wire-level reference (what the brain actually sends)
 
@@ -124,7 +111,6 @@ Response is parsed as standard OpenAI shape
 
 ## What the brain does NOT use
 
-- `route` body field (legacy inference-gateway-only).
 - `provider` body field (LiteLLM-only).
 - Streaming / SSE — synchronous calls only.
 - Tool calling / function calling — the classifier uses
