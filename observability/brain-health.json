@@ -414,7 +414,7 @@
       "targets": [
         {
           "format": 1,
-          "rawSql": "SELECT toStartOfMinute(Timestamp) AS time, count() AS injects FROM otel.otel_traces WHERE ServiceName='agentihooks' AND SpanName='brain.delivery' AND SpanAttributes['skipped']='false' AND Timestamp > now()-INTERVAL 6 HOUR GROUP BY time ORDER BY time",
+          "rawSql": "SELECT toStartOfMinute(Timestamp) AS time, count() AS injects FROM otel.otel_traces WHERE ServiceName='agentihooks' AND SpanName='brain.delivery' AND SpanAttributes['skipped'] IN ('0','false') AND Timestamp > now()-INTERVAL 6 HOUR GROUP BY time ORDER BY time",
           "refId": "A"
         }
       ]
@@ -481,7 +481,7 @@
       "targets": [
         {
           "format": 1,
-          "rawSql": "SELECT SpanAttributes['session_id'] AS Session, count() AS Injects, sum(toInt64OrZero(SpanAttributes['bytes'])) AS Bytes FROM otel.otel_traces WHERE ServiceName='agentihooks' AND SpanName='brain.delivery' AND SpanAttributes['skipped']='false' AND Timestamp > now()-INTERVAL 1 HOUR GROUP BY Session ORDER BY Bytes DESC LIMIT 10",
+          "rawSql": "SELECT SpanAttributes['session_id'] AS Session, count() AS Injects, sum(toInt64OrZero(SpanAttributes['bytes'])) AS Bytes FROM otel.otel_traces WHERE ServiceName='agentihooks' AND SpanName='brain.delivery' AND SpanAttributes['skipped'] IN ('0','false') AND Timestamp > now()-INTERVAL 1 HOUR GROUP BY Session ORDER BY Bytes DESC LIMIT 10",
           "refId": "A"
         }
       ]
