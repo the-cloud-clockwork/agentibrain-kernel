@@ -21,25 +21,86 @@ Five services, one vault, one HTTP contract — no AWS lock-in, no proprietary s
 
 ## What you get
 
-```
-                  Your agent fleet
-   (agenticore pods · Claude Code on laptop · cron jobs)
-                        │
-                        ▼  HTTP + Bearer auth
-   ┌────────────────────────────────────────────────┐
-   │              agentibrain-kernel                 │
-   │                                                 │
-   │   kb-router    obsidian-    embeddings   mcp    │
-   │   :8103        reader       :8102        :8104  │
-   │                :8101                            │
-   │                                                 │
-   │           tick-engine (cron + amygdala)         │
-   └────────────────────────────────────────────────┘
-                        │
-              ┌─────────┼──────────┐
-              ▼         ▼          ▼
-          your vault  postgres   redis
-          (markdown)  pgvector   streams
+```mermaid
+flowchart LR
+    %% =======================
+    %% Agent fleet (consumers)
+    %% =======================
+    subgraph FLEET["Agent fleet"]
+        direction TB
+        A1["Claude Code<br/>(laptop)"]
+        A2["agenticore pods<br/>(K8s)"]
+        A3["scheduled jobs<br/>(cron)"]
+    end
+
+    %% =======================
+    %% The kernel
+    %% =======================
+    subgraph KERNEL["agentibrain-kernel"]
+        direction TB
+        subgraph EDGE["Edge — HTTP &amp; MCP"]
+            direction TB
+            KB["kb-router :8103<br/>/feed · /signal · /marker<br/>/tick · /ingest"]
+            MCP["mcp :8104<br/>kb_search · kb_brief<br/>brain_search_arcs<br/>brain_get_arc"]
+        end
+        subgraph CORE["Read &amp; embed"]
+            direction TB
+            OR["obsidian-reader :8101<br/>vault read API"]
+            EMB["embeddings :8102<br/>pgvector ingest + query"]
+        end
+        subgraph LOOP["Brain loop"]
+            direction TB
+            TICK["tick-engine<br/>cluster · synthesise · inject<br/>(every 2 h)"]
+        end
+    end
+
+    %% =======================
+    %% Persistence
+    %% =======================
+    subgraph STATE["State"]
+        direction TB
+        VAULT[("Markdown vault<br/>frontal-lobe · amygdala<br/>pineal · left · right<br/>brain-feed")]
+        PG[("Postgres + pgvector<br/>arc embeddings")]
+        REDIS[("Redis streams<br/>events:brain")]
+    end
+
+    %% =======================
+    %% Wiring
+    %% =======================
+    A1 -->|HTTP · Bearer| KB
+    A2 -->|HTTP · Bearer| KB
+    A3 -->|cron| KB
+    A1 ==>|MCP| MCP
+    A2 ==>|MCP| MCP
+
+    KB --> OR
+    KB --> EMB
+    KB -. "/marker write" .-> VAULT
+    KB -. "/signal" .-> REDIS
+
+    MCP --> OR
+    MCP --> EMB
+
+    OR --> VAULT
+    EMB <--> PG
+
+    TICK --> VAULT
+    TICK --> EMB
+    TICK -. "hot-arc fan-out" .-> REDIS
+
+    %% =======================
+    %% Styling (GitHub-safe)
+    %% =======================
+    classDef client fill:#06b6d4,stroke:#0284c7,color:#fff
+    classDef edge fill:#8b5cf6,stroke:#7c3aed,color:#fff
+    classDef core fill:#10b981,stroke:#059669,color:#fff
+    classDef loop fill:#f59e0b,stroke:#d97706,color:#fff
+    classDef store fill:#6366f1,stroke:#4338ca,color:#fff
+    class A1,A2,A3 client
+    class KB,MCP edge
+    class OR,EMB core
+    class TICK loop
+    class VAULT,PG,REDIS store
 ```
 
 | Service | Port | Role |
