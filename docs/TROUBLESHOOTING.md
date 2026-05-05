@@ -130,8 +130,6 @@ If suspended: `kubectl -n <your-ops-namespace> patch cronjob agentibrain-brain-c
 
 **Fix:** rename one. Convention: prod CRs end with `-prod` suffix. Dev CRs use the un-suffixed name.
 
-See `MIGRATION.md` for the cutover-time variant of this bug.
-
 ---
 
 ## 8. Vault file written via /marker but agents don't see it in /feed
@@ -246,7 +244,6 @@ If it shows ClusterIP, the values-prod.yaml LB config didn't apply — check Arg
 
 ## When this doc isn't enough
 
-- `OPERATIONS.md` for routine ops
-- `architecture/ARCHITECTURE.md` for design context
-- `operator/BLOCKS.md` for in-flight work
-- Open an issue in `agentibrain-kernel`
+- [`OPERATIONS.md`](OPERATIONS.md) for routine ops
+- [`architecture/Overview`](architecture/ARCHITECTURE.md) for design context
+- Open an issue in [`agentibrain-kernel`](https://github.com/The-Cloud-Clockwork/agentibrain-kernel/issues)

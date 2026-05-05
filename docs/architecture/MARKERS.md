@@ -119,8 +119,8 @@ Use deterministic parsers over LLM agents for structured data extraction.
 Links between arcs. The graph structure of the brain.
 
 ```markdown
-<!-- @edge type=parent target=2026-04-09-artifact-platform -->
-<!-- @edge type=unblocks target=2026-04-09-brain-etl-arc-system -->
+<!-- @edge type=parent target=2026-04-09-platform-bootstrap -->
+<!-- @edge type=unblocks target=2026-04-09-vault-sync -->
 ```
 
 **Attributes:** `type` (parent/child/sibling/unblocks/supersedes/related), `target` (cluster_id)
@@ -221,7 +221,6 @@ Markers are **additive**. Existing documents work without them. brain_keeper.py'
 
 ## 8. Anchors
 
-- `stacks/brain-tools/markers.py` — the parser (run `python3 markers.py` for self-test)
-- `docs/brain/CLUSTERS.md` — arc schema that markers enhance
-- `docs/brain/ARCHITECTURE.md` — full brain system architecture
-- `operator/BRAIN-MVP.md` — execution plan tracking
+- [`services/tick-engine/markers.py`](https://github.com/The-Cloud-Clockwork/agentibrain-kernel/blob/main/services/tick-engine/markers.py) — the parser (run `python3 markers.py` for self-test)
+- [`CLUSTERS.md`](CLUSTERS.md) — arc schema that markers enhance
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — full brain system architecture

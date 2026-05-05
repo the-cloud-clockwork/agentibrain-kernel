@@ -121,7 +121,7 @@ WHERE ServiceName='agentihooks'
 GROUP BY ServiceName;
 ```
 
-If `hours_ago > 2` while agents are working, OTel pipeline is broken. See §7 in docs/brain/TELEMETRY.md.
+If `hours_ago > 2` while agents are working, OTel pipeline is broken. See §7 in TELEMETRY.md.
 
 ---
 
@@ -238,7 +238,7 @@ Content to inject into brain-feed directly.
 - Hook scans transcript on Stop → writes to `~/.agentihooks/brain-outbox/`.
 - `@milestone` and `@signal` also XADD to Redis stream `events:brain` for real-time delivery.
 - Next tick ingests outbox → becomes part of the arc narrative.
-- Full spec: `docs/brain/MARKERS.md` (7 types with regex patterns and attributes).
+- Full spec: `MARKERS.md` (7 types with regex patterns and attributes).
 
 ---
 
@@ -303,30 +303,10 @@ Commands (send as task prompt):
 
 ## Related Docs
 
-- `docs/brain/ARCHITECTURE.md` — architecture, why the tick exists, hybrid deterministic+AI reasoning
-- `docs/brain/TELEMETRY.md` — OTel span taxonomy, ClickHouse queries, troubleshooting
-- `docs/brain/KEEPER.md` — brain-keeper agent internals, commands, report format
-- `docs/brain/MATURITY.md` — current maturity score (~85% as of 2026-04-15)
-- `operator/BRAIN-MVP.md` — remaining work blocks
-
----
-
-## Recent Incident — 2026-04-15 OTel Blackout
-
-Agentihooks stopped emitting OTel spans for 26 hours starting 2026-04-14 17:27 UTC. Root cause chain:
-
-1. `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` in `~/.claude/settings.json`
-2. Agentihooks `.venv` was missing `opentelemetry-exporter-otlp-proto-grpc` (no `grpcio` wheel for Python 3.11 on WSL2)
-3. SDK init failed silently → `_SDK_TRACER = None`
-4. `_http_fallback` early-returned when protocol is `grpc` → every span dropped
-
-**Fix** (committed `agentihooks@f733094`):
-- settings.json: protocol `grpc` → `http/protobuf`, endpoint `:4317` → `:4318`
-- telemetry.py: remove protocol guard in `_http_fallback`, auto-swap `:4317` → `:4318`
-
-**How it was detected:** dashboard panels showed empty, operator asked for proof. Independent verification via ClickHouse `max(Timestamp)` vs `now64(9)` revealed 26h gap. Logs/metrics pipeline was fine — only trace export broke.
-
-**Lesson:** empty dashboard panels might not be a dashboard problem. Always verify data freshness at the source before blaming the viewer.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — architecture, why the tick exists, hybrid deterministic+AI reasoning
+- [`TELEMETRY.md`](TELEMETRY.md) — OTel span taxonomy, ClickHouse queries, troubleshooting
+- [`KEEPER.md`](KEEPER.md) — brain-keeper agent internals, commands, report format
+- [`MATURITY.md`](MATURITY.md) — maturity scorecard
 
 ---
 

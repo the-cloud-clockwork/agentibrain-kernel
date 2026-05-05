@@ -55,7 +55,7 @@ That closed loop — dispatch → audit → artifact → operator read → apply
 
 ### Known self-diagnosed issues (fragility)
 
-Brain-keeper audited its own environment and reported these. **Single source of truth:** `docs/brain/KEEPER.md` § Known Issues (items F.8–F.14). Do not duplicate the list here — see 8N for current status and fixes.
+Brain-keeper audits its own environment and reports issues. **Single source of truth:** [`KEEPER.md`](KEEPER.md) § Known Issues. Do not duplicate the list here.
 
 ---
 
@@ -87,28 +87,8 @@ Brain-keeper audited its own environment and reported these. **Single source of 
 
 ---
 
-## Historical context
-
-| Phase | Maturity after | Milestone |
-|---|---|---|
-| Phase 0 (2026-04-09) | ~30% | Extraction + cluster scaffolding, 12 arcs baseline |
-| Block 1 shipped (2026-04-10) | ~45% | K8s CronJob + deterministic pipeline |
-| Block 2 shipped (2026-04-10) | ~55% | Hot-arc injection via brain-keeper CronJob |
-| Block 3 shipped (2026-04-11) | ~65% | Amygdala event bus consumer + signal file path |
-| Block 4 shipped (2026-04-12) | ~70% | Replay skill + semantic search + workflow extractor |
-| Block 5 shipped (2026-04-13) | ~75% | Real-time marker write path + fleet broadcast |
-| OTel pipeline + dashboard redesign (2026-04-13) | ~77% | Observable from both sides, no more agent interrogation |
-| **brain-keeper first-class agent (2026-04-13)** | **~80%** | **Dispatch surface + Drive reports = operator-ready** |
-| Self-healing crons + heal.py + feedback loop (2026-04-14) | ~75% | Detection infrastructure running, cadence tuning pending |
-| Documentation audit + maturity re-assessment (2026-04-18) | ~70% | Honest re-scoring: core pipeline 88% (deferred criteria), self-healing 42% (crons counted) |
-
----
-
 ## Cross-references
 
-- `docs/brain/ARCHITECTURE.md` — brain core (arcs, vault, brain-tick, brain-feed)
-- `docs/brain/TELEMETRY.md` — OpenTelemetry 5-layer pipeline
-- `docs/brain/KEEPER.md` — brain-keeper first-class agent spec, command surface, report pipeline, readiness 7.5/10
-- `operator/BRAIN-MVP.md` — sprint plan, block status, fragility list, priority queue
-- `operator/BLOCKS.md` — high-level brain block in active projects
-- `operator/architecture/AGENT-ROSTER.md` — brain-keeper row with evolved scope
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — brain core (arcs, vault, brain-tick, brain-feed)
+- [`TELEMETRY.md`](TELEMETRY.md) — OpenTelemetry pipeline
+- [`KEEPER.md`](KEEPER.md) — brain-keeper agent spec
