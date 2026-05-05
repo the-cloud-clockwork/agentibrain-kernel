@@ -163,19 +163,28 @@ ds_payload=$(jq -n \
     user: $user
   }')
 
-# Try update; fall back to create.
-existing=$(curl -sS "${GRAFANA_AUTH[@]}" \
-  "${GRAFANA_URL}/api/datasources/uid/${DATASOURCE_UID}" \
-  -o /dev/null -w '%{http_code}' || true)
+# Try update; fall back to create. Respect file-provisioned datasources.
+existing_body=$(curl -sS "${GRAFANA_AUTH[@]}" \
+  "${GRAFANA_URL}/api/datasources/uid/${DATASOURCE_UID}" || true)
+existing_uid=$(echo "$existing_body" | jq -r '.uid // empty' 2>/dev/null || true)
 
-if [[ "$existing" == "200" ]]; then
-  ds_id=$(curl -sS "${GRAFANA_AUTH[@]}" \
-    "${GRAFANA_URL}/api/datasources/uid/${DATASOURCE_UID}" | jq -r '.id')
-  curl -sS -f "${GRAFANA_AUTH[@]}" -X PUT \
-    -H "Content-Type: application/json" \
-    "${GRAFANA_URL}/api/datasources/${ds_id}" \
-    -d "$ds_payload" >/dev/null || die "datasource update failed"
-  ok "datasource updated"
+if [[ -n "$existing_uid" ]]; then
+  read_only=$(echo "$existing_body" | jq -r '.readOnly // false')
+  ds_type=$(echo "$existing_body" | jq -r '.type // ""')
+  if [[ "$read_only" == "true" ]]; then
+    if [[ "$ds_type" == "grafana-clickhouse-datasource" ]]; then
+      ok "datasource already provisioned (file-based, read-only) — skipping update"
+    else
+      die "uid '${DATASOURCE_UID}' is provisioned with wrong type: ${ds_type}"
+    fi
+  else
+    ds_id=$(echo "$existing_body" | jq -r '.id')
+    curl -sS -f "${GRAFANA_AUTH[@]}" -X PUT \
+      -H "Content-Type: application/json" \
+      "${GRAFANA_URL}/api/datasources/${ds_id}" \
+      -d "$ds_payload" >/dev/null || die "datasource update failed"
+    ok "datasource updated"
+  fi
 else
   curl -sS -f "${GRAFANA_AUTH[@]}" -X POST \
     -H "Content-Type: application/json" \
