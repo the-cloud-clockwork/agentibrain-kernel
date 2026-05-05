@@ -55,16 +55,18 @@ flowchart LR
 ## Install
 {: .fs-7 .fw-600 }
 
-### 1. Laptop (Docker Compose)
+The kernel ships in exactly two shapes — Docker Compose for local / isolated environments, Helm for fleet-scale Kubernetes. There is no PyPI / `pip install` path; the kernel runs as containers, not as a Python library.
+
+### 1. Local (Docker Compose)
 
 ```bash
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel
 cd agentibrain-kernel
-./local/bootstrap.sh
-docker compose up -d
+./local/bootstrap.sh                  # mints tokens, scaffolds vault + .env
+docker compose up -d                  # five services on localhost
 ```
 
-Five services on localhost — see [`local/README.md`](https://github.com/The-Cloud-Clockwork/agentibrain-kernel/blob/main/local/README.md).
+See [`local/README.md`](https://github.com/The-Cloud-Clockwork/agentibrain-kernel/blob/main/local/README.md) for the laptop walkthrough.
 
 ### 2. Kubernetes (Helm)
 
@@ -74,16 +76,7 @@ helm install kb-router helm/kb-router -n brain --create-namespace
 # repeat for obsidian-reader, embeddings, mcp, brain-cron, brain-keeper
 ```
 
-Bare-cluster path with no operator infra required — see [`docs/HELM-QUICKSTART.md`]({{ site.baseurl }}/docs/HELM-QUICKSTART). For ArgoCD + ESO + multi-source patterns: [`docs/DEPLOYMENT.md`]({{ site.baseurl }}/docs/DEPLOYMENT).
-
-### 3. PyPI (CLI only)
-
-```bash
-pip install agentibrain
-brain init --local
-```
-
-Scaffolds the vault schema and emits `.env`. CLI: `brain init|up|down|status|tick|scaffold|version`.
+Bare-cluster path with no platform prerequisites — see [`docs/HELM-QUICKSTART.md`]({{ site.baseurl }}/docs/HELM-QUICKSTART). For ArgoCD + ESO + multi-source patterns: [`docs/DEPLOYMENT.md`]({{ site.baseurl }}/docs/DEPLOYMENT).
 
 ---
 
