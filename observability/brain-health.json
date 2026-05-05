@@ -504,7 +504,7 @@
       "targets": [
         {
           "format": 1,
-          "rawSql": "SELECT SpanAttributes['source'] AS Source, SpanAttributes['channel'] AS Channel, SpanAttributes['severity'] AS Sev, SpanAttributes['message_id'] AS MsgID, count() AS Deliveries, max(Timestamp) AS LastSeen FROM otel.otel_traces WHERE ServiceName='agentihooks' AND SpanName='brain.delivery' AND Timestamp > now()-INTERVAL 30 MINUTE GROUP BY Source, Channel, Sev, MsgID ORDER BY LastSeen DESC LIMIT 20",
+          "rawSql": "SELECT SpanAttributes['source'] AS Source, SpanAttributes['channel'] AS Channel, SpanAttributes['severity'] AS Sev, SpanAttributes['message_id'] AS MsgID, count() AS Deliveries, max(Timestamp) AS LastSeen FROM otel.otel_traces WHERE ServiceName='agentihooks' AND SpanName='brain.delivery' AND Timestamp > now()-INTERVAL 1 HOUR GROUP BY Source, Channel, Sev, MsgID ORDER BY LastSeen DESC LIMIT 20",
           "refId": "A"
         }
       ]
@@ -755,7 +755,7 @@
       "targets": [
         {
           "format": 1,
-          "rawSql": "SELECT round(quantile(0.95)(Duration/1e6),1) FROM otel.otel_traces WHERE ServiceName='agentihooks' AND SpanName='brain.marker_write' AND Timestamp > now()-INTERVAL 1 HOUR",
+          "rawSql": "SELECT round(quantile(0.95)(Duration/1e6),1) FROM otel.otel_traces WHERE ServiceName='agentihooks' AND SpanName='brain.marker_write' AND Timestamp > now()-INTERVAL 6 HOUR",
           "refId": "A"
         }
       ],
@@ -827,7 +827,7 @@
       "targets": [
         {
           "format": 1,
-          "rawSql": "SELECT toStartOfMinute(Timestamp) AS time, round(quantile(0.5)(Duration/1e6),2) AS p50_ms, round(quantile(0.95)(Duration/1e6),2) AS p95_ms FROM otel.otel_traces WHERE ServiceName='agentihooks' AND SpanName='brain.inject' AND Timestamp > now()-INTERVAL 6 HOUR GROUP BY time ORDER BY time",
+          "rawSql": "SELECT toStartOfMinute(Timestamp) AS time, round(quantile(0.5)(Duration/1e6),2) AS p50_ms, round(quantile(0.95)(Duration/1e6),2) AS p95_ms FROM otel.otel_traces WHERE ServiceName='agentihooks' AND SpanName='brain.inject' AND Timestamp > now()-INTERVAL 24 HOUR GROUP BY time ORDER BY time",
           "refId": "A"
         }
       ],
@@ -861,7 +861,7 @@
         {
           "format": 1,
           "refId": "inj",
-          "rawSql": "SELECT toStartOfMinute(Timestamp) AS time, count() AS inject FROM otel.otel_traces WHERE ServiceName='agentihooks' AND SpanName='brain.inject' AND Timestamp > now()-INTERVAL 6 HOUR GROUP BY time ORDER BY time"
+          "rawSql": "SELECT toStartOfMinute(Timestamp) AS time, count() AS inject FROM otel.otel_traces WHERE ServiceName='agentihooks' AND SpanName='brain.inject' AND Timestamp > now()-INTERVAL 24 HOUR GROUP BY time ORDER BY time"
         },
         {
           "format": 1,
