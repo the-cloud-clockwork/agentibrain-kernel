@@ -53,12 +53,36 @@ INFERENCE_URL = os.getenv("INFERENCE_URL", "")
 CLICKHOUSE_URL = os.getenv("CLICKHOUSE_URL", "")
 
 
+_BRAIN_SCHEMA_DDL = (
+    "CREATE DATABASE IF NOT EXISTS brain",
+    (
+        "CREATE TABLE IF NOT EXISTS brain.tick_health ("
+        "timestamp DateTime DEFAULT now(), "
+        "score Float32, reason String, "
+        "arcs_scanned UInt32, signals_collected UInt32, lessons_collected UInt32, "
+        "heat_changes UInt32, promotions UInt32, demotions UInt32, graduations UInt32, "
+        "hot_arcs_written UInt32, total_ms UInt32, tick_type String, "
+        "signals_written UInt32, signals_tombstoned_stale UInt32, signals_tombstoned_cleared UInt32"
+        ") ENGINE = MergeTree ORDER BY timestamp TTL timestamp + INTERVAL 90 DAY"
+    ),
+)
+
+
+def _ch_request(base_url: str, sql: str, auth_header: str | None) -> None:
+    req = urllib.request.Request(
+        f"{base_url}/?query={urllib.request.quote(sql)}",
+        method="POST",
+    )
+    if auth_header:
+        req.add_header("Authorization", auth_header)
+    urllib.request.urlopen(req, timeout=5)
+
+
 def _push_clickhouse(report: dict) -> None:
     """Push tick metrics to ClickHouse brain.tick_health (best-effort).
 
-    Tries HTTP API first (works when ClickHouse listens on localhost inside
-    the same network namespace, e.g. K8s pod with host network or same Docker
-    bridge). Falls back gracefully on connection error.
+    Idempotently bootstraps the brain.tick_health schema before insert so the
+    table self-heals after a cluster rebuild — no manual DDL needed.
     """
     det = report.get("phases", {}).get("deterministic", {}).get("stats", {})
     ai = report.get("phases", {}).get("apply", {})
@@ -94,14 +118,14 @@ def _push_clickhouse(report: dict) -> None:
     import base64
     parsed_ch = urllib.parse.urlparse(CLICKHOUSE_URL)
     base_url = f"{parsed_ch.scheme}://{parsed_ch.hostname}:{parsed_ch.port or 8123}"
-    req = urllib.request.Request(
-        f"{base_url}/?query={urllib.request.quote(sql)}",
-        method="POST",
-    )
+    auth_header = None
     if parsed_ch.username:
         creds = base64.b64encode(f"{parsed_ch.username}:{parsed_ch.password or ''}".encode()).decode()
-        req.add_header("Authorization", f"Basic {creds}")
-    urllib.request.urlopen(req, timeout=5)
+        auth_header = f"Basic {creds}"
+
+    for ddl in _BRAIN_SCHEMA_DDL:
+        _ch_request(base_url, ddl, auth_header)
+    _ch_request(base_url, sql, auth_header)
     print("ClickHouse: tick_health row inserted", file=sys.stderr)
 INFERENCE_TOKEN_ENV = "INFERENCE_API_KEY"
 BRAIN_BRIEF_MODEL = os.getenv("BRAIN_BRIEF_MODEL", "brain-brief")
