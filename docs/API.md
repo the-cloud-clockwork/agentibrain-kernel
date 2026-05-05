@@ -1,3 +1,9 @@
+---
+title: HTTP API
+parent: Reference
+nav_order: 1
+---
+
 # API Reference
 
 The authoritative source is [`api/openapi.yaml`](../api/openapi.yaml). This

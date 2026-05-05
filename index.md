@@ -14,7 +14,7 @@ The brain + KB substrate for Claude Code agent fleets — services, Helm charts,
 
 <div class="hero-actions text-center mb-8" markdown="0">
   <a href="#install" class="btn btn-primary fs-5 mr-2">Get Started</a>
-  <a href="{{ site.baseurl }}/docs/00-INDEX" class="btn btn-green fs-5 mr-2">Browse Docs</a>
+  <a href="{{ site.baseurl }}/concepts/" class="btn btn-green fs-5 mr-2">Concepts</a>
   <a href="https://github.com/The-Cloud-Clockwork/agentibrain-kernel" class="btn fs-5" target="_blank">View on GitHub</a>
 </div>
 
@@ -124,25 +124,15 @@ Full wiring + auth notes: [`docs/MCP.md`]({{ site.baseurl }}/docs/MCP).
 
 ---
 
-## Documentation
+## Where to next
 {: .fs-7 .fw-600 }
 
-| Topic | What's there |
-|---|---|
-| [HTTP API]({{ site.baseurl }}/docs/API) | `/feed /signal /marker /tick /ingest` contract |
-| [MCP server]({{ site.baseurl }}/docs/MCP) | `kb_search`, `kb_brief`, `brain_search_arcs`, `brain_get_arc` |
-| [Vault schema]({{ site.baseurl }}/docs/VAULT-SCHEMA) | Six-region Obsidian layout, schema marker |
-| [Helm quickstart]({{ site.baseurl }}/docs/HELM-QUICKSTART) | Bare-cluster install with no operator infra |
-| [Deployment]({{ site.baseurl }}/docs/DEPLOYMENT) | ArgoCD + ESO + multi-source patterns |
-| [Secrets]({{ site.baseurl }}/docs/SECRETS) | Plain Opaque or ESO-synced; the choice is yours |
-| [Operations]({{ site.baseurl }}/docs/OPERATIONS) | Day-2 runbook — monitor, scale, drain, backup |
-| [Troubleshooting]({{ site.baseurl }}/docs/TROUBLESHOOTING) | Top failure modes with fixes |
-| [Glossary]({{ site.baseurl }}/docs/GLOSSARY) | MUBS, arc, signal, marker, tick, hemisphere |
-| [Migration]({{ site.baseurl }}/docs/MIGRATION) | Swapping a legacy brain for the kernel |
-| [Architecture]({{ site.baseurl }}/docs/architecture/ARCHITECTURE) | Full design — services, data plane, control plane |
-| [Markers]({{ site.baseurl }}/docs/architecture/MARKERS) | `<!-- @lesson -->`, `<!-- @signal -->`, `<!-- @milestone -->` |
+The sidebar groups every page into four sections — pick the one that matches your goal:
 
-Full index: [`docs/00-INDEX.md`]({{ site.baseurl }}/docs/00-INDEX).
+- [**Concepts**]({{ site.baseurl }}/concepts/) — what the brain is, why arcs/markers/MCP, the philosophical groundwork.
+- [**Reference**]({{ site.baseurl }}/reference/) — HTTP API, MCP tools, vault schema, marker grammar, gateway contract.
+- [**Operate**]({{ site.baseurl }}/operate/) — Helm install, deployment patterns, secrets, day-2 ops, troubleshooting.
+- [**Architecture**]({{ site.baseurl }}/architecture/) — services, data plane, the brain-keeper agent, telemetry, maturity rubric.
 
 ---
 

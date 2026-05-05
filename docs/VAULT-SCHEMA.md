@@ -1,3 +1,9 @@
+---
+title: Vault Schema
+parent: Reference
+nav_order: 3
+---
+
 # Vault Schema
 
 The vault is the on-disk home of the brain: cluster markdown, hot-arc feed, operator intent, pipeline metadata, emergency signals, daily logs, and the operator's own dual-hemisphere knowledge base. It is an Obsidian-compatible folder tree, writable by humans and by kernel services.

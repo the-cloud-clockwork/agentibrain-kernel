@@ -1,3 +1,9 @@
+---
+title: Deployment
+parent: Operate
+nav_order: 2
+---
+
 # Deployment
 
 How to get the kernel running on a Kubernetes cluster. Three patterns, in order of preference.

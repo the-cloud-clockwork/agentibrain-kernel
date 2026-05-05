@@ -1,3 +1,9 @@
+---
+title: Gateway Contract
+parent: Reference
+nav_order: 5
+---
+
 # Brain LLM Gateway Contract
 
 The brain (kb-router, kb_brief MCP tool, tick-engine) is a vanilla

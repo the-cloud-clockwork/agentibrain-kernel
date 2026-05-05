@@ -1,3 +1,9 @@
+---
+title: Keeper
+parent: Architecture
+nav_order: 3
+---
+
 # Brain Keeper — First-Class Brain Ops Agent
 
 **brain-keeper is the single point of contact for every brain/vault operation.** Operators and other agents dispatch natural-language tasks to it and receive structured markdown + CSV reports that auto-mirror to Google Drive as Google Docs + Google Sheets. No skill rot, no opaque pod internals — the agent IS the skill surface.
