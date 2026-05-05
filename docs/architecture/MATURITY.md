@@ -1,3 +1,9 @@
+---
+title: Maturity
+parent: Architecture
+nav_order: 5
+---
+
 # Brain System Maturity Assessment
 
 > **Last assessed:** 2026-04-18

@@ -1,3 +1,9 @@
+---
+title: MCP Server
+parent: Reference
+nav_order: 2
+---
+
 # Brain MCP server
 
 The kernel ships an MCP server — `agentibrain-mcp` — that exposes brain + KB retrieval tools to agents. It lives in `services/mcp/` and is the canonical retrieval surface. Agents do not query Postgres, Obsidian, or the inference-gateway directly; they call these tools.

@@ -1,5 +1,7 @@
 ---
-title: Brain Markup Protocol — Marker Specification
+title: Markers
+parent: Reference
+nav_order: 4
 status: living
 date: 2026-04-10
 related:

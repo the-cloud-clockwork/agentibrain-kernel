@@ -1,3 +1,9 @@
+---
+title: Secrets
+parent: Operate
+nav_order: 4
+---
+
 # Secrets — How They Flow
 
 The kernel never stores credentials in code or images. Operators have **two

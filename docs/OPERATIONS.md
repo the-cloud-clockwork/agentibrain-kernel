@@ -1,3 +1,9 @@
+---
+title: Operations
+parent: Operate
+nav_order: 5
+---
+
 # Operations — Day 2
 
 What the kernel needs from you once it's running. Everything here assumes the install is complete (see `INSTALL.md` and `DEPLOYMENT.md`).

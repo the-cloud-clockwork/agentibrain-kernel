@@ -1,3 +1,9 @@
+---
+title: Clusters
+parent: Architecture
+nav_order: 2
+---
+
 # Brain Clusters — Semantic Memory Compartments
 
 > **Status:** Living vision — cluster primitive + amygdala/pineal/frontal-lobe regions

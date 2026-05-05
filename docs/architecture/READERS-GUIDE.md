@@ -1,3 +1,9 @@
+---
+title: Readers Guide
+parent: Concepts
+nav_order: 2
+---
+
 # 8O — Brain System Reader's Guide
 
 **Purpose:** how to *read* the brain. Not what it is — that's 8L/8M/8N. This is the field manual: every number, panel, broadcast, and arc decoded.

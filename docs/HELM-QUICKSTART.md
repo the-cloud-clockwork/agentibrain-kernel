@@ -1,3 +1,9 @@
+---
+title: Helm Quickstart
+parent: Operate
+nav_order: 1
+---
+
 # Helm Quickstart
 
 Bare-cluster install of the brain. The reference path lives in

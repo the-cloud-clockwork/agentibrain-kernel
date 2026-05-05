@@ -1,3 +1,9 @@
+---
+title: Troubleshooting
+parent: Operate
+nav_order: 6
+---
+
 # Troubleshooting
 
 Top failure modes, ordered by how often they bite. Each entry: symptom, root cause, fix.

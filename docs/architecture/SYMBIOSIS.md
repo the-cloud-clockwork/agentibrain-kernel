@@ -1,3 +1,9 @@
+---
+title: Symbiosis
+parent: Concepts
+nav_order: 1
+---
+
 # Symbiosis — The Operator and the Matrix
 
 ![Liquid chrome mirror — symbiosis in motion](images/glass-sym.gif)

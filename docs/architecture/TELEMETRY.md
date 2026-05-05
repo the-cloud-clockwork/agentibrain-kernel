@@ -1,3 +1,9 @@
+---
+title: Telemetry
+parent: Architecture
+nav_order: 4
+---
+
 # Brain Nervous System — OpenTelemetry Observability
 
 > **Shipped:** 2026-04-13

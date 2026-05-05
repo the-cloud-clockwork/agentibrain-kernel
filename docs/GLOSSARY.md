@@ -1,3 +1,9 @@
+---
+title: Glossary
+parent: Concepts
+nav_order: 3
+---
+
 # Glossary
 
 Terms used across the codebase, docs, and operator vocabulary.
