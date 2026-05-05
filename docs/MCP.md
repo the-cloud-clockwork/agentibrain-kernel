@@ -65,10 +65,10 @@ Sample ArgoCD `Application` CR ships at
 
 ### Optional — bring-your-own MCP-proxy chart
 
-If you already run a generic mcp-proxy chart for other MCP servers and want
-the kernel MCP to ride that pattern, the example below is the historical
-reference. Skip this section unless you already have such a chart in your
-platform repo.
+If your platform already standardises on a generic mcp-proxy chart for every
+MCP server, the snippet below shows how to point that chart at the kernel
+image instead of using `helm/mcp/`. Skip this section if you don't have such
+a chart.
 
 ```yaml
 spec:
@@ -176,16 +176,3 @@ python app/server.py    # stdio MCP — connect with mcp-proxy or claude --debug
 ```
 
 Smoke tests: `pytest services/mcp/tests/`.
-
-## Phase 2 — likely deprecated
-
-`kb_dispatch` and `kb_converse` build a `JobBundle` (theme + focus + custom + audience + sources) and dispatch it to mediagen / notebooklm / paper2slides via an upstream job-runner. The bundle assembler and theme registry live in upstream packages (~700 LOC + ~260 LOC).
-
-**Status (2026-04-26):** these tools were made **brain-blind** in artifact-store:
-they reject `obsidian://` source refs and never call `kb_brief`. The clean
-boundary now justifies leaving them in artifact-store permanently — brain owns
-retrieval (`kb_search` / `kb_brief` / `brain_*` here), artifact-store owns
-artifact CRUD and media dispatch. Phase 2 (vendoring the bundle/theme packages
-into the kernel and moving the dispatch tools here) is no longer
-required by the boundary contract; it would only consolidate code, not change
-responsibilities.

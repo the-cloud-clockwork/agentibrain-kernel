@@ -103,11 +103,11 @@ First operator-profile corpus run.
 
 **Why HTML comments:** Obsidian renders them invisible (clean reading). GitHub ignores them. Single regex: `<!-- @(\w+)(.*?)-->`. Block regex with DOTALL captures content. No conflict with markdown syntax. LLMs see them in raw text as semantic anchors.
 
-**Current vault stats:** 18 arcs retrofitted with 58 markers. brain_keeper.py extracts 44 lessons, 5 signals, 1 inject block in 47ms.
+**Performance:** marker extraction is single-regex with DOTALL, sub-50 ms per arc on commodity hardware.
 
 ### 3. Arc Schema
 
-Every arc is a markdown file with YAML frontmatter. Schema defined in `docs/brain/CLUSTERS.md` Section 2.
+Every arc is a markdown file with YAML frontmatter. Schema defined in [`CLUSTERS.md`](CLUSTERS.md) Section 2.
 
 ```yaml
 ---
@@ -129,16 +129,16 @@ synthesized: true                # false = stub, true = Timeline/Lessons/Resolut
 
 The brain lives in the Obsidian vault on shared storage at `<your-vault-path>/`:
 
-| Compartment | Path | Purpose | Population |
-|---|---|---|---|
-| Clusters | `clusters/<YYYY-MM-DD>/` | Canonical arc storage, date-grouped | 18+ arcs |
-| Frontal Lobe (conscious) | `frontal-lobe/conscious/` | Hot arcs (heat ≥ 7), auto-injected | 8 arcs |
-| Frontal Lobe (unconscious) | `frontal-lobe/unconscious/` | Cooled arcs still linked via edges | 0 (nothing cooled yet) |
-| Amygdala | `amygdala/` | Emergency signals | 1 (auth-broker SPOF) |
-| Pineal | `pineal/` | Joy + breakthrough arcs | 1 (brain-etl self-referential) |
-| Left Hemisphere | `left/` | Graduated technical long-term memory | Existing (projects, research, reference, incidents, decisions) |
-| Right Hemisphere | `right/` | Graduated creative/strategic | Existing (ideas, strategy, life, creative, risk) |
-| Brain Feed | `brain-feed/` | Agent-readable files for brain_adapter | 5 files |
+| Compartment | Path | Purpose |
+|---|---|---|
+| Clusters | `clusters/<YYYY-MM-DD>/` | Canonical arc storage, date-grouped |
+| Frontal Lobe (conscious) | `frontal-lobe/conscious/` | Hot arcs (heat ≥ 7), auto-injected into agent context |
+| Frontal Lobe (unconscious) | `frontal-lobe/unconscious/` | Cooled arcs still linked via edges |
+| Amygdala | `amygdala/` | Emergency signals (one file per active alarm) |
+| Pineal | `pineal/` | Joy + breakthrough arcs |
+| Left Hemisphere | `left/` | Graduated technical long-term memory (projects, research, reference, incidents, decisions) |
+| Right Hemisphere | `right/` | Graduated creative/strategic (ideas, strategy, life, creative, risk) |
+| Brain Feed | `brain-feed/` | Agent-readable files for brain_adapter (hot-arcs, signals, inject, intent) |
 
 ### 5. Brain Feed Files
 
@@ -226,8 +226,7 @@ Agenticore instance deployed for the 20% AI tasks (edge discovery, synthesis, co
 
 In-session cron for continuous monitoring during active operator sessions. Launches sub-agents to harvest operator state + cross-session activity, synthesizes arcs, writes to vault.
 
-**Artifacts:** `brain-etl/INSTRUCTIONS.md` (self-contained tick brief), `brain-etl/LEARNINGS.md` (append-only audit log)
-**History:** Ran 20 ticks overnight (2026-04-09/10), validated empty-delta pattern, discovered that sub-agent A thrashes on >8 file reads
+**Artifacts:** an `INSTRUCTIONS.md` (self-contained tick brief) and a `LEARNINGS.md` (append-only audit log) live alongside the ETL workspace.
 
 ### 10. Health Tracking
 
@@ -342,46 +341,16 @@ helm/brain-keeper/   ← StatefulSet chart (agenticore agent for AI tasks)
 
 | Document | Purpose |
 |----------|---------|
-| `docs/architecture/CLUSTERS.md` | Arc primitive schema (authoritative) |
-| `docs/architecture/SYMBIOSIS.md` | Philosophical compass — the WHY |
-| `docs/architecture/KEEPER.md` | brain-keeper agent responsibilities + commands |
-| `docs/architecture/MATURITY.md` | Maturity scorecard |
-| `docs/VAULT-SCHEMA.md` | Folder layout owned by `brain scaffold` |
-| `api/openapi.yaml` | HTTP contract |
+| [`CLUSTERS.md`](CLUSTERS.md) | Arc primitive schema (authoritative) |
+| [`SYMBIOSIS.md`](SYMBIOSIS.md) | Philosophical compass — the WHY |
+| [`KEEPER.md`](KEEPER.md) | brain-keeper agent responsibilities + commands |
+| [`MATURITY.md`](MATURITY.md) | Maturity scorecard |
+| [`MARKERS.md`](MARKERS.md) | Marker grammar (`@lesson`, `@signal`, `@milestone`, `@decision`) |
+| [`TELEMETRY.md`](TELEMETRY.md) | OTel + ClickHouse + Langfuse pipeline |
+| [`../VAULT-SCHEMA.md`](../VAULT-SCHEMA.md) | Folder layout owned by `brain scaffold` |
+| [`../API.md`](../API.md) | HTTP contract |
 
-Operator-specific planning and rollout notes (e.g. `operator/BRAIN-MVP.md`)
-live in each operator's deployment repo.
-| `brain-etl/LEARNINGS.md` | ETL audit log (overnight run: 20 ticks) |
-| `docs/8E-MEMORY.md` | Memory stack hierarchy (auto-memory → AgentiBridge → brain arcs) |
-| `docs/9D-OPERATOR-CRONJOBS.md` | brain-cron listed in <your-ops-namespace> workload table |
-
----
-
-## Relationship to Other Systems
-
-| System | Relationship |
-|--------|-------------|
-| KB Catalog (`docs/8J-KB-CATALOG.md`) | kb_brief synthesizes arc stubs; kb_search can federate arcs from artifact-store + vault |
-| Artifact Platform (`docs/8I-ARTIFACT-PLATFORM.md`) | Publisher uses kb_dispatch to turn hot arcs into media artifacts |
-| Agent Prompt RL (`operator/MVP.md`) | Brain arcs = the reward signal RL optimizes against. Brain first, RL second. |
-| Event Bus (`docs/7G-EVENTBUS.md`) | Amygdala broadcasts will use Redis Streams (Block 3, pending) |
-| Operator Profile | brain-keeper's heat scoring + lessons feed profile quality metrics |
-| AgentiBridge | Session indexing feeds extract.py; restore_session enables arc replay |
-| Inference Gateway | AI reasoning tick routes through inference-gateway (sonnet + haiku fallback) |
-
----
-
-## Evolution Notes
-
-- **2026-04-09:** Arc schema + extract.py + cluster.py + vault scaffold + Phase 0 baseline (18 arcs)
-- **2026-04-10:** markers.py + brain_keeper.py (47ms deterministic tick) + brain_adapter SessionStart injection verified + 58 markers retrofitted across 18 arcs + brain_tick_prompt.py (hybrid AI reasoning) + brain_apply.py (apply layer) + brain_tick.py (full orchestrator) + first hybrid tick: 6 edges, 3 merges, 3 signal changes, health 6/10, verified persistent
-- **2026-04-11:** Block 3 amygdala E2E validated (6s round-trip). Block 5 write path shipped (brain_writer_hook, outbox sync, Redis XADD). Grafana 12-panel dashboard (ClickHouse brain.tick_health). Arc graduation (heat < 2, age > 7d → hemisphere). Ntfy failure notification. Overlay broadcast on profile activate/deactivate. Auto-overlay lifecycle (AGENTIHOOKS_AUTO_OVERLAY env var). brain-tools image rebuilt 5x. 51 duplicate markers + 20 bad edges cleaned.
-- **2026-04-12:** Block 4 replay pipeline shipped: extract_workflow.py + embed_arcs.py + brain_search_arcs MCP + /replay skill + replay-edge heat boost. 60 arcs embedded in pgvector (19 dev + 41 prod). E2E replay deferred pending workflow template population.
-- **2026-04-13:** 5-layer OTel pipeline shipped (brain.inject / brain.delivery / brain.marker_write spans). Grafana dashboard redesigned to 27 panels across 6 biological regions. brain-keeper evolved from daemon to first-class agent: LiteLLM model + AgentiBridge A2A + Drive report pipeline (md+csv → Google Doc+Sheet). brain-smoke 5/5 PASS.
-- **2026-04-14:** Mitigation tombstone (arcs with `mitigates: <source>` auto-clear source signals). Sibling edges auto-wired at extraction time. heal.py 7-point drift audit. reasoner_feedback.py closes the AI feedback loop. Auto-triage daily cron. brain-tools memory limit bumped 4→8Gi.
-- **2026-04-15:** 8O Brain Reader's Guide shipped (field manual for dashboard + markers + troubleshooting). OTel blackout fixed (telemetry.py HTTP fallback + settings.json protocol change).
-- **2026-04-18:** Documentation audit + consolidation. Maturity re-assessed at ~70% (was 80%). Tick schedule corrected (every 2h, not daily).
-- **Pending:** First real /replay E2E, nuclear halt for amygdala, vault backup, broadcast MCP tool, profile activation broadcast, embed_arcs.py scheduling
+Deployment-specific planning, rollout notes, and per-platform overlays live in your own platform repo, not here.
 
 ---
 
@@ -405,4 +374,4 @@ Without `.agentihooks.json` at CWD, `register_session()` finds no channels, and 
 
 ## Stress Test Playbook
 
-> Moved to `docs/brain/READERS-GUIDE.md` § Stress Testing. This is operational runbook content, not architecture.
+See [`READERS-GUIDE.md`](READERS-GUIDE.md) § Stress Testing — operational runbook content lives there, not in architecture.
