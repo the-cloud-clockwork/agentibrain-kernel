@@ -5,8 +5,7 @@
 `agentibrain` is a pillar of the **agenti ecosystem** alongside
 [`agenticore`](https://github.com/The-Cloud-Clockwork/agenticore) ·
 [`agentihooks`](https://github.com/The-Cloud-Clockwork/agentihooks) ·
-[`agentibridge`](https://github.com/The-Cloud-Clockwork/agentibridge) ·
-[`agentihub`](https://github.com/The-Cloud-Clockwork/agentihub) — and the **brain layer** every other pillar plugs into. It packages everything that used to live scattered across those repos into one pluggable memory + KB substrate that any fleet of Claude Code agents can read from and write back to.
+[`agentibridge`](https://github.com/The-Cloud-Clockwork/agentibridge) — and the **brain layer** every other pillar plugs into. It is self-contained: ships its own services, Helm charts, brain-keeper agent definition, and brain profile overlays, so any fleet of Claude Code agents can read from and write back to a single HTTP brain.
 
 ---
 
@@ -362,7 +361,7 @@ Workflow: `dev` is the working branch; PRs go `dev` → `main`. CI on `main` shi
 
 **v0.1.1 — first stable.** Six Helm charts. Five service images auto-published to GHCR (`:dev` from dev branch, `:latest` from main). HTTP contract frozen at v1. Generic OpenAI gateway — kernel speaks chat-completions to any compatible upstream (LiteLLM, OpenAI, Ollama, vLLM, …). Brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds; every embed flows through `POST /index_artifact`).
 
-The kernel is the canonical source of truth for everything brain-related — downstream consumers (`agentihub`, `agentihooks-bundle`) clone from here rather than vendoring. All deployment-specific plumbing (cluster namespaces, model name aliases, secret-store paths, NFS hosts) lives in your own platform repo, not here.
+The kernel is self-contained and the canonical source of truth for everything brain-related — services, Helm charts, brain-keeper agent definition (`agents/brain-keeper/`), brain profile overlays (`profiles/brain/`, `profiles/brain-keeper/`), and the vault layout schema. All deployment-specific plumbing (cluster namespaces, model name aliases, secret-store paths, NFS hosts) lives in your own platform repo, not here.
 
 Maturity tracking lives in [`operator/`](operator/):
 - [`operator/VISION.md`](operator/VISION.md) — what 100% means
