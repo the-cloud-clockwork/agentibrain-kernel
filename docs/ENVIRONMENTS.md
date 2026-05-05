@@ -2,12 +2,12 @@
 
 > **Note:** This doc walks through a reference dev/prod split (namespaces
 > `<your-dev-ns>`, `<your-prod-ns>`, `<your-ops-ns>`; LiteLLM at
-> `litellm.<your-prod-ns>.svc`; OpenBao at `<your-secret-store-ip>`) as a
+> `litellm.<your-prod-ns>.svc`; secrets at `<your-secret-store>`) as a
 > concrete example. **None of those names are baked into the kernel.**
 > Substitute your own namespaces, gateway URLs, and host addresses everywhere
 > — the kernel charts default to empty / placeholder values and accept
-> whatever your overlay sets. See `docs/DEPLOYMENT.md` for the generic
-> placeholders.
+> whatever your overlay sets. See [`DEPLOYMENT.md`](DEPLOYMENT.md) for the
+> generic placeholders.
 
 The kernel is deployed twice in the reference setup: `<your-dev-ns>` and `<your-prod-ns>`. This doc lays out what differs and how the values overlay achieves it.
 
@@ -20,10 +20,10 @@ The kernel is deployed twice in the reference setup: `<your-dev-ns>` and `<your-
 | Image tag | `:dev` | `:latest` |
 | ArgoCD source branch | `dev` | `main` |
 | ArgoCD app CR names | un-suffixed (`agentibrain-kb-router`) | `-prod` suffix (`agentibrain-kb-router-prod`) |
-| OpenBao path | `secret/k8s/embeddings-dev` | `secret/k8s/embeddings` |
+| Secret-store path | `<your-prefix>/embeddings-dev` | `<your-prefix>/embeddings` |
 | Vault NFS path | shared (single dual-hemisphere vault) | shared |
 | LiteLLM service URL | `litellm.<your-prod-ns>.svc` (intentional — only one LiteLLM) | `litellm.<your-prod-ns>.svc` |
-| MetalLB IP for embeddings | none (ClusterIP only) | `<your-cluster-ip>` |
+| LoadBalancer IP for embeddings | none (ClusterIP only) | `<your-cluster-ip>` |
 | Replica count | 1 | 1 (scale up if load demands) |
 | Resource limits | smaller (cpu 300m, mem 512Mi) | normal (cpu 500m, mem 1Gi) |
 
@@ -32,10 +32,6 @@ The kernel is deployed twice in the reference setup: `<your-dev-ns>` and `<your-
 Two reasons:
 1. **Blast radius** — testing a kernel image change in dev shouldn't touch prod agents.
 2. **Parallel evolution** — the dev branch can be ahead of main; both run side-by-side with their own tags.
-
-## Why the OpenBao path doesn't have a `-prod` suffix
-
-Historical artifact. The legacy implementation only had a single embeddings service, so its OpenBao path was just `secret/k8s/embeddings`. Dev came later and got the `-dev` suffix. Renaming prod to `secret/k8s/embeddings-prod` for symmetry is on the Tier 4 backlog (see `operator/ENHANCEMENTS.md`).
 
 ## Values overlay pattern
 
@@ -105,4 +101,4 @@ Use `./local/bootstrap.sh && docker compose up -d` from the repo root (see [`../
 
 ## Multi-tenant brain
 
-Out of scope for v0.1.x. Each operator runs their own kernel + vault. If you need multi-tenant: separate vault paths, separate OpenBao prefixes, multiple kb-router instances. Possible but not packaged.
+Out of scope for v0.1.x. Each deployment runs its own kernel + vault. If you need multi-tenant: separate vault paths, separate secret-store prefixes, multiple kb-router instances. Possible but not packaged.

@@ -100,7 +100,7 @@ curl -X PUT "${ARTIFACT_STORE_URL}/artifacts/miscellaneous/brain-keeper/${FILENA
 
 **Category:** `miscellaneous/brain-keeper/` — **NOT `system/test/*`**. The drive-sync Lambda explicitly skips anything under `system/*` (`handler.py:539`). `miscellaneous` is whitelisted in both `ALLOWED_PREFIXES` (artifact-store) and `CATEGORY_TO_DRIVE_FOLDER` (drive-sync), so both files mirror automatically.
 
-**API key:** stored in OpenBao at `secret/k8s/agenticore` as `ARTIFACT_STORE_API_KEY`, synced via ESO into the `agenticore-secrets` K8s Secret, mounted as env on brain-keeper pods.
+**API key:** stored at whatever path your secret store uses for the brain-keeper bundle (e.g. `<your-prefix>/agenticore`) as `ARTIFACT_STORE_API_KEY`, synced via ESO into the `agenticore-secrets` K8s Secret, mounted as env on brain-keeper pods. If you don't run ESO, create the K8s Secret directly via [`local/k8s-bootstrap.sh`](../../local/k8s-bootstrap.sh).
 
 ### Drive conversion — content-type routing
 

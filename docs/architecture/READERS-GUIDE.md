@@ -67,8 +67,7 @@ Every session starts with one or two `BROADCAST` blocks. They look like:
 
 ## Reading the Dashboard
 
-URL: `http://<your-host>:3000/d/<your-dashboard-slug>/brain-nervous-system`
-(Admin creds in OpenBao at `secret/observability/grafana/admin`.)
+The kernel ships a starter Grafana dashboard at [`observability/brain-health.json`](https://github.com/The-Cloud-Clockwork/agentibrain-kernel/blob/main/observability/brain-health.json) — import it into your own Grafana instance, point it at the ClickHouse datasource the tick-engine writes to, and adapt as needed. Auth, hosting, and admin credentials are entirely your platform's concern; the kernel doesn't assume any particular secret store.
 
 ### Panel groups
 

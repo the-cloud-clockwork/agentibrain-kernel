@@ -73,13 +73,13 @@ Full grammar: `architecture/MARKERS.md`.
 
 ## Storage
 
-**ESO** — External Secrets Operator. Bridges OpenBao secrets into K8s `Secret` resources.
+**ESO** — [External Secrets Operator](https://external-secrets.io/). Bridges secrets from your store of choice (Vault, OpenBao, AWS SM, GCP SM, Azure KV, …) into K8s `Secret` resources.
 
-**ClusterSecretStore** — K8s CR pointing ESO at OpenBao via auth.
+**ClusterSecretStore** — K8s CR pointing ESO at your secret store with the auth credentials it needs.
 
-**ExternalSecret** — K8s CR declaring "pull this OpenBao path → write to this Secret". Created by the kernel chart.
+**ExternalSecret** — K8s CR declaring "pull these keys from this store path → write to this K8s Secret". Created by the kernel chart when `externalSecret.enabled: true`.
 
-**OpenBao path** — `secret/k8s/<name>` is the convention. Operator-side secrets like the embeddings POSTGRES_URL live here.
+**Secret-store path** — wherever the embeddings credentials and other env vars live in your secret store. The kernel doesn't dictate a convention; you pass the path via `externalSecret.awsSecretPath`.
 
 ## Operations
 
@@ -87,12 +87,10 @@ Full grammar: `architecture/MARKERS.md`.
 
 **Drain** — `kubectl rollout`-style restart, or, in tick context: emptying `brain-feed/ticks/requested/`.
 
-**Decoupling score** — internal rubric (0–100) for how independent the kernel is from operator-specific infra. See `operator/STATE.md`.
-
 **Anchor svc** — a legacy-named K8s Service whose selector points at kernel pods, kept alive to avoid breaking external consumers (e.g. docker stacks bound to a static IP).
 
 ## Environment
 
-**dev** — `<your-namespace>` namespace, image tag `:dev`, ArgoCD source branch `dev`, OpenBao paths suffixed `-dev`.
+**dev** — your dev namespace, image tag `:dev`, ArgoCD source branch `dev`, secret-store paths suffixed `-dev`.
 
-**prod** — `<your-namespace>` namespace, image tag `:latest`, ArgoCD source branch `main`, no OpenBao suffix.
+**prod** — your prod namespace, image tag `:latest`, ArgoCD source branch `main`, no suffix.
