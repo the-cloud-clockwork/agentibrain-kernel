@@ -95,12 +95,14 @@ Six charts ship in [`helm/`](helm/) — `kb-router`, `obsidian-reader`, `embeddi
 
 #### Step 1 — Scaffold the vault on persistent storage
 
+Copy the template tree straight onto the volume:
+
 ```bash
-pip install ./agentibrain-kernel       # or `pip install agentibrain` once on PyPI
-brain scaffold --vault /mnt/<your-export>
+git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel
+cp -r agentibrain-kernel/agentibrain/templates/vault-layout/* /mnt/<your-export>/
 ```
 
-Idempotent. Or copy `agentibrain/templates/vault-layout/` straight onto the volume — same result.
+The kernel images expect this layout under `/vault` (see [`docs/VAULT-SCHEMA.md`](docs/VAULT-SCHEMA.md)). Idempotent — re-running just refreshes any missing files.
 
 #### Step 2 — Provision Secrets
 
@@ -370,7 +372,7 @@ PYTHONPATH=services/kb-router:. pytest services/kb-router/tests -q   # 25 servic
 docker build -t agentibrain-kb-router:local services/kb-router
 ```
 
-Workflow: `dev` is the working branch; PRs go `dev` → `main`. CI on `main` ships `:latest` GHCR images automatically. PyPI publish ([`.github/workflows/publish.yml`](.github/workflows/publish.yml)) fires on `v*.*.*` tag push.
+Workflow: `dev` is the working branch; PRs go `dev` → `main`. CI on `main` ships `:latest` GHCR images automatically.
 
 ---
 

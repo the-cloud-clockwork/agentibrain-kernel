@@ -49,4 +49,4 @@ Dev-first flow:
 - Downstream platform repos — use the kernel's Helm charts with environment-specific values.
 - `agentihub` — clones `agents/brain-keeper/` at install time.
 - `agentihooks-bundle` — clones `profiles/brain/` and `profiles/brain-keeper/` at install time.
-- External users — `pip install agentibrain` → `brain init --local`.
+- External users — `git clone` → `./local/bootstrap.sh` → `docker compose up -d` (or use the Helm charts for K8s).
