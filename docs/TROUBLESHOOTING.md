@@ -46,17 +46,16 @@ If they don't match, restart the agent pod after fixing the chart values, OR upd
 **Symptom:** `kubectl get externalsecret embeddings-secrets -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'` returns `False`.
 
 **Root causes (in order):**
-1. The OpenBao path doesn't exist or has zero keys.
-2. ESO can't authenticate (`openbao-token` expired or missing).
-3. ESO can't reach OpenBao network-wise.
+1. The path in your secret store doesn't exist or has zero keys.
+2. ESO can't authenticate to your store (auth token expired or missing).
+3. ESO can't reach your store network-wise.
 
 **Fix:**
 ```bash
 # describe shows the actual error
 kubectl -n <your-namespace> describe externalsecret embeddings-secrets | grep -E "Reason|Message" | head
 
-# verify OpenBao path
-docker exec <your-secret-store-container> bao kv get secret/k8s/embeddings
+# verify the path in your secret store using its native CLI/UI
 
 # check ESO auth
 kubectl -n external-secrets logs deploy/external-secrets --tail=50 | grep -i auth
@@ -228,7 +227,7 @@ kubectl -n argocd patch app <app-name> --type=merge \
 
 **Symptom:** an external docker consumer can't reach embeddings on its LoadBalancer IP.
 
-**Root cause:** `agentibrain-embeddings` Service either lost its LoadBalancer type or the MetalLB binding broke.
+**Root cause:** `agentibrain-embeddings` Service either lost its LoadBalancer type or your LB controller's IP binding broke.
 
 **Fix:**
 ```bash

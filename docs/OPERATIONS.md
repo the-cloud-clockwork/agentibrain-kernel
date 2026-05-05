@@ -70,7 +70,7 @@ The vault is the canonical KB. Three storage planes need backup:
 
 1. **Vault NFS** — your vault root path. Snapshot daily (filesystem snapshot, `rsync`, or restic to a second target).
 2. **Postgres embeddings DB** — `pg_dump` schedule. The embeddings table is the only schema-bearing data.
-3. **OpenBao** — backup is built into the OpenBao snapshot API; daily snapshot to S3 is recommended.
+3. **Your secret store** — back it up via whatever snapshot/export mechanism your store provides (Vault snapshot API, AWS SM versioning, etc.). The kernel doesn't manage secret storage.
 
 The kernel itself stores nothing of value beyond what's in those three. Pods can be rebuilt from images; CRs can be rebuilt from helm templates.
 
@@ -81,7 +81,7 @@ The kernel itself stores nothing of value beyond what's in those three. Pods can
 | `agentibrain-brain-cron` | `7 */2 * * *` (every 2 h) | Hybrid tick: extract → cluster → reason → apply → verify |
 | `agentibrain-brain-cron-tick-drain` | `*/2 * * * *` (every 2 min) | Drain `/tick` requests from `brain-feed/ticks/requested/` |
 | `agentibrain-parity` | `17 * * * *` (every hour) | Smoke probe kb-router + embeddings, write marker |
-| ESO sync | `30s` refresh interval | Pull OpenBao → K8s Secret |
+| ESO sync | `30s` refresh interval | Pull from your secret store → K8s Secret |
 
 ## Capacity
 
@@ -96,7 +96,7 @@ The kernel itself stores nothing of value beyond what's in those three. Pods can
 kubectl -n <your-namespace> logs <agent-pod> | grep brain_http_disabled_in_k8s
 
 # ESO sync errors
-kubectl -n external-secrets logs deploy/external-secrets | grep -i "openbao\|secretsync"
+kubectl -n external-secrets logs deploy/external-secrets | grep -i "secretsync\|error"
 
 # kb-router 4xx/5xx
 kubectl -n <your-namespace> logs agentibrain-kb-router-0 --tail=500 | grep -E "HTTP/1.1\" [45]"

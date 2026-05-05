@@ -162,7 +162,7 @@ Exit 0 on all-pass, 1 on any fail. Runs in ~1.5 s. Wired into CI at `agentihooks
 - Langfuse only receives from the `otlphttp/langfuse` exporter in the collector
 - Verify collector config: `ssh <otel-host> "grep -A3 langfuse <path-to-collector>/otelcol.yaml"`
 - Verify credentials env: `ssh <otel-host> "docker exec <otel-collector-container> printenv | grep LANGFUSE"`
-- For K8s pods: configure your `otel-collector` chart's langfuse exporter with credentials from your secret store (e.g. `secret/k8s/otel-collector-prod`)
+- For K8s pods: configure your `otel-collector` chart's langfuse exporter with credentials from your secret store (e.g. `<your-prefix>/otel-collector-prod`)
 
 **ClickHouse lag > 30s**
 - Check collector batch processor: default `timeout: 5s` — spans may batch for up to 5s before flush
@@ -194,15 +194,14 @@ Exit 0 on all-pass, 1 on any fail. Runs in ~1.5 s. Wired into CI at `agentihooks
 | 5 | `agentihooks/.github/workflows/brain-smoke.yml` |
 | 5 | `<your-platform-repo>/.claude/skills/brain-smoke/SKILL.md` |
 
-## Operator one-time setup
+## One-time setup
 
-1. **Restart this Claude Code session** so the new `settings.json` env vars take effect.
-2. **Populate OpenBao** (optional, for K8s pod telemetry to reach Langfuse):
+1. **Restart your Claude Code session** so the new `settings.json` env vars take effect.
+2. **Populate your secret store** (optional, for K8s pod telemetry to reach Langfuse) with these keys at whatever path your collector overlay references:
    ```
-   bao kv put secret/k8s/otel-collector-prod \
-     CLICKHOUSE_USER=default \
-     CLICKHOUSE_PASSWORD=<password> \
-     LANGFUSE_OTEL_ENDPOINT=<your-langfuse-host>/api/public/otel \
-     LANGFUSE_OTEL_AUTH=<base64 of pk:sk>
+   CLICKHOUSE_USER=default
+   CLICKHOUSE_PASSWORD=<password>
+   LANGFUSE_OTEL_ENDPOINT=<your-langfuse-host>/api/public/otel
+   LANGFUSE_OTEL_AUTH=<base64 of pk:sk>
    ```
-3. **ArgoCD sync `otel-collector`** to pick up the new exporter config.
+3. **Sync the collector deployment** (ArgoCD, Flux, or `helm upgrade`) to pick up the new exporter config.

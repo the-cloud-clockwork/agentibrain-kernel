@@ -38,9 +38,10 @@ Bare-cluster install of the brain. The reference path lives in
 `""` lets the cluster's default StorageClass apply — works on most modern
 clusters with no override.
 
-## Operator overlays
+## Platform overlays
 
-A typical platform deploy layers NFS + ESO + MetalLB on top of these
+A typical production deploy layers NFS (or another RWX volume), ESO (with
+your secret store of choice), and a LoadBalancer controller on top of these
 defaults. See `examples/values-overlays/` for sample overlays you can copy
 into your own deployment repo.
 
