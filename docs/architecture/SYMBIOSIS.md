@@ -1,6 +1,6 @@
 # Symbiosis — The Operator and the Matrix
 
-![The Matrix mirror scene — Neo's hand in liquid chrome](images/matrix-mirror-symbiosis.jpg)
+![Liquid chrome mirror — symbiosis in motion](images/glass-sym.gif)
 
 *© 1999 Warner Bros. — used here as a marketing/philosophical reference for this internal manifesto.*
 
