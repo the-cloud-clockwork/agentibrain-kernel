@@ -97,6 +97,7 @@ tpl:
       AGENTICORE_SHARED_LOCKS: 'false'
       AGENTICORE_REPOS_ROOT: /shared/repos
       AGENTICORE_JOBS_DIR: /shared/job-state
+      AGENTICORE_CLONE_ROOT: /app/clones
       HOME: /shared
       # agentihooks + agentihub sync (canonical sources for the brain profile + keeper agent)
       # Branch defaults to dev — agenticore needs BOTH URL+BRANCH to clone the
@@ -145,6 +146,12 @@ tpl:
         #   minikube   → standard
         storageClass: ""
         mountPath: /shared
+  extraVolumes:
+    - name: clones
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: clones
+      mountPath: /app/clones
   service:
     enabled: true
     type: ClusterIP
