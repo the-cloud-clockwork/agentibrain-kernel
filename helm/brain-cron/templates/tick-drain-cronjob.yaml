@@ -39,6 +39,8 @@ spec:
                   DONE=/vault/brain-feed/ticks/completed
                   FAIL=/vault/brain-feed/ticks/failed
                   mkdir -p "$DONE" "$FAIL"
+                  # Force NFS attribute cache refresh — short-lived pods see stale dir listings
+                  ls "$REQ"/ > /dev/null 2>&1 || true
                   count=0; ok=0; ko=0
                   for f in "$REQ"/*.json; do
                     [ -e "$f" ] || break
