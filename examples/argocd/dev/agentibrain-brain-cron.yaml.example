@@ -1,9 +1,9 @@
-# Sample ArgoCD Application — agentibrain-brain-cron (singleton).
+# Sample ArgoCD Application — agentibrain-brain-ops (singleton).
 # Cluster-wide; deploy ONCE. Tracks dev tag for faster code iteration.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: agentibrain-brain-cron
+  name: agentibrain-brain-ops
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -12,11 +12,11 @@ spec:
   sources:
     - repoURL: https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
       targetRevision: dev
-      path: helm/brain-cron
+      path: helm/brain-ops
       helm:
-        releaseName: agentibrain-brain-cron
+        releaseName: agentibrain-brain-ops
         valueFiles:
-          - $values/values-overlays/brain-cron/values.yaml
+          - $values/values-overlays/brain-ops/values.yaml
     - repoURL: <your-platform-repo>
       targetRevision: <your-revision>
       ref: values

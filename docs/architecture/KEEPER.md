@@ -193,7 +193,7 @@ Findings from the run: brain self-diagnosed **DEGRADED** status — throttle sup
 2. **Reports only in `/tmp`** — pod restart wipes them. Fix: upload to artifact-store is already the persistence path, but brain-keeper should also write to `/shared/brain-reports/` as an on-pod archive.
 3. **Storage MCP fix not in image** — `hooks/mcp/storage.py` `storage_url` field fix shipped to agentihooks git but agenticore image still has the broken copy baked in. Live-patched, image rebuild pending (`gh run list` shows dev build queued).
 4. **AgentiBridge wait timeout fix not in image** — live-patched on both prod + dev agentibridge pods, PR #36 merged to dev, image rebuild pending dev→main promotion.
-5. **Vault access via kb-router or NFS** — brain-keeper accesses the vault through the NFS mount or the kb-router API (`/vault/search`, `/feed`, etc.). obsidian-reader has been removed; all vault read/write is owned by kb-router.
+5. **Vault access via brain-api or NFS** — brain-keeper accesses the vault through the NFS mount or the brain-api API (`/vault/search`, `/feed`, etc.). obsidian-reader has been removed; all vault read/write is owned by brain-api.
 6. **Custom `brain-keeper-tools` unit not consumed** — 93-tool curated unit exists in LiteLLM (grafana + agentibridge + artifact_store + ...) but needs an entry in `agentihooks-bundle/.claude/.mcp.json` + a key env var injection to be usable. Would unlock native Grafana queries instead of raw curl.
 
 ### Opportunities

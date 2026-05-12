@@ -26,7 +26,7 @@ import httpx
 
 from . import vault_reader
 
-log = logging.getLogger("kb_router")
+log = logging.getLogger("brain_api")
 
 ARTIFACT_STORE_URL = os.getenv("ARTIFACT_STORE_URL", "")
 ARTIFACT_STORE_KEY = os.getenv("ARTIFACT_STORE_KEY", "")
@@ -351,7 +351,7 @@ async def _clone_and_zip_repo(
     client: httpx.AsyncClient,
 ) -> tuple[str | None, str | None]:
     """Shallow-clone a repo, zip it, PUT to artifact-store."""
-    workdir = tempfile.mkdtemp(prefix="kb-router-repo-")
+    workdir = tempfile.mkdtemp(prefix="brain-api-repo-")
     try:
         repo_name = value.rstrip("/").split("/")[-1]
         if repo_name.endswith(".git"):
@@ -552,7 +552,7 @@ async def ingest_message(message: str) -> IngestResult:
         obsidian_path = _write_vault_note(
             title=title,
             content=note_content,
-            tags=tags + ["kb-router"],
+            tags=tags + ["brain-api"],
             artifact_refs=artifact_keys,
         )
 

@@ -8,7 +8,7 @@ tpl:
       tag: latest
   env:
     variables:
-      BRAIN_URL: http://agentibrain-kb-router.<your-namespace>.svc:8080
+      BRAIN_URL: http://agentibrain-brain-api.<your-namespace>.svc:8080
       AGENTIBRIDGE_URL: http://<your-agentibridge>.<your-namespace>.svc:8080
   externalSecret:                                  # nosecret
     enabled: true                                  # nosecret

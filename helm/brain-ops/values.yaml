@@ -1,13 +1,13 @@
 # Generic defaults for brain-cron (tick CronJob + amygdala Deployment).
 #
-# Ticks every 2 hours by default. The tick-engine image is ghcr.io/the-cloud-clockwork/agentibrain-tick-engine.
+# Ticks every 2 hours by default. The tick-engine image is ghcr.io/the-cloud-clockwork/agentibrain-brain-ops.
 # Operators override environment-specific values (NFS server, INFERENCE_URL, secrets)
 # in their per-env values overlay (e.g. values-prod.yaml).
 
 schedule: "7 */2 * * *"
 
 image:
-  repository: ghcr.io/the-cloud-clockwork/agentibrain-tick-engine
+  repository: ghcr.io/the-cloud-clockwork/agentibrain-brain-ops
   tag: latest
   pullPolicy: Always
 
@@ -20,7 +20,7 @@ command:
 
     notify_failure() {
       if [ -n "$NTFY_URL" ]; then
-        wget -q --post-data="brain-cron FAILED at $(date -u +%H:%M) UTC: $1" \
+        wget -q --post-data="brain-ops FAILED at $(date -u +%H:%M) UTC: $1" \
           --header="Title: Brain Cron Failure" \
           --header="Priority: high" \
           --header="Tags: skull,brain" \
@@ -94,7 +94,7 @@ env:
   BRAIN_DECAY_INTERVAL_DAYS: "2"
 
 # Operators override with their secrets provider (OpenBao / AWS SM / etc).
-secretRef: brain-cron-secrets
+secretRef: brain-ops-secrets
 
 # Optional list of EXTRA secret names to envFrom, in addition to `secretRef`.
 # Use this when the credentials needed by brain-cron live across multiple

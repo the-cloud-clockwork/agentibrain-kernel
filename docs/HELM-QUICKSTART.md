@@ -18,7 +18,7 @@ Bare-cluster install of the brain. The reference path lives in
    creates the three Opaque Secrets the charts read.
 4. Provision a vault PVC (or set up NFS via an overlay).
 5. `helm install` each chart from `helm/` into your namespace.
-6. Port-forward `svc/agentibrain-kb-router` and curl `/feed` with the
+6. Port-forward `svc/agentibrain-brain-api` and curl `/feed` with the
    bearer in `local/.k8s-tokens`.
 
 ## Chart defaults shipped
@@ -56,7 +56,7 @@ into your own deployment repo.
 - Pod `Pending` → check `storageClass` or that the PVC is bound.
 - `embeddings` crashloop → Postgres unreachable or pgvector not enabled.
 - `/feed` returns 401 → token mismatch; re-source `local/.k8s-tokens`.
-- Empty `hot_arcs` → no clusters yet; wait for `brain-cron` to tick.
+- Empty `hot_arcs` → no clusters yet; wait for `brain-ops` to tick.
 
 ## See also
 

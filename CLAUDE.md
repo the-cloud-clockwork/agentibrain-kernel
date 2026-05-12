@@ -13,7 +13,7 @@ The brain system follows a 3-operation model: **ingest, read, update**.
 
 | Service | Image | Role | What it does |
 |---|---|---|---|
-| **brain-api** | `agentibrain-kb-router` | Ingest + Read | HTTP API: vault read/write, ingest pipeline, search, feed, markers, tick trigger. Mounts NFS vault directly. |
+| **brain-api** | `agentibrain-brain-api` | Ingest + Read | HTTP API: vault read/write, ingest pipeline, search, feed, markers, tick trigger. Mounts NFS vault directly. |
 | **mcp** | `agentibrain-mcp` | Read (MCP) | MCP protocol adapter for Claude Code sessions. Calls embeddings + brain-api + LiteLLM. |
 | **embeddings** | `agentibrain-embeddings` | Index | Vector store (pgvector). Embed, search, prune. |
 | **brain-keeper** | `agenticore` | Maintain | Autonomous agent for vault maintenance (different runtime). |
@@ -22,7 +22,7 @@ The brain system follows a 3-operation model: **ingest, read, update**.
 
 | Workload | Type | Role | What it does |
 |---|---|---|---|
-| **brain-cron** | CronJob (2h) | Update | Full 5-phase brain tick: scan, reason, signal, edge, write. |
+| **brain-ops** | CronJob (2h) | Update | Full 5-phase brain tick: scan, reason, signal, edge, write. |
 | **tick-drain** | CronJob (2m) | Update | On-demand tick queue drain (polls NFS requested/ dir). |
 | **amygdala** | Deployment | Alert | Redis Streams consumer, broadcasts severity alerts. |
 
@@ -30,18 +30,18 @@ The brain system follows a 3-operation model: **ingest, read, update**.
 
 ```
 Claude Code → LiteLLM MCP proxy → mcp → embeddings (semantic) + brain-api (vault text) + LiteLLM (AI)
-kb-router POST /tick → NFS requested/ → tick-drain → brain_tick.py → vault + ClickHouse
-brain-cron (every 2h) → same tick pipeline, scheduled
+brain-api POST /tick → NFS requested/ → tick-drain → brain_tick.py → vault + ClickHouse
+brain-ops (every 2h) → same tick pipeline, scheduled
 amygdala → Redis streams (anton:events:*) → fleet alerts
 ```
 
 ### Shared data stores
 
-- **NFS vault** (10.10.30.130): brain-api, brain-cron mount it. obsidian-reader removed (absorbed into kb-router).
+- **NFS vault** (10.10.30.130): brain-api, brain-ops mount it. obsidian-reader removed (absorbed into brain-api).
 - **Postgres/pgvector**: embeddings service only
-- **LiteLLM** (anton-dev): brain-api, mcp, brain-cron for AI inference
-- **Redis**: brain-cron writes events, amygdala reads them
-- **ClickHouse**: brain-cron writes tick metrics
+- **LiteLLM** (anton-dev): brain-api, mcp, brain-ops for AI inference
+- **Redis**: brain-ops writes events, amygdala reads them
+- **ClickHouse**: brain-ops writes tick metrics
 
 ### Simplification in progress
 
@@ -53,8 +53,8 @@ now serves vault read/write directly via `/vault/*` endpoints.
 ## Scope
 
 This repo owns:
-- Brain services: brain-api (kb-router + vault-reader), mcp, embeddings, tick-engine
-- Helm charts: brain-cron, brain-keeper, embeddings, kb-router, mcp
+- Brain services: brain-api (brain-api + vault-reader), mcp, embeddings, brain-ops
+- Helm charts: brain-ops, brain-keeper, embeddings, brain-api, mcp
 - The brain-keeper agent definition (single source of truth)
 - Brain profile overlays for agentihooks
 - The vault layout schema and the `brain scaffold` tool that writes it

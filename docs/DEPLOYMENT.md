@@ -11,7 +11,7 @@ How to get the kernel running on a Kubernetes cluster. Three patterns, in order 
 ## Patterns
 
 ### A — Vendored chart in your own repo (current operator pattern)
-Copy `helm/brain-cron/` and `helm/brain-keeper/` from this repo into your own repo's `k8s/charts/` and write your own ArgoCD apps that point at them. You also write your own charts for kb-router, embeddings (the kernel ships only the brain-cron + brain-keeper helm assets today).
+Copy `helm/brain-ops/` and `helm/brain-keeper/` from this repo into your own repo's `k8s/charts/` and write your own ArgoCD apps that point at them. You also write your own charts for brain-api, embeddings (the kernel ships only the brain-ops + brain-keeper helm assets today).
 
 Pros: full control, operator-specific overrides live in your values. Drift caught at PR time.
 Cons: kernel template changes don't auto-propagate — you sync manually.
@@ -24,7 +24,7 @@ spec:
   sources:
     - repoURL: https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
       targetRevision: v0.1.0
-      path: helm/brain-cron
+      path: helm/brain-ops
       ref: kernel
     - repoURL: https://github.com/your-org/your-platform.git
       targetRevision: main
@@ -42,8 +42,8 @@ Cons: requires ArgoCD ≥ 2.6.
 For non-GitOps installs:
 
 ```bash
-helm install brain-cron \
-  oci://ghcr.io/the-cloud-clockwork/charts/brain-cron \
+helm install brain-ops \
+  oci://ghcr.io/the-cloud-clockwork/charts/brain-ops \
   --version 0.1.0 \
   -n <your-ops-namespace> -f values-prod.yaml
 ```
@@ -68,7 +68,7 @@ Pros: simplest. Cons: no GitOps trail.
 Before pods come up, prepare:
 
 1. **Secrets** — either via ESO (your secret store + a `ClusterSecretStore` ESO can reach) or as plain Opaque Secrets created by [`local/k8s-bootstrap.sh`](../local/k8s-bootstrap.sh). See [`SECRETS.md`](SECRETS.md).
-2. **K8s Secret** `agentibrain-router-secrets` in each namespace, with the kb-router bearer token. Either kubectl-create directly or wire it into your ESO setup.
+2. **K8s Secret** `agentibrain-router-secrets` in each namespace, with the brain-api bearer token. Either kubectl-create directly or wire it into your ESO setup.
 3. **NFS export or PVC** for `/vault`. Read-write from the kernel pods, read-only from agent pods if you mount the vault elsewhere.
 4. **LoadBalancer IP** (optional) if you want a static IP for kernel embeddings. Set via `service.annotations.<your-LB-controller>/loadBalancerIPs` in your values overlay.
 
@@ -97,12 +97,12 @@ Helm merge semantics: maps merge, lists replace. If your base `values.yaml` has 
 
 ## Agent fleet wiring
 
-Every agent pod that should talk to the kernel needs two env vars: `BRAIN_URL` (the kb-router service URL in-cluster) and `KB_ROUTER_TOKEN` (the bearer pulled from the K8s Secret). `agentihooks` reads both. With `BRAIN_URL` empty and the pod on K8s, agentihooks logs a critical warning.
+Every agent pod that should talk to the kernel needs two env vars: `BRAIN_URL` (the brain-api service URL in-cluster) and `KB_ROUTER_TOKEN` (the bearer pulled from the K8s Secret). `agentihooks` reads both. With `BRAIN_URL` empty and the pod on K8s, agentihooks logs a critical warning.
 
 ```yaml
 env:
   variables:
-    BRAIN_URL: "http://agentibrain-kb-router.<ns>.svc:8080"
+    BRAIN_URL: "http://agentibrain-brain-api.<ns>.svc:8080"
   extra:
   - name: KB_ROUTER_TOKEN
     valueFrom:
@@ -118,9 +118,9 @@ Each kernel service has its own image, tagged per branch:
 
 | Service | Image |
 |---|---|
-| kb-router | `ghcr.io/the-cloud-clockwork/agentibrain-kb-router:dev|latest` |
+| brain-api | `ghcr.io/the-cloud-clockwork/agentibrain-brain-api:dev|latest` |
 | embeddings | `ghcr.io/the-cloud-clockwork/agentibrain-embeddings:dev|latest` |
-| tick-engine | `ghcr.io/the-cloud-clockwork/agentibrain-tick-engine:dev|latest` |
+| tick-engine | `ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev|latest` |
 | mcp | `ghcr.io/the-cloud-clockwork/agentibrain-mcp:dev|latest` |
 | brain-keeper | `ghcr.io/the-cloud-clockwork/agenticore:dev|latest` (uses agenticore base; brain-keeper is an agenticore agent, not its own image) |
 
@@ -130,7 +130,7 @@ Branch → tag: push to `dev` → `:dev`, push to `main` → `:latest`. ArgoCD i
 
 ```bash
 NS=<your-namespace>
-URL=http://agentibrain-kb-router.$NS.svc:8080
+URL=http://agentibrain-brain-api.$NS.svc:8080
 
 kubectl -n $NS exec <agent-pod> -c agenticore -- sh -c \
   'curl -sS -o /dev/null -w "%{http_code}\n" --max-time 5 "$BRAIN_URL/feed" -H "Authorization: Bearer $KB_ROUTER_TOKEN"'

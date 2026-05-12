@@ -1,8 +1,8 @@
-# Sample ArgoCD Application — agentibrain-kb-router (dev).
+# Sample ArgoCD Application — agentibrain-brain-api (dev).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: agentibrain-kb-router
+  name: agentibrain-brain-api
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -12,11 +12,11 @@ spec:
     # Chart source — kernel
     - repoURL: https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
       targetRevision: dev
-      path: helm/kb-router
+      path: helm/brain-api
       helm:
-        releaseName: agentibrain-kb-router
+        releaseName: agentibrain-brain-api
         valueFiles:
-          - $values/values-overlays/kb-router/values-dev.yaml
+          - $values/values-overlays/brain-api/values-dev.yaml
     # $values source — your platform repo
     - repoURL: <your-platform-repo>
       targetRevision: <your-revision>

@@ -21,7 +21,7 @@ Use this when:
 The brain is five cooperating systems:
 
 1. **Clusters (vault)** — arcs = narrative units of work. One arc = one theme, accumulated over time. Stored as markdown at `<vault>/clusters/YYYY-MM-DD/<slug>.md` on shared storage.
-2. **Ticks (cron)** — every 2h at HH:07 UTC, `brain-cron` scans arcs, computes heat, writes `brain-feed/*.md`, tombstones stale signals.
+2. **Ticks (cron)** — every 2h at HH:07 UTC, `brain-ops` scans arcs, computes heat, writes `brain-feed/*.md`, tombstones stale signals.
 3. **Brain-feed (outbox)** — plaintext summary files (`hot-arcs.md`, `signals.md`, `inject.md`, `intent.md`, `last-tick-diff.md`, `health.jsonl`). Synced to every machine via rsync every 5min.
 4. **Agentihooks (injection)** — on `UserPromptSubmit`, reads `brain-feed/*.md`, injects as `BROADCAST` blocks into Claude's context. Emits OTel spans per inject + delivery + marker-write.
 5. **Brain-keeper (ops agent)** — first-class agent at `brain-keeper.<your-namespace>.svc:8200`. Runs triage, heal, replay, test via LiteLLM model `brain-keeper`.
@@ -97,7 +97,7 @@ The kernel ships a starter Grafana dashboard at [`observability/brain-health.jso
 
 **Pineal — Tick Circadian**
 - `Health Score` → AI rating 1-10. Written by tick's AI reasoner. <5 = tick itself flagged issues (stale signals, arc pollution).
-- `Last Tick` → timestamp. >3h old = cron stalled. Check `<your-ops-namespace>/brain-cron` CronJob.
+- `Last Tick` → timestamp. >3h old = cron stalled. Check `<your-ops-namespace>/brain-ops` CronJob.
 - `Ticks Today` → should be 12 (every 2h = 12/day). <10 = failures or suspension.
 - `Tick Duration (p50/p95)` → p50 20-30s, p95 <60s. Sustained >60s = AI reasoner slow or vault bloated.
 
@@ -137,7 +137,7 @@ Expect 4 brain-keeper + 1 amygdala, all Running. If any CrashLoopBackOff → des
 
 **Signal 2 — Last tick**
 ```bash
-kubectl -n <your-ops-namespace> logs $(kubectl -n <your-ops-namespace> get pods -l job-name -o name | grep brain-cron | head -1) --tail=60 | grep -E 'arcs_scanned|signals_|total_ms'
+kubectl -n <your-ops-namespace> logs $(kubectl -n <your-ops-namespace> get pods -l job-name -o name | grep brain-ops | head -1) --tail=60 | grep -E 'arcs_scanned|signals_|total_ms'
 ```
 Expect values. `total_ms` under 30000. `dry_run: false` on the live phase.
 
@@ -249,7 +249,7 @@ Content to inject into brain-feed directly.
 | Broadcasts stop appearing | `~/.agentihooks/brain-feed/` file mtimes — rsync cron |
 | Dashboard panels flat zero | OTel ClickHouse query (§ above) |
 | Signals piling up | Last tick log — is sweep running? `BRAIN_STALE_SIGNAL_DAYS=1` env set? |
-| Ticks stalled | `kubectl -n <your-ops-namespace> get cronjob brain-cron` — not suspended, last schedule recent |
+| Ticks stalled | `kubectl -n <your-ops-namespace> get cronjob brain-ops` — not suspended, last schedule recent |
 | New arc not in hot list | Tick must run first. Wait until HH:07 UTC OR dispatch brain-keeper manually |
 | Tick health score <5 | Read the `reason` field in `health.jsonl` — tells you exactly what's polluting |
 

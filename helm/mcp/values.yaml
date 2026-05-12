@@ -51,7 +51,7 @@ tpl:
     variables:
       # Service URLs default to namespace-less ClusterIP DNS — works in any
       # namespace where the kernel app-of-apps deployed alongside.
-      BRAIN_API_URL: http://agentibrain-kb-router:8080
+      BRAIN_API_URL: http://agentibrain-brain-api:8080
       EMBEDDINGS_URL: http://agentibrain-embeddings:8080
       # Operator-side wiring — empty by default. Set in your overlay when
       # `kb_brief` should hit a real OpenAI-compatible inference gateway.

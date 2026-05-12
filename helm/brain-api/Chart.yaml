@@ -1,5 +1,5 @@
 apiVersion: v2
-name: kb-router
+name: brain-api
 description: Universal ingest + federated search — agentibrain-kernel image
 version: 0.1.1
 dependencies:

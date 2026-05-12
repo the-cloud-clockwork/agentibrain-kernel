@@ -14,13 +14,13 @@ Top failure modes, ordered by how often they bite. Each entry: symptom, root cau
 
 **Symptom:** `kubectl -n <ns> exec <agent-pod> -- curl $BRAIN_URL/feed` → `Could not resolve host` or `Connection refused`.
 
-**Root cause:** kb-router pod not running, or service name wrong, or pod's BRAIN_URL points at the wrong namespace.
+**Root cause:** brain-api pod not running, or service name wrong, or pod's BRAIN_URL points at the wrong namespace.
 
 **Fix:**
 ```bash
 NS=<your-namespace>
-kubectl -n $NS get pod -l 'app.kubernetes.io/instance=agentibrain-kb-router-prod'
-kubectl -n $NS get svc agentibrain-kb-router
+kubectl -n $NS get pod -l 'app.kubernetes.io/instance=agentibrain-brain-api-prod'
+kubectl -n $NS get svc agentibrain-brain-api
 kubectl -n $NS exec <agent-pod> -- env | grep BRAIN_URL
 ```
 - If pod missing: ArgoCD app status, rollout, image-pull issues (see #4).
@@ -30,13 +30,13 @@ kubectl -n $NS exec <agent-pod> -- env | grep BRAIN_URL
 
 ## 2. /feed returns HTTP 401
 
-**Symptom:** kb-router responds, but with 401.
+**Symptom:** brain-api responds, but with 401.
 
-**Root cause:** bearer token mismatch — agent's `KB_ROUTER_TOKEN` env var doesn't match the one kb-router was started with.
+**Root cause:** bearer token mismatch — agent's `KB_ROUTER_TOKEN` env var doesn't match the one brain-api was started with.
 
 **Fix:**
 ```bash
-# what kb-router expects
+# what brain-api expects
 kubectl -n <your-namespace> get secret agentibrain-router-secrets \
   -o jsonpath='{.data.KB_ROUTER_TOKEN}' | base64 -d | head -c 12
 
@@ -114,11 +114,11 @@ kubectl -n <your-ops-namespace> logs $POD | tail -50
 
 **Fix:**
 ```bash
-kubectl -n <your-ops-namespace> get cronjob agentibrain-brain-cron-tick-drain
+kubectl -n <your-ops-namespace> get cronjob agentibrain-brain-ops-tick-drain
 # Suspend=False, last successful time recent?
-kubectl -n <your-ops-namespace> describe cronjob agentibrain-brain-cron-tick-drain | tail -20
+kubectl -n <your-ops-namespace> describe cronjob agentibrain-brain-ops-tick-drain | tail -20
 ```
-If suspended: `kubectl -n <your-ops-namespace> patch cronjob agentibrain-brain-cron-tick-drain -p '{"spec":{"suspend":false}}'`.
+If suspended: `kubectl -n <your-ops-namespace> patch cronjob agentibrain-brain-ops-tick-drain -p '{"spec":{"suspend":false}}'`.
 
 ---
 
@@ -138,7 +138,7 @@ If suspended: `kubectl -n <your-ops-namespace> patch cronjob agentibrain-brain-c
 
 **Root cause:** `/feed` doesn't read every vault file. It only reads `brain-feed/hot-arcs.md`, `brain-feed/inject.md`, `brain-feed/intent.md`, etc. Lessons + decisions land in their own directories and don't show up in feed until the next tick promotes a related arc.
 
-**Fix:** wait for the next 2 h tick, OR force a tick: `kubectl -n <your-ops-namespace> create job --from=cronjob/agentibrain-brain-cron agentibrain-brain-cron-manual-$(date +%s)`.
+**Fix:** wait for the next 2 h tick, OR force a tick: `kubectl -n <your-ops-namespace> create job --from=cronjob/agentibrain-brain-ops agentibrain-brain-ops-manual-$(date +%s)`.
 
 ---
 
@@ -177,9 +177,9 @@ ssh <your-vault-host> "rm <your-vault-path>/amygdala/<filename>.md"
 
 ---
 
-## 11. brain-cron 2 h tick fails with "ImportError"
+## 11. brain-ops 2 h tick fails with "ImportError"
 
-**Symptom:** `brain-cron` job fails. Pod log shows `ModuleNotFoundError`.
+**Symptom:** `brain-ops` job fails. Pod log shows `ModuleNotFoundError`.
 
 **Root cause:** tick-engine image stale — a Python module was added in source but the Dockerfile `COPY` line missed it.
 

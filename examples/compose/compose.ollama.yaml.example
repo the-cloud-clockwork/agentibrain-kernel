@@ -32,7 +32,7 @@ services:
       retries: 3
       start_period: 30s
 
-  kb-router:
+  brain-api:
     environment:
       INFERENCE_URL: http://ollama:11434/v1
     depends_on:

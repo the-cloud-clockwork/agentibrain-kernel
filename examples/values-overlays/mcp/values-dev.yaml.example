@@ -13,8 +13,8 @@ tpl:
       tag: dev
   env:
     variables:
-      KB_ROUTER_URL: http://agentibrain-kb-router.<your-dev-namespace>.svc:8080
-      OBSIDIAN_READER_URL: http://agentibrain-obsidian-reader.<your-dev-namespace>.svc:8080
+      KB_ROUTER_URL: http://agentibrain-brain-api.<your-dev-namespace>.svc:8080
+      OBSIDIAN_READER_URL: http://agentibrain-brain-api.<your-dev-namespace>.svc:8080
       EMBEDDINGS_URL: http://agentibrain-embeddings.<your-dev-namespace>.svc:8080
 
       # OpenAI-compatible LLM gateway used by `kb_brief`. Empty = `kb_brief`
@@ -43,7 +43,7 @@ tpl:
         remoteRef:                                 # nosecret
           key: <your-secret-path>/brain-inference  # nosecret
           property: INFERENCE_API_KEY              # nosecret
-      # Bearer the MCP tools send to obsidian-reader + embeddings.
+      # Bearer the MCP tools send to brain-api + embeddings.
       - secretKey: OBSIDIAN_READER_TOKEN           # nosecret
         remoteRef:                                 # nosecret
           key: <your-secret-path>/agentibrain-router-dev   # nosecret

@@ -38,7 +38,7 @@ echo "LITELLM_KEY=sk-litellm-virtual-key"   >> .env
 
 | Service | Env vars overridden by overlay |
 |---|---|
-| `kb-router` | `INFERENCE_URL`, `INFERENCE_API_KEY`, `BRAIN_CLASSIFY_MODEL` |
+| `brain-api` | `INFERENCE_URL`, `INFERENCE_API_KEY`, `BRAIN_CLASSIFY_MODEL` |
 | `tick-cron` | `INFERENCE_URL`, `INFERENCE_API_KEY`, `BRAIN_BRIEF_MODEL` |
 | `mcp` | `INFERENCE_URL`, `INFERENCE_API_KEY`, `BRAIN_BRIEF_MODEL` |
 | `embeddings` | `LLM_API_BASE`, `LLM_API_KEY`, `LLM_EMBED_MODEL` (Ollama overlay omits — Ollama embeddings need extra setup) |

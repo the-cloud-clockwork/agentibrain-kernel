@@ -1,5 +1,5 @@
-# Sample overlay — agentibrain-kb-router (dev).
-# Layered on top of agentibrain-kernel/helm/kb-router/values.yaml.
+# Sample overlay — agentibrain-brain-api (dev).
+# Layered on top of agentibrain-kernel/helm/brain-api/values.yaml.
 # Copy to your platform repo, replace every <your-*> placeholder, drop .example.
 tpl:
   global:
@@ -9,7 +9,7 @@ tpl:
       tag: dev
   env:
     variables:
-      OBSIDIAN_READER_URL: http://agentibrain-obsidian-reader.<your-dev-namespace>.svc:8080
+      OBSIDIAN_READER_URL: http://agentibrain-brain-api.<your-dev-namespace>.svc:8080
       EMBEDDINGS_URL: http://agentibrain-embeddings.<your-dev-namespace>.svc:8080
 
       # OpenAI-compatible LLM gateway. Empty = no AI classification (regex fallback).

@@ -1,4 +1,4 @@
-# Generic defaults for kb-router (FastAPI ingest + retrieval gateway).
+# Generic defaults for brain-api (FastAPI ingest + retrieval gateway).
 #
 # Defaults ship a portable, clone-and-deploy chart. Hostnames, NFS, and ESO
 # are all empty/disabled by default so `helm install` works on a fresh
@@ -6,7 +6,7 @@
 # values, vault mount, and ESO via their own values overlay (see
 # `examples/values-overlays/` for sample overlays).
 tpl:
-  fullnameOverride: agentibrain-kb-router
+  fullnameOverride: agentibrain-brain-api
   enableServiceLinks: false
   podAnnotations:
     reloader.stakater.com/auto: "true"
@@ -14,10 +14,10 @@ tpl:
     environment: dev
     project: agentibrain
   app:
-    name: agentibrain-kb-router
+    name: agentibrain-brain-api
     type: statefulset
     image:
-      repository: ghcr.io/the-cloud-clockwork/agentibrain-kb-router
+      repository: ghcr.io/the-cloud-clockwork/agentibrain-brain-api
       tag: dev
       pullPolicy: Always
     replicaCount: 1
@@ -64,7 +64,7 @@ tpl:
     external:
       enabled: true
       # K8s Opaque Secret holding KB_ROUTER_TOKEN,
-      # EMBEDDINGS_API_KEY (and any other tokens kb-router consumes).
+      # EMBEDDINGS_API_KEY (and any other tokens brain-api consumes).
       # Create manually with `local/k8s-bootstrap.sh` or via your secrets
       # manager (ESO/OpenBao/AWS SM — see externalSecret block below).
       secretName: agentibrain-router-secrets
@@ -113,7 +113,7 @@ tpl:
   #            persistentVolumeClaim:
   #              claimName: agentibrain-vault
   #
-  # Default: empty. The kb-router process starts and serves /health, but any
+  # Default: empty. The brain-api process starts and serves /health, but any
   # vault read/write path will fail until a volume is mounted.
   extraVolumes: []
   extraVolumeMounts: []
