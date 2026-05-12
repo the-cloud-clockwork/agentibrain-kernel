@@ -2,7 +2,7 @@
 
 Flow:
   1. LLM extracts: semantic_text, extractables (urls/repos/local_paths/multipart_refs), title, tags
-  2. Semantic text → write Obsidian note (via obsidian-reader /write_inbox)
+  2. Semantic text → write vault note (via vault_reader.write_inbox, direct filesystem)
   3. Each extractable → fetch/clone/read → PUT to artifact-store under raw/ingest/<batch>/
   4. Cross-link tags: {obsidian_ref, ingest_batch} on every artifact; artifact_refs in Obsidian frontmatter
   5. Return bundle of what was created
@@ -24,22 +24,17 @@ from uuid import uuid4
 
 import httpx
 
+from . import vault_reader
+
 log = logging.getLogger("kb_router")
 
-# ARTIFACT_STORE_URL is optional. When unset, binary-blob ingest raises a
-# clear error rather than silently hitting a non-existent DNS name. Operators
-# point this at their storage plane (an upstream artifact-store, an S3 gateway,
-# or any OpenAPI-compatible blob service).
 ARTIFACT_STORE_URL = os.getenv("ARTIFACT_STORE_URL", "")
 ARTIFACT_STORE_KEY = os.getenv("ARTIFACT_STORE_KEY", "")
-OBSIDIAN_READER_URL = os.getenv("OBSIDIAN_READER_URL", "http://obsidian-reader:8080")
-OBSIDIAN_READER_TOKEN = os.getenv("OBSIDIAN_READER_TOKEN", "")
 
 INFERENCE_URL = os.getenv("INFERENCE_URL", "")
 INFERENCE_TOKEN_ENV = "INFERENCE_API_KEY"
 BRAIN_CLASSIFY_MODEL = os.getenv("BRAIN_CLASSIFY_MODEL", "brain-classify")
 
-# Comma-separated allowlist of filesystem roots the router is permitted to read from.
 LOCAL_READ_ROOTS = [
     Path(p.strip()).resolve()
     for p in os.getenv("LOCAL_READ_ROOTS", "/workspace,/mnt/ingest").split(",")
@@ -137,12 +132,7 @@ def _parse_json(raw: str) -> dict:
 
 
 async def _call_router_llm(message: str, model: str) -> dict:
-    """Single-shot classification via any OpenAI-compatible gateway.
-
-    Posts a standard chat-completions body with `model: <BRAIN_CLASSIFY_MODEL>`.
-    Wire INFERENCE_URL at any OAI-compatible endpoint (LiteLLM, OpenAI, Ollama).
-    Fails closed to a deterministic regex classifier if the gateway is down.
-    """
+    """Single-shot classification via any OpenAI-compatible gateway."""
     if not INFERENCE_URL:
         log.warning("inference gateway not configured; falling back to regex")
         return _fallback_classify(message)
@@ -273,32 +263,21 @@ async def _upload_bytes_to_artifact_store(
     return resp.json()
 
 
-async def _write_obsidian_note(
+def _write_vault_note(
     *,
     title: str,
     content: str,
     tags: list[str],
     artifact_refs: list[str],
-    client: httpx.AsyncClient,
 ) -> str | None:
-    headers = {"Authorization": f"Bearer {OBSIDIAN_READER_TOKEN}"} if OBSIDIAN_READER_TOKEN else {}
-    data = {
-        "title": title,
-        "content": content,
-        "tags": ",".join(tags),
-        "artifact_refs": ",".join(artifact_refs),
-    }
+    """Write a note to the vault inbox via direct filesystem (no HTTP hop)."""
     try:
-        resp = await client.post(
-            f"{OBSIDIAN_READER_URL}/write_inbox",
-            data=data,
-            headers=headers,
-            timeout=30,
+        result = vault_reader.write_inbox(
+            title=title, content=content, tags=tags, artifact_refs=artifact_refs,
         )
-        resp.raise_for_status()
-        return resp.json().get("path")
+        return result.get("path")
     except Exception as exc:
-        log.warning("obsidian write failed: %s", exc)
+        log.warning("vault write failed: %s", exc)
         return None
 
 
@@ -323,13 +302,11 @@ async def _fetch_url_extractable(
     except Exception as exc:
         return None, f"fetch failed: {value} — {exc}"
 
-    # Derive filename from the URL
     url_tail = value.rstrip("/").split("/")[-1] or "page"
     url_tail = url_tail.split("?")[0].split("#")[0]
     if "." in url_tail:
         stem, ext = url_tail.rsplit(".", 1)
     else:
-        # Infer extension from content-type
         if "html" in ct:
             stem, ext = url_tail, "html"
         elif "pdf" in ct:
@@ -442,7 +419,6 @@ async def _read_local_extractable(
         return None, f"read failed: {value} — {exc}"
 
     ext = p.suffix.lstrip(".") or "bin"
-    # Guess a content-type
     ct_map = {
         "md": "text/markdown", "txt": "text/plain", "pdf": "application/pdf",
         "html": "text/html", "json": "application/json", "csv": "text/csv",
@@ -544,7 +520,6 @@ async def ingest_message(message: str) -> IngestResult:
     artifact_keys: list[str] = []
 
     async with httpx.AsyncClient(timeout=120) as client:
-        # Fan out extractables in parallel
         extract_tasks = []
         for ex in extractables:
             etype = (ex.get("type") or "").lower()
@@ -569,18 +544,17 @@ async def ingest_message(message: str) -> IngestResult:
                 if err:
                     errors.append(err)
 
-        # Write Obsidian note last, so we can include artifact_keys in frontmatter
-        obsidian_path: str | None = None
-        if semantic or artifact_keys:
-            note_content = semantic or f"(no semantic text — ingested {len(artifact_keys)} references)"
-            note_content += f"\n\n---\n\n_ingest_batch: {batch_id}_\n_original_message: {message[:500]}_"
-            obsidian_path = await _write_obsidian_note(
-                title=title,
-                content=note_content,
-                tags=tags + ["kb-router"],
-                artifact_refs=artifact_keys,
-                client=client,
-            )
+    # Write vault note last, so we can include artifact_keys in frontmatter
+    obsidian_path: str | None = None
+    if semantic or artifact_keys:
+        note_content = semantic or f"(no semantic text — ingested {len(artifact_keys)} references)"
+        note_content += f"\n\n---\n\n_ingest_batch: {batch_id}_\n_original_message: {message[:500]}_"
+        obsidian_path = _write_vault_note(
+            title=title,
+            content=note_content,
+            tags=tags + ["kb-router"],
+            artifact_refs=artifact_keys,
+        )
 
     return IngestResult(
         batch_id=batch_id,
