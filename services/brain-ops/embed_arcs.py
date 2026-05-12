@@ -105,23 +105,47 @@ def post_embed(api_url: str, api_key: str, payload: dict, timeout: int = REQ_TIM
         return json.loads(resp.read())
 
 
-def scan_arcs(clusters_dir: Path):
-    for date_dir in sorted(clusters_dir.iterdir()):
-        if not date_dir.is_dir():
+REGION_DIRS = ("bridge", "left", "right", "frontal-lobe", "pineal", "amygdala")
+
+
+def _scan_dir(d: Path, recurse: bool = False):
+    """Yield .md files from a directory, preferring .merged.md over raw .md."""
+    if not d.is_dir():
+        return
+    pattern = "**/*.md" if recurse else "*.md"
+    files = list(sorted(d.glob(pattern)))
+    merged_stems = {
+        f.name.replace(".merged.md", "") for f in files if f.name.endswith(".merged.md")
+    }
+    for md in files:
+        if md.name.startswith("_"):
             continue
-        files = list(sorted(date_dir.glob("*.md")))
-        merged_stems = {
-            f.name.replace(".merged.md", "") for f in files if f.name.endswith(".merged.md")
-        }
-        for md in files:
-            if md.name.startswith("_"):
-                continue
-            # Skip the unmerged source if its merged twin exists; process
-            # standalone arcs in either form.
-            stem = md.name[:-3]  # strip .md
-            if not md.name.endswith(".merged.md") and stem in merged_stems:
-                continue
+        stem = md.name[:-3]
+        if not md.name.endswith(".merged.md") and stem in merged_stems:
+            continue
+        yield md
+
+
+def scan_arcs(vault: Path):
+    seen_ids: set[str] = set()
+
+    # Region directories first (promoted/processed arcs — authoritative)
+    for region in REGION_DIRS:
+        for md in _scan_dir(vault / region, recurse=True):
+            seen_ids.add(md.stem.replace(".merged", ""))
             yield md
+
+    # Clusters directory (date-bucketed raw arcs — only if not already seen in a region)
+    clusters_dir = vault / "clusters"
+    if clusters_dir.is_dir():
+        for date_dir in sorted(clusters_dir.iterdir()):
+            if not date_dir.is_dir():
+                continue
+            for md in _scan_dir(date_dir):
+                arc_id = md.stem.replace(".merged", "")
+                if arc_id not in seen_ids:
+                    seen_ids.add(arc_id)
+                    yield md
 
 
 def main() -> int:
@@ -145,9 +169,8 @@ def main() -> int:
     args = ap.parse_args()
 
     vault = Path(args.vault)
-    clusters_dir = vault / "clusters"
-    if not clusters_dir.is_dir():
-        print(f"ERROR: clusters dir not found: {clusters_dir}", file=sys.stderr)
+    if not vault.is_dir():
+        print(f"ERROR: vault dir not found: {vault}", file=sys.stderr)
         return 1
 
     state_path = vault / STATE_FILENAME
@@ -167,7 +190,7 @@ def main() -> int:
     seen_keys: set[str] = set()
 
     t0 = time.time()
-    for md in scan_arcs(clusters_dir):
+    for md in scan_arcs(vault):
         stats["scanned"] += 1
         rel = str(md.relative_to(vault))
         mtime = md.stat().st_mtime
