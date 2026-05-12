@@ -5,11 +5,56 @@
 You are working in **agentibrain-kernel**, the standalone brain + KB substrate
 for the agenti ecosystem.
 
+## Architecture (target: 5 workloads, 4 images)
+
+The brain system follows a 3-operation model: **ingest, read, update**.
+
+### Services (anton-dev namespace)
+
+| Service | Image | Role | What it does |
+|---|---|---|---|
+| **brain-api** | `agentibrain-kb-router` | Ingest + Read | HTTP API: vault read/write, ingest pipeline, search, feed, markers, tick trigger. Mounts NFS vault directly. |
+| **mcp** | `agentibrain-mcp` | Read (MCP) | MCP protocol adapter for Claude Code sessions. Calls embeddings + brain-api + LiteLLM. |
+| **embeddings** | `agentibrain-embeddings` | Index | Vector store (pgvector). Embed, search, prune. |
+| **brain-keeper** | `agenticore` | Maintain | Autonomous agent for vault maintenance (different runtime). |
+
+### Ops workloads (anton-ops namespace)
+
+| Workload | Type | Role | What it does |
+|---|---|---|---|
+| **brain-cron** | CronJob (2h) | Update | Full 5-phase brain tick: scan, reason, signal, edge, write. |
+| **tick-drain** | CronJob (2m) | Update | On-demand tick queue drain (polls NFS requested/ dir). |
+| **amygdala** | Deployment | Alert | Redis Streams consumer, broadcasts severity alerts. |
+
+### Data flow
+
+```
+Claude Code → LiteLLM MCP proxy → mcp → embeddings (semantic) + brain-api (vault text) + LiteLLM (AI)
+kb-router POST /tick → NFS requested/ → tick-drain → brain_tick.py → vault + ClickHouse
+brain-cron (every 2h) → same tick pipeline, scheduled
+amygdala → Redis streams (anton:events:*) → fleet alerts
+```
+
+### Shared data stores
+
+- **NFS vault** (10.10.30.130): brain-api, brain-cron mount it. obsidian-reader being retired.
+- **Postgres/pgvector**: embeddings service only
+- **LiteLLM** (anton-dev): brain-api, mcp, brain-cron for AI inference
+- **Redis**: brain-cron writes events, amygdala reads them
+- **ClickHouse**: brain-cron writes tick metrics
+
+### Simplification in progress
+
+Naming convention: `agentibrain-{role}` everywhere. Tracked in plan at
+`.claude/plans/reactive-plotting-wall.md`. Phase 1 (vault_reader absorption)
+is deployed. obsidian-reader pod still runs but is being retired — brain-api
+now serves vault read/write directly via `/vault/*` endpoints.
+
 ## Scope
 
 This repo owns:
-- Brain services (kb-router, obsidian-reader, embeddings, tick-engine)
-- Helm charts for K8s deployment (brain-keeper, brain-cron)
+- Brain services: brain-api (kb-router + vault-reader), mcp, embeddings, tick-engine
+- Helm charts: brain-cron, brain-keeper, embeddings, kb-router, mcp, obsidian-reader (retiring)
 - The brain-keeper agent definition (single source of truth)
 - Brain profile overlays for agentihooks
 - The vault layout schema and the `brain scaffold` tool that writes it
@@ -21,7 +66,7 @@ This repo owns:
 - `artifact-store` / `artifact-transform` — general storage plane, lives in your downstream platform repo
 - Generic Claude Code hooks — those live in `agentihooks` (this kernel exposes HTTP, hooks talk to it)
 - `broadcast.py` / `channels.py` — fleet coordination, stays in agentihooks
-- Deployment values files, secret-store paths, operator-specific paths — stay in your downstream platform repo
+- Deployment values files, secret-store paths, operator-specific paths — stay in your downstream platform repo (antoncore)
 
 ## Core principle
 
@@ -46,7 +91,7 @@ Dev-first flow:
 
 ## Downstream consumers
 
-- Downstream platform repos — use the kernel's Helm charts with environment-specific values.
+- Downstream platform repos (antoncore) — use the kernel's Helm charts with environment-specific values.
 - `agentihub` — clones `agents/brain-keeper/` at install time.
 - `agentihooks-bundle` — clones `profiles/brain/` and `profiles/brain-keeper/` at install time.
 - External users — `git clone` → `./local/bootstrap.sh` → `docker compose up -d` (or use the Helm charts for K8s).
