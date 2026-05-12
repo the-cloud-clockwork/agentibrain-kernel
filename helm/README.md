@@ -6,9 +6,9 @@ Helm charts for deploying the brain on Kubernetes. The kernel is the **canonical
 
 | Chart | Purpose | Templates |
 |---|---|---|
-| `kb-router` | HTTP front door (`/feed /signal /marker /tick /index_artifact /ingest /search`). | `tcc-k8s-service-template` v0.3.4 |
-| `obsidian-reader` | Internal vault read/search/write. | `tcc-k8s-service-template` v0.3.4 |
+| `kb-router` | HTTP front door + vault read/write (`/feed /signal /marker /tick /index_artifact /ingest /search /vault/search`). | `tcc-k8s-service-template` v0.3.4 |
 | `embeddings` | pgvector wrapper (write surface only — `/embed`). | `tcc-k8s-service-template` v0.3.4 |
+| `mcp` | MCP server exposing brain + KB retrieval tools to agents. | `tcc-k8s-service-template` v0.3.8 |
 | `brain-keeper` | Brain-ops agent (runs on agenticore image). | `tcc-k8s-service-template` v0.3.4 |
 | `brain-cron` | Scheduled tick (CronJob) + amygdala signal consumer (Deployment) + tick-drain (CronJob). | Custom 3-template chart, no base. |
 

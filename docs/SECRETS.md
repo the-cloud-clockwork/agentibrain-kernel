@@ -26,7 +26,7 @@ charts expect:
 ```
 
 The script creates:
-- `agentibrain-router-secrets` — `KB_ROUTER_TOKEN`, `OBSIDIAN_READER_TOKEN`, `EMBEDDINGS_API_KEY`
+- `agentibrain-router-secrets` — `KB_ROUTER_TOKEN`, `EMBEDDINGS_API_KEY`
 - `embeddings-secrets` — `POSTGRES_URL`, `LLM_API_KEY`, `LLM_API_BASE`, `LLM_EMBED_MODEL`, `EMBEDDINGS_API_KEYS`
 - `agenticore-secrets` — only consumed by brain-keeper
 

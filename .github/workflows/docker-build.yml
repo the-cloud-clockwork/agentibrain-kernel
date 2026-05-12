@@ -25,7 +25,6 @@ jobs:
       matrix:
         service:
           - kb-router
-          - obsidian-reader
           - embeddings
           - tick-engine
           - mcp

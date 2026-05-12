@@ -57,9 +57,7 @@ Full grammar: `architecture/MARKERS.md`.
 
 ## Services
 
-**kb-router** — HTTP entrypoint. Implements `/feed /signal /marker /tick /ingest`. Bearer auth.
-
-**obsidian-reader** — read-only vault access (list, read, search) + bounded write-inbox.
+**kb-router** — HTTP entrypoint and vault read/write layer. Implements `/feed /signal /marker /tick /ingest /vault/search`. Bearer auth. Vault operations are handled internally via the `vault_reader` module.
 
 **embeddings** — pgvector wrapper. `/embed` generates a vector via LiteLLM, `/search` does similarity search.
 

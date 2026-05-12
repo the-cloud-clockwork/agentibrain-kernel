@@ -37,7 +37,7 @@ amygdala → Redis streams (anton:events:*) → fleet alerts
 
 ### Shared data stores
 
-- **NFS vault** (10.10.30.130): brain-api, brain-cron mount it. obsidian-reader being retired.
+- **NFS vault** (10.10.30.130): brain-api, brain-cron mount it. obsidian-reader removed (absorbed into kb-router).
 - **Postgres/pgvector**: embeddings service only
 - **LiteLLM** (anton-dev): brain-api, mcp, brain-cron for AI inference
 - **Redis**: brain-cron writes events, amygdala reads them
@@ -47,14 +47,14 @@ amygdala → Redis streams (anton:events:*) → fleet alerts
 
 Naming convention: `agentibrain-{role}` everywhere. Tracked in plan at
 `.claude/plans/reactive-plotting-wall.md`. Phase 1 (vault_reader absorption)
-is deployed. obsidian-reader pod still runs but is being retired — brain-api
+is deployed. obsidian-reader removed — brain-api
 now serves vault read/write directly via `/vault/*` endpoints.
 
 ## Scope
 
 This repo owns:
 - Brain services: brain-api (kb-router + vault-reader), mcp, embeddings, tick-engine
-- Helm charts: brain-cron, brain-keeper, embeddings, kb-router, mcp, obsidian-reader (retiring)
+- Helm charts: brain-cron, brain-keeper, embeddings, kb-router, mcp
 - The brain-keeper agent definition (single source of truth)
 - Brain profile overlays for agentihooks
 - The vault layout schema and the `brain scaffold` tool that writes it

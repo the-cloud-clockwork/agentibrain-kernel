@@ -48,7 +48,7 @@ def test_kb_search_handles_no_backends():
 
     _add_app_to_path()
     # Strip env so both backends are skipped
-    for var in ("EMBEDDINGS_URL", "EMBEDDINGS_API_KEY", "OBSIDIAN_READER_URL"):
+    for var in ("EMBEDDINGS_URL", "EMBEDDINGS_API_KEY", "BRAIN_API_URL"):
         os.environ.pop(var, None)
 
     # Re-import so module-level constants pick up the empty env

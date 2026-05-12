@@ -15,7 +15,6 @@ Component               How to check                                         Fre
 ─────────────────────────────────────────────────────────────────────────────────
 agentibrain-kb-router   GET $BRAIN_URL/feed (HTTP 200 + entry_count > 0)     30 s parity
 agentibrain-embeddings  GET <lb>/health (HTTP 200)                           30 s parity
-agentibrain-obsidian-r  pod Ready, no restart loop                            visual
 brain-keeper            pod Ready, no restart loop                            visual
 tick-engine cron        last successful job in 2h+15min window                visual
 tick-drain cron         last 5 jobs Completed=1                               visual
@@ -29,7 +28,7 @@ The shipped `agentibrain-parity` CronJob does the kb-router + embeddings probe e
 
 ```bash
 # pod overview
-kubectl -n <your-namespace> get pod -l 'app.kubernetes.io/instance in (agentibrain-kb-router,agentibrain-embeddings,agentibrain-obsidian-reader,agentibrain-brain-keeper)'
+kubectl -n <your-namespace> get pod -l 'app.kubernetes.io/instance in (agentibrain-kb-router,agentibrain-embeddings,agentibrain-brain-keeper)'
 
 # tick history (last 10 fires)
 kubectl -n <your-ops-namespace> get jobs | grep agentibrain-brain-cron | tail -10
@@ -51,7 +50,7 @@ kubectl -n <your-namespace> logs agentibrain-kb-router-0 --tail=200 | grep -c "P
 kubectl -n <your-namespace> rollout restart sts/agentibrain-kb-router
 
 # all kernel pods in a namespace
-for sts in agentibrain-kb-router agentibrain-embeddings agentibrain-obsidian-reader agentibrain-brain-keeper; do
+for sts in agentibrain-kb-router agentibrain-embeddings agentibrain-brain-keeper; do
   kubectl -n <your-namespace> rollout restart sts/$sts
 done
 
@@ -68,7 +67,7 @@ The kernel services are stateless to the K8s scheduler — their state is the va
 kubectl -n <your-namespace> scale sts/agentibrain-kb-router --replicas=3
 ```
 
-`obsidian-reader` and `embeddings` similarly. `tick-engine` is a CronJob, single-fire.
+`embeddings` similarly. `tick-engine` is a CronJob, single-fire.
 
 ## Backup
 

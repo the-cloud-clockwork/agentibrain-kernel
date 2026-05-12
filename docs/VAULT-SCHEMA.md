@@ -106,7 +106,7 @@ The tree is exactly what `local/bootstrap.sh` seeds — it is shipped inside the
 4. **Folder ownership** is a soft convention; enforcement is by producer name, not filesystem permissions. Keep writers scoped to their domain:
    - `tick-engine` writes `clusters/`, `brain-feed/`, `pineal/`
    - `amygdala daemon` writes `amygdala/`
-   - `/ingest` (obsidian-reader) writes `raw/inbox/`
+   - `/ingest` (kb-router) writes `raw/inbox/`
    - Humans own `identity/`, `left/` (except `left/incidents/` which is curated from `amygdala/`), `right/`, `bridge/`, `daily/`
    - `brain-keeper daemon` promotes/demotes arcs between `clusters/` and `frontal-lobe/`
 
