@@ -10,10 +10,12 @@ filesystem coupling.
 from mcp.server.fastmcp import FastMCP
 
 from tools.arcs import register as register_arcs
+from tools.ingest import register as register_ingest
 from tools.kb import register as register_kb
 
 mcp = FastMCP("agentibrain")
 register_arcs(mcp)
+register_ingest(mcp)
 register_kb(mcp)
 
 
