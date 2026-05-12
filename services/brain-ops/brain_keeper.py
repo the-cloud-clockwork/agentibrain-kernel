@@ -353,37 +353,48 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
     # Phase 0: drain raw/inbox/ → region dirs before scanning arcs
     inbox_stats = drain_inbox(vault_root, dry_run=dry_run)
 
-    if not clusters_dir.exists():
-        return {"error": f"clusters dir not found: {clusters_dir}"}
-
-    # 1. Scan all arc files
+    # 1. Scan all arc files — region dirs first, then clusters/
     arcs: list[markers.DocumentMeta] = []
     arcs_by_date: dict[str, list[markers.DocumentMeta]] = {}
-    for date_dir in sorted(clusters_dir.iterdir()):
-        if not date_dir.is_dir():
-            continue
-        date_arcs = []
-        # Skip dashboard files (_*) and the unmerged source of any arc that
-        # also has a `.merged.md` companion — the merged file is canonical
-        # post-consolidation, but if only one form exists, parse it.
-        files = list(sorted(date_dir.glob("*.md")))
+    seen_ids: set[str] = set()
+
+    def _scan_and_collect(directory: Path, recurse: bool = False):
+        """Scan .md files, parse, collect into arcs list. Deduplicates by stem."""
+        if not directory.is_dir():
+            return
+        pattern = "**/*.md" if recurse else "*.md"
+        files = list(sorted(directory.glob(pattern)))
         merged_stems = {
             f.name.replace(".merged.md", "") for f in files if f.name.endswith(".merged.md")
         }
         for md_file in files:
             if md_file.name.startswith("_"):
                 continue
-            # Skip the unmerged source if its merged twin exists
-            stem = md_file.name[:-3]  # strip .md
+            stem = md_file.name[:-3]
             if not md_file.name.endswith(".merged.md") and stem in merged_stems:
                 continue
+            arc_id = md_file.stem.replace(".merged", "")
+            if arc_id in seen_ids:
+                continue
+            seen_ids.add(arc_id)
             try:
                 doc = markers.extract_all(md_file)
                 arcs.append(doc)
-                date_arcs.append(doc)
             except Exception as e:
                 print(f"WARN: failed to parse {md_file}: {e}", file=sys.stderr)
-        arcs_by_date[date_dir.name] = date_arcs
+
+    # Region dirs (authoritative — promoted/graduated arcs)
+    for region in REGION_DIRS:
+        _scan_and_collect(vault_root / region, recurse=True)
+
+    # Clusters dir (date-bucketed raw arcs — only if not already seen in a region)
+    if clusters_dir.is_dir():
+        for date_dir in sorted(clusters_dir.iterdir()):
+            if not date_dir.is_dir():
+                continue
+            before = len(arcs)
+            _scan_and_collect(date_dir)
+            arcs_by_date[date_dir.name] = arcs[before:]
 
     # 2a. Build replay-edge boost map: count recent (<14d) arcs referencing
     #     each arc via `replayed_from`. Used by compute_heat below.
