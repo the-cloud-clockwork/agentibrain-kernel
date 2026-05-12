@@ -132,7 +132,7 @@ concurrencyPolicy: Forbid
 successfulJobsHistoryLimit: 3
 failedJobsHistoryLimit: 3
 backoffLimit: 1
-activeDeadlineSeconds: 600
+activeDeadlineSeconds: 1200
 restartPolicy: OnFailure
 
 # ghcr.io images are public — pull secret only needed for forked private builds.
