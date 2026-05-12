@@ -186,7 +186,9 @@ def write_inbox(
     rel_path = f"{RAW_INBOX_PREFIX}/{date_part}-{slug}.md"
     target = resolve_inside_vault(rel_path)
 
-    if target.exists():
+    try:
+        target.open("x").close()
+    except FileExistsError:
         from uuid import uuid4
         rel_path = f"{RAW_INBOX_PREFIX}/{date_part}-{slug}-{uuid4().hex[:6]}.md"
         target = resolve_inside_vault(rel_path)
