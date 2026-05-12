@@ -1,14 +1,10 @@
 """Federated Knowledge Base retrieval tools.
 
-kb_search  - fan-out across agentibrain-embeddings (semantic) + agentibrain-obsidian-reader (text).
+kb_search  - fan-out across agentibrain-embeddings (semantic) + brain-api vault (text).
 kb_brief   - kb_search + LLM synthesis via any OpenAI-compatible gateway, returns brief + candidate_refs.
 
 These tools are READ-ONLY. The kernel write surface (/feed /signal /marker /tick /ingest)
-is exposed by kb-router; for dispatch/build/converse see your upstream artifact-store MCP.
-
-Inference contract: standard POST /v1/chat/completions with `Authorization: Bearer ${INFERENCE_API_KEY}`
-and `model: ${BRAIN_BRIEF_MODEL}`. Wire INFERENCE_URL at any OAI-compatible endpoint
-(LiteLLM proxy, OpenAI direct, Ollama, etc). See docs/GATEWAY-CONTRACT.md.
+is exposed by brain-api; for dispatch/build/converse see your upstream artifact-store MCP.
 """
 
 from __future__ import annotations
@@ -25,9 +21,15 @@ EMBEDDINGS_URL = os.getenv("EMBEDDINGS_URL", "http://agentibrain-embeddings:8080
 EMBEDDINGS_API_KEY = (
     os.environ.get("EMBEDDINGS_API_KEY") or ""
 )
-OBSIDIAN_READER_URL = os.getenv("OBSIDIAN_READER_URL", "http://agentibrain-obsidian-reader:8080")
-OBSIDIAN_READER_TOKEN = (
-    os.environ.get("OBSIDIAN_READER_TOKEN") or ""
+BRAIN_API_URL = os.getenv(
+    "BRAIN_API_URL",
+    os.getenv("OBSIDIAN_READER_URL", "http://agentibrain-kb-router:8080"),
+)
+BRAIN_API_TOKEN = (
+    os.environ.get("BRAIN_API_TOKEN")
+    or os.environ.get("KB_ROUTER_TOKEN")
+    or os.environ.get("OBSIDIAN_READER_TOKEN")
+    or ""
 )
 INFERENCE_URL = os.getenv("INFERENCE_URL", "")
 INFERENCE_TOKEN_ENV = "INFERENCE_API_KEY"
@@ -72,18 +74,18 @@ async def _search_embeddings(query: str, limit: int, min_score: float) -> list[d
         return []
 
 
-async def _search_obsidian(query: str, limit: int) -> list[dict]:
-    """Call agentibrain-obsidian-reader /search and normalize into common schema."""
-    if not OBSIDIAN_READER_URL:
+async def _search_vault(query: str, limit: int) -> list[dict]:
+    """Call brain-api /vault/search and normalize into common schema."""
+    if not BRAIN_API_URL:
         return []
     headers = {}
-    if OBSIDIAN_READER_TOKEN:
-        headers["Authorization"] = f"Bearer {OBSIDIAN_READER_TOKEN}"
+    if BRAIN_API_TOKEN:
+        headers["Authorization"] = f"Bearer {BRAIN_API_TOKEN}"
     params = {"q": query, "limit": str(limit), "context_lines": "2"}
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{OBSIDIAN_READER_URL.rstrip('/')}/search",
+                f"{BRAIN_API_URL.rstrip('/')}/vault/search",
                 params=params,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=20),
@@ -158,7 +160,7 @@ def register(mcp: FastMCP):
 
         Returns merged, score-ranked hits. Schema:
         {source, ref, title, score, preview, metadata}.
-        Use the `ref` to follow up via brain_get_arc (for arcs) or kb_router /read.
+        Use the `ref` to follow up via brain_get_arc (for arcs) or brain-api /vault/read.
 
         Args:
             query: Natural language or keyword query.
@@ -171,7 +173,7 @@ def register(mcp: FastMCP):
         if include_artifact:
             tasks.append(_search_embeddings(query, limit, min_score))
         if include_obsidian:
-            tasks.append(_search_obsidian(query, limit))
+            tasks.append(_search_vault(query, limit))
         if not tasks:
             return json.dumps({"query": query, "count": 0, "results": []})
 
@@ -209,13 +211,12 @@ def register(mcp: FastMCP):
     ) -> str:
         """Knowledge-base brief synthesizer. Runs kb_search, feeds hits to an LLM, returns 3-5 line synthesis.
 
-        Returns JSON: {query, hits, brief, candidate_refs}. The brief is a concise summary of what's
-        in the operator's knowledge base about the query, citing specific refs.
+        Returns JSON: {query, hits, brief, candidate_refs}.
 
         Args:
             query: Natural language or keyword query.
             limit: Max hits to feed to the LLM (default 8).
-            model: OpenAI-compatible model name to use (default: BRAIN_BRIEF_MODEL env, 'brain-brief').
+            model: OpenAI-compatible model name to use (default: BRAIN_BRIEF_MODEL env).
         """
         raw = await kb_search(query=query, limit=limit)
         try:
