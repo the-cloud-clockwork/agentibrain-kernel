@@ -286,6 +286,8 @@ def update_dashboard(date_dir: Path, arcs: list[markers.DocumentMeta]) -> None:
 
 # ── Main tick ─────────────────────────────────────────────────────────
 
+REGION_DIRS = ("bridge", "left", "right", "frontal-lobe", "pineal", "amygdala")
+
 TAG_REGION_MAP = {
     "architecture": "left", "infrastructure": "left", "deployment": "left",
     "code": "left", "bug": "left", "fix": "left", "ci": "left",
