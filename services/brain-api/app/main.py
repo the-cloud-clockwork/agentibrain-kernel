@@ -136,7 +136,10 @@ def vault_search(
     context_lines: int = Query(2, ge=0, le=10),
     _: None = Depends(require_token),
 ) -> dict:
-    return vault_reader.search_vault(q=q, prefix=prefix, limit=limit, context_lines=context_lines)
+    try:
+        return vault_reader.search_vault(q=q, prefix=prefix, limit=limit, context_lines=context_lines)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 
 @app.post("/vault/write_inbox")

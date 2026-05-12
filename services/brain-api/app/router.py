@@ -263,7 +263,7 @@ async def _upload_bytes_to_artifact_store(
     return resp.json()
 
 
-def _write_vault_note(
+async def _write_vault_note(
     *,
     title: str,
     content: str,
@@ -272,7 +272,8 @@ def _write_vault_note(
 ) -> str | None:
     """Write a note to the vault inbox via direct filesystem (no HTTP hop)."""
     try:
-        result = vault_reader.write_inbox(
+        result = await asyncio.to_thread(
+            vault_reader.write_inbox,
             title=title, content=content, tags=tags, artifact_refs=artifact_refs,
         )
         return result.get("path")
@@ -549,7 +550,7 @@ async def ingest_message(message: str) -> IngestResult:
     if semantic or artifact_keys:
         note_content = semantic or f"(no semantic text — ingested {len(artifact_keys)} references)"
         note_content += f"\n\n---\n\n_ingest_batch: {batch_id}_\n_original_message: {message[:500]}_"
-        obsidian_path = _write_vault_note(
+        obsidian_path = await _write_vault_note(
             title=title,
             content=note_content,
             tags=tags + ["brain-api"],
