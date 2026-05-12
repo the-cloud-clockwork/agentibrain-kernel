@@ -126,11 +126,33 @@ services:
           echo "[tick-cron] INFERENCE_URL not set — running deterministic only"
         fi
         while true; do
+          DATE=$$(date -u +%Y-%m-%d)
+          HOUR=$$(date -u +%H)
+          OUTDIR="/vault/clusters/$${DATE}"
+          mkdir -p "$${OUTDIR}" 2>/dev/null || true
+
+          # Extraction: once daily at the first tick of the day (hour 04)
+          if [ "$${HOUR}" = "04" ] && [ -d /shared/.claude/projects ]; then
+            echo "[tick-cron] extraction: since=26h min-turns=5"
+            python3 /app/extract.py --since 26h --min-turns 5 \
+              --projects-dir /shared/.claude/projects \
+              | python3 /app/cluster.py --out-dir "$${OUTDIR}" \
+              || echo "[tick-cron] extraction failed (continuing)"
+          fi
+
+          # Hybrid brain tick
           python3 /app/brain_tick.py \
             --vault /vault \
             --brain-feed /vault/brain-feed \
             $${FLAGS} \
             || echo "[tick-cron] brain_tick failed (continuing)"
+
+          # Refresh arc embeddings + prune orphans
+          if [ -n "$${EMBEDDINGS_API_KEY}" ]; then
+            python3 /app/embed_arcs.py --vault /vault --prune \
+              || echo "[tick-cron] embed_arcs failed (non-fatal)"
+          fi
+
           echo "[tick-cron] sleeping $${INTERVAL}s until next tick"
           sleep "$${INTERVAL}"
         done
