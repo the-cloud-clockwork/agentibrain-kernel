@@ -2,6 +2,60 @@
 
 > A standalone brain + knowledge-base kernel for Claude Code agent fleets. Bring your own vault, your own LLM keys, your own embeddings. Runs on a laptop, a server, or a Kubernetes cluster.
 
+## Quick Start (Docker Compose)
+
+```bash
+git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
+cd agentibrain-kernel
+
+# Bootstrap — generates .env with auth tokens, scaffolds vault
+./local/bootstrap.sh
+
+# Start all services (postgres, redis, brain-api, embeddings, mcp, tick-cron, amygdala)
+docker compose up -d --build
+
+# Verify
+docker compose ps                  # 7 containers, all healthy
+curl http://localhost:8104/ping    # pong — MCP server is up
+```
+
+**Wire Claude Code** — copy the MCP config and paste your generated key:
+
+```bash
+cp .mcp.json.example .mcp.json
+# Edit .mcp.json — replace ${MCP_PROXY_API_KEY} with value from .env:
+grep MCP_PROXY_API_KEY .env
+```
+
+Restart Claude Code, run `/mcp` — you'll see `agentibrain` with 5 tools:
+
+| Tool | Purpose |
+|------|---------|
+| `kb_search` | Federated search (embeddings + vault text) |
+| `kb_brief` | Search + LLM synthesis → 3-5 line brief |
+| `brain_search_arcs` | Semantic search over brain arcs |
+| `brain_get_arc` | Fetch full arc by cluster_id |
+| `brain_ingest` | Write text to the brain vault |
+
+**Optional: enable AI tick** (edge discovery, signal escalation, intent inference):
+
+```bash
+# Option A: Local Ollama
+docker compose -f compose.yml -f local/compose.ollama.yml up -d
+docker compose exec ollama ollama pull llama3.2
+
+# Option B: OpenAI / LiteLLM — set in .env:
+#   INFERENCE_URL=https://api.openai.com/v1
+#   INFERENCE_API_KEY=sk-...
+#   LLM_API_KEY=sk-...          (also enables embeddings)
+```
+
+Without `INFERENCE_URL`, the brain runs **deterministic-only** — hot arcs, signals, decay, marker writes, and broadcasts still work. Only the AI reasoning phase is skipped.
+
+See [`local/README.md`](local/README.md) for full local docs, troubleshooting, and inference modes.
+
+---
+
 `agentibrain` is a pillar of the **agenti ecosystem** alongside
 [`agenticore`](https://github.com/The-Cloud-Clockwork/agenticore) ·
 [`agentihooks`](https://github.com/The-Cloud-Clockwork/agentihooks) ·
