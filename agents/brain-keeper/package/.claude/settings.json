@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "mcp__agentibrain__*",
+      "mcp__artifact_store__*",
+      "mcp__notifications__*",
+      "mcp__agentibridge__*",
+      "mcp__langfuse_tools__*",
+      "mcp__grafana__*"
+    ],
+    "deny": []
+  }
+}
