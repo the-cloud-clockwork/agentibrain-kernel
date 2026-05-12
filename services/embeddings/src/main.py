@@ -100,6 +100,17 @@ async def embed_content(
     }
 
 
+@app.get("/by-key/{key:path}")
+async def get_by_key(
+    key: str,
+    _token: str = Depends(auth.require_api_key),
+):
+    rows = db.get_by_key(key)
+    if not rows:
+        raise HTTPException(404, f"key not found: {key}")
+    return {"key": key, "chunks": rows, "count": len(rows)}
+
+
 @app.post("/search")
 async def search_content(
     req: SearchRequest,
