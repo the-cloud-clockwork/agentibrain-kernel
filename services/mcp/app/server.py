@@ -2,7 +2,7 @@
 """agentibrain-mcp — Knowledge Base + Brain retrieval tools as a FastMCP server.
 
 Exposes the kernel's read surface to agents over MCP. Tools query
-agentibrain-embeddings (pgvector), kb-router (vault text via /vault/search),
+agentibrain-embeddings (pgvector), brain-api (vault text via /vault/search),
 and the inference-gateway for LLM synthesis. All paths are HTTP — no
 filesystem coupling.
 """

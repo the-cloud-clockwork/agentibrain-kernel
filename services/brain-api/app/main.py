@@ -49,7 +49,7 @@ from .tick_trigger import enqueue_tick, get_tick_status
 from . import vault_reader
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
-log = logging.getLogger("kb-router.main")
+log = logging.getLogger("brain-api.main")
 
 
 def _load_tokens() -> list[str]:

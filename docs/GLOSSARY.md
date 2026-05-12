@@ -50,14 +50,14 @@ Full grammar: `architecture/MARKERS.md`.
 **Signal** — emergency state. Severity: `nuclear | critical | warning | info | resolved`. Active signal lives at `amygdala/amygdala-active.md` and is broadcast cluster-wide.
 
 **Tick** — periodic cycle that maintains the brain. Two modes:
-- **Scheduled tick** (`brain-cron` CronJob, every 2 h): full hybrid pass — deterministic clustering + LLM reasoning + amygdala check.
+- **Scheduled tick** (`brain-ops` CronJob, every 2 h): full hybrid pass — deterministic clustering + LLM reasoning + amygdala check.
 - **On-demand tick** (`/tick` endpoint): drained by `tick-drain` CronJob (every 2 min); processes one request at a time.
 
 **MUBS** — Minimal Unit of Brain Storage. The standard set of project files: `VISION`, `SPECS`, `BLOCKS`, `TODO`, `STATE`, `BUGS`, `KNOWN-ISSUES`, `ENHANCEMENTS`, `MVP`, `PATCHES`. Templates in `templates/mubs/`.
 
 ## Services
 
-**kb-router** — HTTP entrypoint and vault read/write layer. Implements `/feed /signal /marker /tick /ingest /vault/search`. Bearer auth. Vault operations are handled internally via the `vault_reader` module.
+**brain-api** — HTTP entrypoint and vault read/write layer. Implements `/feed /signal /marker /tick /ingest /vault/search`. Bearer auth. Vault operations are handled internally via the `vault_reader` module.
 
 **embeddings** — pgvector wrapper. `/embed` generates a vector via LiteLLM, `/search` does similarity search.
 
@@ -67,7 +67,7 @@ Full grammar: `architecture/MARKERS.md`.
 
 ## Agents-side
 
-**Agent fleet** — pods running `agenticore` image with `BRAIN_URL=http://agentibrain-kb-router.<ns>.svc:8080` set; agentihooks talks to the kernel over HTTP.
+**Agent fleet** — pods running `agenticore` image with `BRAIN_URL=http://agentibrain-brain-api.<ns>.svc:8080` set; agentihooks talks to the kernel over HTTP.
 
 **SessionStart** — agentihooks lifecycle event; `brain_adapter` hook calls `/feed` and injects hot arcs into the agent's first turn.
 

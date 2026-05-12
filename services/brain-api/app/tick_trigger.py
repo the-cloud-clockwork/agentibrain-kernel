@@ -6,9 +6,9 @@ the request, runs `brain_tick.py::run_tick`, and moves the file to either
 `ticks/completed/` or `ticks/failed/`. Clients poll GET /tick/{job_id} for
 status.
 
-Rationale: kb-router and tick-engine live in separate pods with separate
+Rationale: brain-api and brain-ops live in separate pods with separate
 images. Calling `run_tick()` inline would require bundling the entire
-tick-engine code + deps into kb-router, which defeats the split. The file
+brain-ops code + deps into brain-api, which defeats the split. The file
 protocol keeps responsibilities clean and avoids new RPCs.
 """
 
@@ -41,7 +41,7 @@ def _now_iso() -> str:
 def enqueue_tick(
     dry_run: bool = False,
     no_ai: bool = False,
-    source: str = "kb-router",
+    source: str = "brain-api",
     vault_root: Path | None = None,
 ) -> dict:
     """Write a tick request file. Returns {job_id, requested_at, request_path}."""

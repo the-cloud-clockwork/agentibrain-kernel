@@ -29,7 +29,7 @@ That closed loop — dispatch → audit → artifact → operator read → apply
 | **Observability** (OTel, dashboards, spans) | 15% | **100%** | 5-layer OTel pipeline shipped. 27-panel Grafana dashboard across 6 biological regions. brain.inject/delivery/marker_write spans in ClickHouse. Langfuse trace correlation. |
 | **Agent surface** (brain-keeper, A2A, LiteLLM model, reports→Drive) | 20% | **92%** | brain-keeper first-class ops oracle. LiteLLM model + AgentiBridge dispatch. Drive reports (Doc+Sheet). Daily test+triage crons live in ops.yaml. **Gap:** Opus activation pending (values.yaml override). |
 | **Self-healing** (cadence tuning, noise cleanup, I/O profiling) | 15% | **42%** | Detection loop running: `reasoner_feedback.py` (every 6h), `heal.py` 7-point audit (daily 05:53), `brain-triage-daily` (daily 03:31), `brain-heal-daily`, `brain-feedback-hourly`. Cadence tuning, noise purge, marker_write I/O profiling still pending. |
-| **Resilience** (vault backup, outage tests, concurrent writes) | 10% | **15%** | `brain-backup-daily` cron live (02:43 UTC, S3 target). No chaos testing. No DLQ for brain-cron failures. No concurrent write stress test. |
+| **Resilience** (vault backup, outage tests, concurrent writes) | 10% | **15%** | `brain-backup-daily` cron live (02:43 UTC, S3 target). No chaos testing. No DLQ for brain-ops failures. No concurrent write stress test. |
 | **Advanced** (profile broadcast, bare claude wrapper, /replay E2E, custom MCP unit) | 15% | **40%** | Profile activation broadcast designed but unshipped. Bare `claude -p` wrapper half-shipped. First real `/replay` E2E never executed. `brain-keeper-tools-prod` unit exists but not consumed. |
 
 **Weighted total: 0.25×88 + 0.15×100 + 0.2×92 + 0.15×42 + 0.1×15 + 0.15×40 = 69.2% → ~70%**

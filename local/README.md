@@ -41,7 +41,7 @@ docker compose down -v         # nuke volumes too (full reset)
        ┌───────────────────────────┴───────────────────────────┐
        │                                                         │
    ┌───▼─────────┐                  ┌─────────────────┐   ┌───▼───┐
-   │ kb-router   │                  │ embeddings      │   │ mcp   │
+   │ brain-api   │                  │ embeddings      │   │ mcp   │
    │ :8103       │                  │ :8102           │   │ :8104 │
    └─┬─────┬─────┘                  └────────┬────────┘   └───────┘
      │     │                                 │
@@ -58,8 +58,8 @@ docker compose down -v         # nuke volumes too (full reset)
   redis (DB 11) ────────────┘
 ```
 
-7 containers: 3 service-layer (kb-router, embeddings, mcp)
-+ 2 tick-engine workers (cron + amygdala) + postgres + redis.
+7 containers: 3 service-layer (brain-api, embeddings, mcp)
++ 2 brain-ops workers (cron + amygdala) + postgres + redis.
 
 ## Inference modes
 
@@ -116,7 +116,7 @@ Path can be absolute or relative.
 
 ```bash
 # Watch a service log
-docker compose logs -f kb-router
+docker compose logs -f brain-api
 
 # Run an immediate tick (don't wait the 2 hours)
 docker compose exec tick-cron python3 /app/brain_tick.py \
@@ -189,7 +189,7 @@ images instead, edit `compose.yml`:
 image: ghcr.io/the-cloud-clockwork/agentibrain-<service>:latest
 ```
 
-Available services: `kb-router`, `embeddings`, `tick-engine`, `mcp`. Tags `:latest` track main; `:dev` tracks dev branch.
+Available services: `brain-api`, `embeddings`, `brain-ops`, `mcp`. Tags `:latest` track main; `:dev` tracks dev branch.
 
 ## What's NOT in local mode
 

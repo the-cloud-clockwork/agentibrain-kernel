@@ -11,7 +11,7 @@
 # cycle. Budget ~$0.05–$0.50/day depending on vault activity.
 
 services:
-  kb-router:
+  brain-api:
     environment:
       INFERENCE_URL: https://api.openai.com/v1
       INFERENCE_API_KEY: ${OPENAI_API_KEY:-}

@@ -14,7 +14,7 @@ The kernel ships an MCP server — `agentibrain-mcp` — that exposes brain + KB
 |---|---|
 | `brain_search_arcs` | Semantic search over arcs in `clusters/`. Filters by `min_heat` and `min_score`, ranked by cosine similarity. |
 | `brain_get_arc` | Fetch full text + metadata for one arc by `cluster_id`. |
-| `kb_search` | Federated retrieval across embeddings (semantic) + kb-router vault search (text). Normalised, score-ranked. |
+| `kb_search` | Federated retrieval across embeddings (semantic) + brain-api vault search (text). Normalised, score-ranked. |
 | `kb_brief` | Runs `kb_search`, synthesises a 3-5 line brief via inference-gateway, returns `candidate_refs` ready to feed downstream. |
 
 Tool source: `services/mcp/app/tools/{arcs.py,kb.py}`.
@@ -35,8 +35,8 @@ Required env vars:
 
 | Var | Purpose |
 |---|---|
-| `BRAIN_API_URL` | agentibrain-kb-router service base URL |
-| `KB_ROUTER_TOKEN` | bearer for kb-router |
+| `BRAIN_API_URL` | agentibrain-brain-api service base URL |
+| `KB_ROUTER_TOKEN` | bearer for brain-api |
 | `EMBEDDINGS_URL` | agentibrain-embeddings service base URL |
 | `EMBEDDINGS_API_KEY` | bearer for embeddings — same token the kernel-internal services use |
 | `INFERENCE_URL` | inference-gateway endpoint (used by `kb_brief`) |
@@ -45,7 +45,7 @@ Required env vars:
 
 Auth is two-layered:
 1. The proxy authenticates the caller (LiteLLM gateway) with `MCP_PROXY_API_KEY`.
-2. The Python tools authenticate themselves to kb-router + embeddings with their own bearer tokens.
+2. The Python tools authenticate themselves to brain-api + embeddings with their own bearer tokens.
 
 ## Install — Kubernetes
 
@@ -80,7 +80,7 @@ spec:
           fullnameOverride: mcp-agentibrain
           env:
             variables:
-              BRAIN_API_URL: http://agentibrain-kb-router.<ns>.svc:8080
+              BRAIN_API_URL: http://agentibrain-brain-api.<ns>.svc:8080
               EMBEDDINGS_URL: http://agentibrain-embeddings.<ns>.svc:8080
               INFERENCE_URL: http://<inference-gateway-ip>:8103
               KB_BRIEF_ROUTE: kb-brief

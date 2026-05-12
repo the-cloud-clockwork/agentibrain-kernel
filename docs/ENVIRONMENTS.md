@@ -25,7 +25,7 @@ The kernel is deployed twice in the reference setup: `<your-dev-ns>` and `<your-
 | Cron namespace | `<your-ops-ns>` (shared) | `<your-ops-ns>` (shared, `-prod` suffix on CR name) |
 | Image tag | `:dev` | `:latest` |
 | ArgoCD source branch | `dev` | `main` |
-| ArgoCD app CR names | un-suffixed (`agentibrain-kb-router`) | `-prod` suffix (`agentibrain-kb-router-prod`) |
+| ArgoCD app CR names | un-suffixed (`agentibrain-brain-api`) | `-prod` suffix (`agentibrain-brain-api-prod`) |
 | Secret-store path | `<your-prefix>/embeddings-dev` | `<your-prefix>/embeddings` |
 | Vault NFS path | shared (single dual-hemisphere vault) | shared |
 | LiteLLM service URL | `litellm.<your-prod-ns>.svc` (intentional — only one LiteLLM) | `litellm.<your-prod-ns>.svc` |
@@ -64,13 +64,13 @@ Helm merges deeply: maps merge by key, lists replace entirely. If your prod over
 CRs in `k8s/argocd/dev/` use un-suffixed names:
 ```yaml
 metadata:
-  name: agentibrain-kb-router
+  name: agentibrain-brain-api
 ```
 
 CRs in `k8s/argocd/prod/` use `-prod` suffix:
 ```yaml
 metadata:
-  name: agentibrain-kb-router-prod
+  name: agentibrain-brain-api-prod
 ```
 
 If both have the same name, `app-of-apps-dev` (which reads `dev/`) and `app-of-apps-prod` (which reads `prod/`) will fight over the same K8s CR. Whoever syncs last wins; the loser's pods get pruned.
@@ -107,4 +107,4 @@ Use `./local/bootstrap.sh && docker compose up -d` from the repo root (see [`../
 
 ## Multi-tenant brain
 
-Out of scope for v0.1.x. Each deployment runs its own kernel + vault. If you need multi-tenant: separate vault paths, separate secret-store prefixes, multiple kb-router instances. Possible but not packaged.
+Out of scope for v0.1.x. Each deployment runs its own kernel + vault. If you need multi-tenant: separate vault paths, separate secret-store prefixes, multiple brain-api instances. Possible but not packaged.

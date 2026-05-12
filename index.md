@@ -30,20 +30,20 @@ The brain + KB substrate for Claude Code agent fleets — services, Helm charts,
 
 ```mermaid
 flowchart LR
-    Agent["Claude Code agent"] -->|HTTP| KB["kb-router\n/feed /signal /marker /tick /ingest"]
+    Agent["Claude Code agent"] -->|HTTP| KB["brain-api\n/feed /signal /marker /tick /ingest"]
     Agent -->|MCP| MCP["agentibrain-mcp\nkb_search · kb_brief · brain_search_arcs · brain_get_arc"]
     MCP -->|/vault/search| KB
     KB --> Vault[("Obsidian vault\nleft / right hemisphere")]
     KB --> Embed["embeddings"]
     Embed --> PG[("Postgres + pgvector")]
-    Tick["tick-engine"] --> CH[("ClickHouse\nbrain.tick_health")]
+    Tick["brain-ops"] --> CH[("ClickHouse\nbrain.tick_health")]
     Tick --> Vault
     Keeper["brain-keeper agent"] --> KB
     Keeper --> MCP
 ```
 
-- **4 service images** auto-published to GHCR — `kb-router`, `embeddings`, `mcp`, `tick-engine`.
-- **5 Helm charts** — `kb-router`, `embeddings`, `mcp`, `brain-cron`, `brain-keeper`.
+- **4 service images** auto-published to GHCR — `brain-api`, `embeddings`, `mcp`, `brain-ops`.
+- **5 Helm charts** — `brain-api`, `embeddings`, `mcp`, `brain-ops`, `brain-keeper`.
 - **Brain-keeper agent definition** in-tree (`agents/brain-keeper/`) — drop-in Claude Code custom agent.
 - **Brain profile overlays** for [agentihooks](https://github.com/The-Cloud-Clockwork/agentihooks) — markers, broadcast channels, hook wiring.
 - **Vault schema v1** — six-region Obsidian vault layout that the kernel writes to.
@@ -71,9 +71,9 @@ See [`local/README.md`](https://github.com/The-Cloud-Clockwork/agentibrain-kerne
 ### 2. Kubernetes (Helm)
 
 ```bash
-helm dep update helm/kb-router
-helm install kb-router helm/kb-router -n brain --create-namespace
-# repeat for embeddings, mcp, brain-cron, brain-keeper
+helm dep update helm/brain-api
+helm install brain-api helm/brain-api -n brain --create-namespace
+# repeat for embeddings, mcp, brain-ops, brain-keeper
 ```
 
 Bare-cluster path with no platform prerequisites — see [`docs/HELM-QUICKSTART.md`]({{ site.baseurl }}/docs/HELM-QUICKSTART). For ArgoCD + ESO + multi-source patterns: [`docs/DEPLOYMENT.md`]({{ site.baseurl }}/docs/DEPLOYMENT).

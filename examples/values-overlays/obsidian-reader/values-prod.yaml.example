@@ -1,4 +1,4 @@
-# Sample overlay — agentibrain-obsidian-reader (prod).
+# Sample overlay — agentibrain-brain-api (prod).
 tpl:
   global:
     environment: prod

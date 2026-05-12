@@ -92,10 +92,10 @@ Consumed by `agentibrain-embeddings-0` pod via `envFrom`.
 
 Six fields land as env vars: postgres connection string, LiteLLM proxy URL, embedding model name, the LiteLLM consumer key, inbound bearer keys for the embeddings service, log level.
 
-### Bundle B — kb-router bearer token
+### Bundle B — brain-api bearer token
 
 K8s Secret name `agentibrain-router-secrets` in each namespace.
-Holds the bearer token used by the kb-router and by every agent fleet pod that calls it. Either kubectl-create it directly, or — if you run ESO — add a path for it to your secret store and switch the chart's `externalSecret.enabled: true`.
+Holds the bearer token used by the brain-api and by every agent fleet pod that calls it. Either kubectl-create it directly, or — if you run ESO — add a path for it to your secret store and switch the chart's `externalSecret.enabled: true`.
 
 ## ESO requirements
 

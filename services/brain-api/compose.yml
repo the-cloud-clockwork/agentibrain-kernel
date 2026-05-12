@@ -1,10 +1,10 @@
 services:
-  kb-router:
+  brain-api:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/the-cloud-clockwork/agentibrain-kb-router:local
-    container_name: agentibrain_kb_router
+    image: ghcr.io/the-cloud-clockwork/agentibrain-brain-api:local
+    container_name: agentibrain_brain_api
     restart: unless-stopped
     environment:
       - ARTIFACT_STORE_URL=${ARTIFACT_STORE_URL:-http://artifact-store:8080}
@@ -25,7 +25,7 @@ services:
       retries: 3
       start_period: 10s
 
-# This compose is for solo-dev of kb-router in isolation.
+# This compose is for solo-dev of brain-api in isolation.
 # Postgres + Redis + optional MinIO), use `brain up` which renders the unified
 # compose from agentibrain/templates/compose/.
 networks:

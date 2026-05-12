@@ -15,7 +15,7 @@
 # See docs/GATEWAY-CONTRACT.md for the full contract.
 
 services:
-  kb-router:
+  brain-api:
     environment:
       INFERENCE_URL: ${LITELLM_URL:-}
       INFERENCE_API_KEY: ${LITELLM_KEY:-}

@@ -1,8 +1,8 @@
-# Sample ArgoCD Application — agentibrain-obsidian-reader (prod).
+# Sample ArgoCD Application — agentibrain-brain-api (prod).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: agentibrain-obsidian-reader-prod
+  name: agentibrain-brain-api-prod
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -12,11 +12,11 @@ spec:
     # Chart source — kernel
     - repoURL: https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
       targetRevision: main
-      path: helm/obsidian-reader
+      path: helm/brain-api
       helm:
-        releaseName: agentibrain-obsidian-reader-prod
+        releaseName: agentibrain-brain-api-prod
         valueFiles:
-          - $values/values-overlays/obsidian-reader/values-prod.yaml
+          - $values/values-overlays/brain-api/values-prod.yaml
     # $values source — your platform repo
     - repoURL: <your-platform-repo>
       targetRevision: <your-revision>

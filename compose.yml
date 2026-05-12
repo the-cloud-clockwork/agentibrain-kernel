@@ -73,18 +73,18 @@ services:
       retries: 3
       start_period: 15s
 
-  kb-router:
+  brain-api:
     build:
-      context: ./services/kb-router
+      context: ./services/brain-api
       dockerfile: Dockerfile
-    image: ghcr.io/the-cloud-clockwork/agentibrain-kb-router:local
-    container_name: agentibrain_kb_router
+    image: ghcr.io/the-cloud-clockwork/agentibrain-brain-api:local
+    container_name: agentibrain_brain_api
     restart: unless-stopped
     depends_on:
       embeddings:
         condition: service_healthy
     environment:
-      kb-router:
+      brain-api:
         condition: service_healthy
     # Sleep-loop scheduler. Compose has no native cron; this is best-effort.
     # Runs an initial tick on startup, then every TICK_INTERVAL_SECONDS.
@@ -118,9 +118,9 @@ services:
 
   amygdala:
     build:
-      context: ./services/tick-engine
+      context: ./services/brain-ops
       dockerfile: Dockerfile
-    image: ghcr.io/the-cloud-clockwork/agentibrain-tick-engine:local
+    image: ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:local
     container_name: agentibrain_amygdala
     restart: unless-stopped
     depends_on:
@@ -152,13 +152,13 @@ services:
     container_name: agentibrain_mcp
     restart: unless-stopped
     depends_on:
-      kb-router:
+      brain-api:
         condition: service_healthy
     environment:
       INFERENCE_URL: ${INFERENCE_URL:-}
       INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
       BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}
-      BRAIN_API_URL: http://kb-router:8080
+      BRAIN_API_URL: http://brain-api:8080
       KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN:-}
       EMBEDDINGS_URL: http://embeddings:8080
       EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}

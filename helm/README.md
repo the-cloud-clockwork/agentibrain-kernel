@@ -6,11 +6,11 @@ Helm charts for deploying the brain on Kubernetes. The kernel is the **canonical
 
 | Chart | Purpose | Templates |
 |---|---|---|
-| `kb-router` | HTTP front door + vault read/write (`/feed /signal /marker /tick /index_artifact /ingest /search /vault/search`). | `tcc-k8s-service-template` v0.3.4 |
+| `brain-api` | HTTP front door + vault read/write (`/feed /signal /marker /tick /index_artifact /ingest /search /vault/search`). | `tcc-k8s-service-template` v0.3.4 |
 | `embeddings` | pgvector wrapper (write surface only — `/embed`). | `tcc-k8s-service-template` v0.3.4 |
 | `mcp` | MCP server exposing brain + KB retrieval tools to agents. | `tcc-k8s-service-template` v0.3.8 |
 | `brain-keeper` | Brain-ops agent (runs on agenticore image). | `tcc-k8s-service-template` v0.3.4 |
-| `brain-cron` | Scheduled tick (CronJob) + amygdala signal consumer (Deployment) + tick-drain (CronJob). | Custom 3-template chart, no base. |
+| `brain-ops` | Scheduled tick (CronJob) + amygdala signal consumer (Deployment) + tick-drain (CronJob). | Custom 3-template chart, no base. |
 
 `tcc-k8s-service-template` is pulled from `oci://ghcr.io/the-cloud-clockwork` at chart-build time (`helm dep update`). The `.tgz` is vendored under each chart's `charts/` for offline use.
 
@@ -49,7 +49,7 @@ helm upgrade --install <release> ./helm/<chart> \
 
 - `values.yaml` — **generic defaults only**. Operator-specific bits (NFS server IPs, secret names, namespace-coupled URLs, image tags) MUST be overridden by the consumer.
 - Per-chart override your consumer needs to provide:
-  - `BRAIN_URL` (agents → kb-router)
+  - `BRAIN_URL` (agents → brain-api)
   - `ARTIFACT_STORE_URL` (brain-keeper → operator's storage plane)
   - NFS / PVC mounts for the vault
   - Secret references (KB_ROUTER_TOKEN, OPENAI_API_KEY, EMBEDDINGS_API_KEY)
@@ -62,9 +62,9 @@ The kernel publishes `agentibrain-*` images via `.github/workflows/docker-build.
 ```yaml
 metadata:
   labels:
-    image-updater/image: agentibrain-kb-router
+    image-updater/image: agentibrain-brain-api
   annotations:
-    argocd-image-updater.argoproj.io/image-list: router=ghcr.io/the-cloud-clockwork/agentibrain-kb-router:latest
+    argocd-image-updater.argoproj.io/image-list: router=ghcr.io/the-cloud-clockwork/agentibrain-brain-api:latest
     argocd-image-updater.argoproj.io/router.update-strategy: digest
     argocd-image-updater.argoproj.io/router.helm.image-name: tpl.app.image.repository
     argocd-image-updater.argoproj.io/router.helm.image-tag: tpl.app.image.tag

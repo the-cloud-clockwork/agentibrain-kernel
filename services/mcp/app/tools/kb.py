@@ -23,7 +23,7 @@ EMBEDDINGS_API_KEY = (
 )
 BRAIN_API_URL = os.getenv(
     "BRAIN_API_URL",
-    os.getenv("OBSIDIAN_READER_URL", "http://agentibrain-kb-router:8080"),
+    os.getenv("OBSIDIAN_READER_URL", "http://agentibrain-brain-api:8080"),
 )
 BRAIN_API_TOKEN = (
     os.environ.get("BRAIN_API_TOKEN")

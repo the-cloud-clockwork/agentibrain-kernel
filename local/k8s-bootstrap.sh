@@ -86,10 +86,10 @@ cat <<EOF
 
 ──── Required Secrets (namespace: ${NAMESPACE}) ────
 
-# 1. kb-router + obsidian-reader auth (always required)
+# 1. brain-api + obsidian-reader auth (always required)
 ${ROUTER_CMD}
 
-# 2. embeddings backend — Postgres + LLM provider (required for kb-router /ingest path)
+# 2. embeddings backend — Postgres + LLM provider (required for brain-api /ingest path)
 ${EMBED_CMD}
 
 # 3. brain-keeper agent — Claude Anthropic key (only if deploying brain-keeper)
@@ -131,14 +131,14 @@ cat <<EOF
 
 ──── Next steps ────
 
-  helm install kb-router    helm/kb-router    -n ${NAMESPACE}
+  helm install brain-api    helm/brain-api    -n ${NAMESPACE}
   helm install obsidian     helm/obsidian-reader -n ${NAMESPACE}
   helm install embeddings   helm/embeddings   -n ${NAMESPACE}
-  helm install brain-cron   helm/brain-cron   -n ${NAMESPACE}     # optional
+  helm install brain-ops   helm/brain-ops   -n ${NAMESPACE}     # optional
   helm install brain-keeper helm/brain-keeper -n ${NAMESPACE}     # optional
 
   # smoke
-  kubectl -n ${NAMESPACE} port-forward svc/agentibrain-kb-router 8080:8080 &
+  kubectl -n ${NAMESPACE} port-forward svc/agentibrain-brain-api 8080:8080 &
   source "$TOKENS_FILE"
   curl -fsSL -H "Authorization: Bearer \$KB_ROUTER_TOKEN" http://localhost:8080/feed | jq .
 

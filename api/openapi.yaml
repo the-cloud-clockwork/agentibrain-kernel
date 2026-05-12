@@ -19,7 +19,7 @@ info:
 
 servers:
   - url: http://localhost:8102
-    description: Default local kb-router port (brain init default).
+    description: Default local brain-api port (brain init default).
 
 components:
   securitySchemes:
