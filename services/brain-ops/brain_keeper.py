@@ -444,17 +444,21 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
             fname = arc.path.name
 
             if heat >= BRAIN_PROMOTE_HEAT:
-                if not dry_run:
-                    conscious.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(str(arc.path), str(conscious / fname))
-                promotions += 1
+                dest = conscious / fname
+                if arc.path.resolve() != dest.resolve():
+                    if not dry_run:
+                        conscious.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(str(arc.path), str(dest))
+                    promotions += 1
             elif heat < BRAIN_DEMOTE_HEAT:
                 conscious_file = conscious / fname
                 if conscious_file.exists():
-                    if not dry_run:
-                        unconscious.mkdir(parents=True, exist_ok=True)
-                        shutil.move(str(conscious_file), str(unconscious / fname))
-                    demotions += 1
+                    dest = unconscious / fname
+                    if conscious_file.resolve() != dest.resolve():
+                        if not dry_run:
+                            unconscious.mkdir(parents=True, exist_ok=True)
+                            shutil.move(str(conscious_file), str(dest))
+                        demotions += 1
 
     # 3a. Extract workflow templates for hot reproducible arcs (skipped in quick_refresh)
     templates_written = 0
@@ -522,10 +526,12 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
             region_map = {"left-hemisphere": "left", "right-hemisphere": "right",
                           "bridge": "bridge", "amygdala": "amygdala", "pineal": "pineal"}
             target_dir = vault_root / region_map.get(region, "left")
-            if not dry_run:
-                target_dir.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(arc.path), str(target_dir / arc.path.name))
-            graduations += 1
+            dest = target_dir / arc.path.name
+            if arc.path.resolve() != dest.resolve():
+                if not dry_run:
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(arc.path), str(dest))
+                graduations += 1
 
     # 4. Build mitigation map. Any arc with status in {resolved, graduated}
     #    AND a `mitigates` frontmatter field tombstones signals whose source
