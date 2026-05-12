@@ -113,7 +113,7 @@ tpl:
       AGENTICORE_AGENTIHOOKS_SYNC_INTERVAL: '30'
       AGENTICORE_AGENTIHOOKS_BUNDLE_SYNC_INTERVAL: '30'
       AGENTICORE_AGENTIHUB_SYNC_INTERVAL: '30'
-      AGENTIHOOKS_PROFILE: brain-keeper
+      AGENTIHOOKS_PROFILE: ''
       AGENTIHUB_AGENT: brain-keeper
       # Brain wiring — operators override these for their deployment.
       # BRAIN_URL points at the kernel kb-router; set in per-env values file.
