@@ -286,6 +286,58 @@ def update_dashboard(date_dir: Path, arcs: list[markers.DocumentMeta]) -> None:
 
 # ── Main tick ─────────────────────────────────────────────────────────
 
+TAG_REGION_MAP = {
+    "architecture": "left", "infrastructure": "left", "deployment": "left",
+    "code": "left", "bug": "left", "fix": "left", "ci": "left",
+    "database": "left", "api": "left", "security": "left",
+    "research": "left/research", "incident": "left/incidents",
+    "decision": "left/decisions", "reference": "left/reference",
+    "idea": "right/ideas", "strategy": "right/strategy",
+    "creative": "right/creative", "vision": "right",
+    "risk": "right/risk", "life": "right/life",
+    "brain-system": "bridge", "cross-cutting": "bridge",
+}
+INBOX_DEFAULT_REGION = "left"
+
+
+def drain_inbox(vault_root: Path, dry_run: bool = False) -> dict:
+    """Move notes from raw/inbox/ to appropriate region dirs based on tags."""
+    inbox = vault_root / "raw" / "inbox"
+    if not inbox.is_dir():
+        return {"drained": 0, "skipped": 0}
+
+    stats = {"drained": 0, "skipped": 0, "errors": 0}
+    for md in sorted(inbox.glob("*.md")):
+        try:
+            doc = markers.extract_all(md)
+        except Exception as e:
+            print(f"WARN: inbox parse failed {md.name}: {e}", file=sys.stderr)
+            stats["errors"] += 1
+            continue
+
+        tags = doc.frontmatter.get("tags", [])
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.split(",")]
+
+        region = INBOX_DEFAULT_REGION
+        for tag in tags:
+            tag_lower = tag.lower().strip()
+            if tag_lower in TAG_REGION_MAP:
+                region = TAG_REGION_MAP[tag_lower]
+                break
+
+        target_dir = vault_root / region
+        if not dry_run:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            dest = target_dir / md.name
+            if dest.exists():
+                dest = target_dir / f"{md.stem}-{datetime.now(timezone.utc).strftime('%H%M%S')}{md.suffix}"
+            shutil.move(str(md), str(dest))
+        stats["drained"] += 1
+        print(f"INBOX: {md.name} → {region}/")
+    return stats
+
+
 def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
          quick_refresh: bool = False) -> dict:
     """One maintenance tick. Pure deterministic. Returns stats.
@@ -297,6 +349,9 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
     clusters_dir = vault_root / "clusters"
     conscious = vault_root / "frontal-lobe" / "conscious"
     unconscious = vault_root / "frontal-lobe" / "unconscious"
+
+    # Phase 0: drain raw/inbox/ → region dirs before scanning arcs
+    inbox_stats = drain_inbox(vault_root, dry_run=dry_run)
 
     if not clusters_dir.exists():
         return {"error": f"clusters dir not found: {clusters_dir}"}
@@ -530,6 +585,8 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
             update_dashboard(date_dir, date_arcs)
 
     stats = {
+        "inbox_drained": inbox_stats.get("drained", 0),
+        "inbox_errors": inbox_stats.get("errors", 0),
         "arcs_scanned": len(arcs),
         "heat_changes": heat_changes,
         "promotions": promotions,
