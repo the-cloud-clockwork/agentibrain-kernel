@@ -1,11 +1,12 @@
-"""Ingest router — one LLM call (Haiku) to classify the operator message, then deterministic fan-out.
+"""Ingest router — one LLM call (Haiku) to classify, then write everything to the vault.
 
 Flow:
-  1. LLM extracts: semantic_text, extractables (urls/repos/local_paths/multipart_refs), title, tags
-  2. Semantic text → write vault note (via vault_reader.write_inbox, direct filesystem)
-  3. Each extractable → fetch/clone/read → PUT to artifact-store under raw/ingest/<batch>/
-  4. Cross-link tags: {obsidian_ref, ingest_batch} on every artifact; artifact_refs in Obsidian frontmatter
-  5. Return bundle of what was created
+  1. LLM extracts: semantic_text, extractables (urls/repos/local_paths), title, tags
+  2. Extractables → fetch/clone/read → write to vault as raw/inbox/ text files
+  3. Semantic text + references → write vault note (via vault_reader.write_inbox)
+  4. Return what was created
+
+No external dependencies. Everything lands in the vault filesystem.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import os
 import re
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -27,9 +28,6 @@ import httpx
 from . import vault_reader
 
 log = logging.getLogger("brain_api")
-
-ARTIFACT_STORE_URL = os.getenv("ARTIFACT_STORE_URL", "")
-ARTIFACT_STORE_KEY = os.getenv("ARTIFACT_STORE_KEY", "")
 
 INFERENCE_URL = os.getenv("INFERENCE_URL", "")
 INFERENCE_TOKEN_ENV = "INFERENCE_API_KEY"
@@ -53,17 +51,17 @@ YOUTUBE_RE = re.compile(
 class IngestResult:
     batch_id: str
     obsidian_path: str | None
-    artifact_keys: list[str]
-    semantic_text_preview: str
-    errors: list[str]
-    title: str
-    tags: list[str]
+    vault_paths: list[str] = field(default_factory=list)
+    semantic_text_preview: str = ""
+    errors: list[str] = field(default_factory=list)
+    title: str = ""
+    tags: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
             "batch_id": self.batch_id,
             "obsidian_path": self.obsidian_path,
-            "artifact_keys": self.artifact_keys,
+            "vault_paths": self.vault_paths,
             "semantic_text_preview": self.semantic_text_preview,
             "errors": self.errors,
             "title": self.title,
@@ -132,7 +130,6 @@ def _parse_json(raw: str) -> dict:
 
 
 async def _call_router_llm(message: str, model: str) -> dict:
-    """Single-shot classification via any OpenAI-compatible gateway."""
     if not INFERENCE_URL:
         log.warning("inference gateway not configured; falling back to regex")
         return _fallback_classify(message)
@@ -176,7 +173,6 @@ async def _call_router_llm(message: str, model: str) -> dict:
 
 
 def _fallback_classify(message: str) -> dict:
-    """Deterministic regex-based classification when the LLM is unavailable or misfires."""
     extractables: list[dict] = []
     remaining = message
     for m in URL_RE.finditer(message):
@@ -189,11 +185,7 @@ def _fallback_classify(message: str) -> dict:
             etype = "repo"
         else:
             etype = "url"
-        extractables.append({
-            "type": etype,
-            "value": val,
-            "hint": "",
-        })
+        extractables.append({"type": etype, "value": val, "hint": ""})
         remaining = remaining.replace(val, " ")
     semantic = " ".join(remaining.split()).strip()
     title = (semantic[:80] or message[:80]).strip() or "ingest"
@@ -206,7 +198,6 @@ def _fallback_classify(message: str) -> dict:
 
 
 def _sanitize_local_path(path: str) -> Path | None:
-    """Return the Path iff it is inside one of LOCAL_READ_ROOTS; else None."""
     try:
         candidate = Path(path).resolve()
     except (OSError, ValueError):
@@ -221,250 +212,52 @@ def _sanitize_local_path(path: str) -> Path | None:
     return None
 
 
-async def _artifact_headers() -> dict:
-    return {"Authorization": f"Bearer {ARTIFACT_STORE_KEY}"} if ARTIFACT_STORE_KEY else {}
-
-
-async def _upload_bytes_to_artifact_store(
-    raw: bytes,
-    *,
-    filename: str,
-    content_type: str,
-    producer: str,
-    artifact_type: str,
-    slug: str,
-    tags: dict,
-    client: httpx.AsyncClient,
-) -> dict:
-    """Delegate to artifact-store POST /artifacts/upload (multipart)."""
-    if not ARTIFACT_STORE_URL:
-        raise RuntimeError(
-            "ARTIFACT_STORE_URL is not configured; binary ingest is disabled. "
-            "Point it at your storage plane (an upstream artifact-store, S3 gateway, "
-            "or any OpenAPI-compatible blob service) to enable blob upload."
-        )
-    files = {"file": (filename, raw, content_type)}
-    data = {
-        "producer": producer,
-        "artifact_type": artifact_type,
-        "slug": slug,
-        "key_prefix": "raw",
-        "tags": json.dumps(tags or {}),
-    }
-    headers = await _artifact_headers()
-    resp = await client.post(
-        f"{ARTIFACT_STORE_URL}/artifacts/upload",
-        files=files,
-        data=data,
-        headers=headers,
-        timeout=120,
-    )
-    resp.raise_for_status()
-    return resp.json()
-
-
-async def _write_vault_note(
-    *,
-    title: str,
-    content: str,
-    tags: list[str],
-    artifact_refs: list[str],
-) -> str | None:
-    """Write a note to the vault inbox via direct filesystem (no HTTP hop)."""
-    try:
-        result = await asyncio.to_thread(
-            vault_reader.write_inbox,
-            title=title, content=content, tags=tags, artifact_refs=artifact_refs,
-        )
-        return result.get("path")
-    except Exception as exc:
-        log.warning("vault write failed: %s", exc)
-        return None
-
-
 def _slugify(text: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
     return (s or "ingest")[:60]
 
 
-async def _fetch_url_extractable(
-    value: str,
-    hint: str,
-    *,
-    batch_id: str,
-    client: httpx.AsyncClient,
-) -> tuple[str | None, str | None]:
-    """Download a URL, PUT to artifact-store, return (artifact_key, error)."""
+def _write_extractable_to_vault(title: str, content: str, tags: list[str], batch_id: str) -> str | None:
+    """Write an extracted piece of content to the vault inbox."""
     try:
-        resp = await client.get(value, follow_redirects=True, timeout=60)
-        resp.raise_for_status()
-        body = resp.content
-        ct = resp.headers.get("content-type", "application/octet-stream").split(";")[0].strip()
+        result = vault_reader.write_inbox(
+            title=title,
+            content=content,
+            tags=tags,
+            artifact_refs=[],
+        )
+        return result.get("path")
+    except Exception as exc:
+        log.warning("vault write failed for extractable %s: %s", title, exc)
+        return None
+
+
+async def _fetch_url(value: str, hint: str, batch_id: str) -> tuple[str | None, str | None]:
+    try:
+        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+            resp = await client.get(value)
+            resp.raise_for_status()
+            text = resp.text
     except Exception as exc:
         return None, f"fetch failed: {value} — {exc}"
 
-    url_tail = value.rstrip("/").split("/")[-1] or "page"
-    url_tail = url_tail.split("?")[0].split("#")[0]
-    if "." in url_tail:
-        stem, ext = url_tail.rsplit(".", 1)
-    else:
-        if "html" in ct:
-            stem, ext = url_tail, "html"
-        elif "pdf" in ct:
-            stem, ext = url_tail, "pdf"
-        elif "json" in ct:
-            stem, ext = url_tail, "json"
-        elif "markdown" in ct:
-            stem, ext = url_tail, "md"
-        elif "text" in ct:
-            stem, ext = url_tail, "txt"
-        else:
-            stem, ext = url_tail, "bin"
-    slug = _slugify(hint or stem or "url")
-    filename = f"{slug}.{ext}"
+    if not text.strip():
+        return None, f"empty content from: {value}"
 
-    tags = {
-        "source": "url",
-        "origin_url": value,
-        "ingest_batch": batch_id,
-    }
-    try:
-        result = await _upload_bytes_to_artifact_store(
-            body,
-            filename=filename,
-            content_type=ct,
-            producer="ingest",
-            artifact_type="url",
-            slug=slug,
-            tags=tags,
-            client=client,
-        )
-        return result.get("key"), None
-    except Exception as exc:
-        return None, f"upload failed: {value} — {exc}"
+    slug = _slugify(hint or value.rstrip("/").split("/")[-1].split("?")[0])
+    title = f"URL: {hint or slug} ({value})"
+    body = f"# {title}\n\nSource: {value}\nFetched: {datetime.now(timezone.utc).isoformat()}\n\n---\n\n{text[:500_000]}"
+    path = await asyncio.to_thread(
+        _write_extractable_to_vault, title=slug, content=body, tags=["url", "extracted"], batch_id=batch_id,
+    )
+    return path, None if path else f"vault write failed for {value}"
 
 
-async def _clone_and_zip_repo(
-    value: str,
-    hint: str,
-    *,
-    batch_id: str,
-    client: httpx.AsyncClient,
-) -> tuple[str | None, str | None]:
-    """Shallow-clone a repo, zip it, PUT to artifact-store."""
-    workdir = tempfile.mkdtemp(prefix="brain-api-repo-")
-    try:
-        repo_name = value.rstrip("/").split("/")[-1]
-        if repo_name.endswith(".git"):
-            repo_name = repo_name[:-4]
-        clone_path = os.path.join(workdir, repo_name)
-        try:
-            subprocess.run(
-                ["git", "clone", "--depth=1", "--quiet", value, clone_path],
-                check=True,
-                capture_output=True,
-                timeout=300,
-            )
-        except subprocess.CalledProcessError as exc:
-            return None, f"git clone failed: {value} — {exc.stderr.decode('utf-8', errors='replace')[:200]}"
-
-        import shutil
-        zip_path = os.path.join(workdir, f"{repo_name}.zip")
-        shutil.make_archive(zip_path[:-4], "zip", clone_path)
-        with open(zip_path, "rb") as f:
-            body = f.read()
-
-        slug = _slugify(hint or repo_name)
-        filename = f"{slug}.zip"
-        tags = {
-            "source": "repo",
-            "origin_url": value,
-            "ingest_batch": batch_id,
-            "repo_name": repo_name,
-        }
-        try:
-            result = await _upload_bytes_to_artifact_store(
-                body,
-                filename=filename,
-                content_type="application/zip",
-                producer="ingest",
-                artifact_type="repo",
-                slug=slug,
-                tags=tags,
-                client=client,
-            )
-            return result.get("key"), None
-        except Exception as exc:
-            return None, f"upload failed: {value} — {exc}"
-    finally:
-        import shutil
-        try:
-            shutil.rmtree(workdir, ignore_errors=True)
-        except OSError:
-            pass
-
-
-async def _read_local_extractable(
-    value: str,
-    hint: str,
-    *,
-    batch_id: str,
-    client: httpx.AsyncClient,
-) -> tuple[str | None, str | None]:
-    p = _sanitize_local_path(value)
-    if not p:
-        return None, f"local path rejected (not in allowlist or missing): {value}"
-    try:
-        body = p.read_bytes()
-    except OSError as exc:
-        return None, f"read failed: {value} — {exc}"
-
-    ext = p.suffix.lstrip(".") or "bin"
-    ct_map = {
-        "md": "text/markdown", "txt": "text/plain", "pdf": "application/pdf",
-        "html": "text/html", "json": "application/json", "csv": "text/csv",
-    }
-    ct = ct_map.get(ext.lower(), "application/octet-stream")
-
-    slug = _slugify(hint or p.stem)
-    filename = p.name
-    tags = {
-        "source": "local_path",
-        "origin_path": str(p),
-        "ingest_batch": batch_id,
-    }
-    try:
-        result = await _upload_bytes_to_artifact_store(
-            body,
-            filename=filename,
-            content_type=ct,
-            producer="ingest",
-            artifact_type="file",
-            slug=slug,
-            tags=tags,
-            client=client,
-        )
-        return result.get("key"), None
-    except Exception as exc:
-        return None, f"upload failed: {value} — {exc}"
-
-
-def _extract_video_id(url: str) -> str | None:
-    m = YOUTUBE_RE.search(url)
-    return m.group(1) if m else None
-
-
-async def _fetch_youtube_transcript(
-    value: str,
-    hint: str,
-    *,
-    batch_id: str,
-    client: httpx.AsyncClient,
-) -> tuple[str | None, str | None]:
-    """Fetch YouTube transcript via youtube-transcript-api, store as text artifact."""
-    video_id = _extract_video_id(value)
+async def _fetch_youtube_transcript(value: str, hint: str, batch_id: str) -> tuple[str | None, str | None]:
+    video_id = YOUTUBE_RE.search(value)
     if not video_id:
         return None, f"could not extract video ID from: {value}"
+    video_id = video_id.group(1)
 
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
@@ -474,8 +267,7 @@ async def _fetch_youtube_transcript(
         except Exception:
             transcript = transcript_list.find_generated_transcript(["en"])
         entries = transcript.fetch()
-        lines = [entry.text for entry in entries]
-        text = "\n".join(lines)
+        text = "\n".join(entry.text for entry in entries)
     except Exception as exc:
         return None, f"transcript fetch failed: {value} — {exc}"
 
@@ -483,32 +275,99 @@ async def _fetch_youtube_transcript(
         return None, f"empty transcript for: {value}"
 
     slug = _slugify(hint or f"youtube-{video_id}")
-    filename = f"{slug}.txt"
-    body = f"# YouTube Transcript: {hint or video_id}\n# Source: {value}\n\n{text}".encode("utf-8")
-    tags = {
-        "source": "youtube",
-        "origin_url": value,
-        "video_id": video_id,
-        "ingest_batch": batch_id,
-    }
+    body = f"# YouTube Transcript: {hint or video_id}\n\nSource: {value}\nVideo ID: {video_id}\n\n---\n\n{text}"
+    path = await asyncio.to_thread(
+        _write_extractable_to_vault, title=slug, content=body, tags=["youtube", "transcript", "extracted"], batch_id=batch_id,
+    )
+    return path, None if path else f"vault write failed for {value}"
+
+
+async def _clone_and_read_repo(value: str, hint: str, batch_id: str) -> tuple[str | None, str | None]:
+    workdir = tempfile.mkdtemp(prefix="brain-api-repo-")
     try:
-        result = await _upload_bytes_to_artifact_store(
-            body,
-            filename=filename,
-            content_type="text/plain",
-            producer="ingest",
-            artifact_type="transcript",
-            slug=slug,
-            tags=tags,
-            client=client,
+        repo_name = value.rstrip("/").split("/")[-1]
+        if repo_name.endswith(".git"):
+            repo_name = repo_name[:-4]
+        clone_path = os.path.join(workdir, repo_name)
+        try:
+            subprocess.run(
+                ["git", "clone", "--depth=1", "--quiet", value, clone_path],
+                check=True, capture_output=True, timeout=300,
+            )
+        except subprocess.CalledProcessError as exc:
+            return None, f"git clone failed: {value} — {exc.stderr.decode('utf-8', errors='replace')[:200]}"
+
+        readme_path = Path(clone_path) / "README.md"
+        if not readme_path.exists():
+            for candidate in Path(clone_path).glob("README*"):
+                readme_path = candidate
+                break
+
+        parts = [f"# Repository: {repo_name}\n\nSource: {value}\nCloned: {datetime.now(timezone.utc).isoformat()}\n"]
+        if readme_path.exists():
+            parts.append(f"## README\n\n{readme_path.read_text(errors='replace')[:100_000]}")
+
+        tree_lines = []
+        for p in sorted(Path(clone_path).rglob("*")):
+            if ".git" in p.parts:
+                continue
+            rel = p.relative_to(clone_path)
+            tree_lines.append(str(rel))
+        if tree_lines:
+            parts.append(f"## File Tree\n\n```\n{chr(10).join(tree_lines[:500])}\n```")
+
+        body = "\n\n---\n\n".join(parts)
+        slug = _slugify(hint or repo_name)
+        path = await asyncio.to_thread(
+            _write_extractable_to_vault, title=slug, content=body[:500_000], tags=["repo", "extracted"], batch_id=batch_id,
         )
-        return result.get("key"), None
+        return path, None if path else f"vault write failed for {value}"
+    finally:
+        import shutil
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+async def _read_local_file(value: str, hint: str, batch_id: str) -> tuple[str | None, str | None]:
+    p = _sanitize_local_path(value)
+    if not p:
+        return None, f"local path rejected (not in allowlist or missing): {value}"
+    try:
+        text = p.read_text(errors="replace")
+    except OSError as exc:
+        return None, f"read failed: {value} — {exc}"
+
+    slug = _slugify(hint or p.stem)
+    body = f"# Local File: {p.name}\n\nPath: {value}\nRead: {datetime.now(timezone.utc).isoformat()}\n\n---\n\n{text[:500_000]}"
+    path = await asyncio.to_thread(
+        _write_extractable_to_vault, title=slug, content=body, tags=["local-file", "extracted"], batch_id=batch_id,
+    )
+    return path, None if path else f"vault write failed for {value}"
+
+
+async def _write_vault_note(
+    *,
+    title: str,
+    content: str,
+    tags: list[str],
+    vault_refs: list[str],
+) -> str | None:
+    extra = ""
+    if vault_refs:
+        links = "\n".join(f"- [[{Path(r).stem}]]" for r in vault_refs)
+        extra = f"\n\n## Related Vault Notes\n\n{links}"
+    try:
+        result = await asyncio.to_thread(
+            vault_reader.write_inbox,
+            title=title, content=content + extra, tags=tags, artifact_refs=[],
+        )
+        return result.get("path")
     except Exception as exc:
-        return None, f"upload failed: {value} — {exc}"
+        log.warning("vault write failed: %s", exc)
+        return None
 
 
 async def ingest_message(message: str) -> IngestResult:
-    """Main entry point — classify the message and fan out."""
+    """Main entry point — classify the message and fan out to vault."""
     batch_id = uuid4().hex[:12]
     errors: list[str] = []
 
@@ -518,49 +377,51 @@ async def ingest_message(message: str) -> IngestResult:
     tags = classification.get("tags") or []
     extractables = classification.get("extractables") or []
 
-    artifact_keys: list[str] = []
+    vault_paths: list[str] = []
 
-    async with httpx.AsyncClient(timeout=120) as client:
-        extract_tasks = []
-        for ex in extractables:
-            etype = (ex.get("type") or "").lower()
-            value = ex.get("value") or ""
-            hint = ex.get("hint") or ""
-            if etype == "youtube":
-                extract_tasks.append(_fetch_youtube_transcript(value, hint, batch_id=batch_id, client=client))
-            elif etype == "url":
-                extract_tasks.append(_fetch_url_extractable(value, hint, batch_id=batch_id, client=client))
-            elif etype == "repo":
-                extract_tasks.append(_clone_and_zip_repo(value, hint, batch_id=batch_id, client=client))
-            elif etype == "local_path":
-                extract_tasks.append(_read_local_extractable(value, hint, batch_id=batch_id, client=client))
+    extract_tasks = []
+    for ex in extractables:
+        etype = (ex.get("type") or "").lower()
+        value = ex.get("value") or ""
+        hint = ex.get("hint") or ""
+        if etype == "youtube":
+            extract_tasks.append(_fetch_youtube_transcript(value, hint, batch_id))
+        elif etype == "url":
+            extract_tasks.append(_fetch_url(value, hint, batch_id))
+        elif etype == "repo":
+            extract_tasks.append(_clone_and_read_repo(value, hint, batch_id))
+        elif etype == "local_path":
+            extract_tasks.append(_read_local_file(value, hint, batch_id))
+        else:
+            errors.append(f"unknown extractable type: {etype}")
+
+    if extract_tasks:
+        results = await asyncio.gather(*extract_tasks, return_exceptions=True)
+        for r in results:
+            if isinstance(r, Exception):
+                errors.append(str(r))
             else:
-                errors.append(f"unknown extractable type: {etype}")
-
-        if extract_tasks:
-            results = await asyncio.gather(*extract_tasks, return_exceptions=False)
-            for key, err in results:
-                if key:
-                    artifact_keys.append(key)
+                path, err = r
+                if path:
+                    vault_paths.append(path)
                 if err:
                     errors.append(err)
 
-    # Write vault note last, so we can include artifact_keys in frontmatter
     obsidian_path: str | None = None
-    if semantic or artifact_keys:
-        note_content = semantic or f"(no semantic text — ingested {len(artifact_keys)} references)"
+    if semantic or vault_paths:
+        note_content = semantic or f"(no semantic text — ingested {len(vault_paths)} references)"
         note_content += f"\n\n---\n\n_ingest_batch: {batch_id}_\n_original_message: {message[:500]}_"
         obsidian_path = await _write_vault_note(
             title=title,
             content=note_content,
             tags=tags + ["brain-api"],
-            artifact_refs=artifact_keys,
+            vault_refs=vault_paths,
         )
 
     return IngestResult(
         batch_id=batch_id,
         obsidian_path=obsidian_path,
-        artifact_keys=artifact_keys,
+        vault_paths=vault_paths,
         semantic_text_preview=semantic[:500],
         errors=errors,
         title=title,

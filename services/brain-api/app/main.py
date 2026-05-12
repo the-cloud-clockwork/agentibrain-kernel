@@ -183,47 +183,34 @@ async def ingest_with_files(
     files: list[UploadFile] = File(default=[]),
     _: None = Depends(require_token),
 ) -> dict:
-    """Ingest with multipart files attached. Each file is uploaded to artifact-store
-    as an ingest artifact BEFORE classification, then included in the Obsidian note's
-    artifact_refs.
+    """Ingest with multipart files attached. Files are written to the vault inbox
+    as text notes, then the message is classified and ingested normally.
     """
-    import httpx
-    from .router import _upload_bytes_to_artifact_store, _slugify, ARTIFACT_STORE_URL
-    from uuid import uuid4
-    batch_id = uuid4().hex[:12]
-    pre_keys: list[str] = []
+    from .router import _slugify
+    pre_paths: list[str] = []
     errors: list[str] = []
 
-    async with httpx.AsyncClient(timeout=120) as client:
-        for f in files or []:
-            content = await f.read()
-            filename = f.filename or "upload.bin"
-            ct = f.content_type or "application/octet-stream"
-            stem = filename.rsplit(".", 1)[0]
-            ext = filename.rsplit(".", 1)[-1] if "." in filename else "bin"
-            slug = _slugify(stem)
-            try:
-                r = await _upload_bytes_to_artifact_store(
-                    content,
-                    filename=filename,
-                    content_type=ct,
-                    producer="ingest",
-                    artifact_type=ext,
-                    slug=slug,
-                    tags={"source": "multipart", "ingest_batch": batch_id, "original_filename": filename},
-                    client=client,
-                )
-                if r.get("key"):
-                    pre_keys.append(r["key"])
-            except Exception as exc:
-                errors.append(f"multipart upload failed: {filename} — {exc}")
+    for f in files or []:
+        content_bytes = await f.read()
+        filename = f.filename or "upload.bin"
+        slug = _slugify(filename.rsplit(".", 1)[0])
+        try:
+            text = content_bytes.decode("utf-8", errors="replace")
+            result = vault_reader.write_inbox(
+                title=slug,
+                content=f"# Uploaded File: {filename}\n\n{text[:500_000]}",
+                tags=["uploaded-file", "multipart"],
+                artifact_refs=[],
+            )
+            if result.get("path"):
+                pre_paths.append(result["path"])
+        except Exception as exc:
+            errors.append(f"multipart write failed: {filename} — {exc}")
 
     result: IngestResult = await ingest_message(message)
-    result.artifact_keys = pre_keys + result.artifact_keys
+    result.vault_paths = pre_paths + result.vault_paths
     result.errors = errors + result.errors
-    payload = result.to_dict()
-    payload["multipart_keys"] = pre_keys
-    return payload
+    return result.to_dict()
 
 
 # ── /index_artifact — sole brain-side write surface for artifact embeddings ──
