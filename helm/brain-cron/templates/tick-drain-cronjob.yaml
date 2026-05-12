@@ -67,6 +67,17 @@ spec:
               env:
                 - name: INFERENCE_URL
                   value: {{ .Values.env.INFERENCE_URL | quote }}
+              {{- if or .Values.secretRef .Values.additionalSecretRefs }}
+              envFrom:
+                {{- if .Values.secretRef }}
+                - secretRef:
+                    name: {{ .Values.secretRef }}
+                {{- end }}
+                {{- range .Values.additionalSecretRefs }}
+                - secretRef:
+                    name: {{ . }}
+                {{- end }}
+              {{- end }}
               resources:
                 {{- toYaml (.Values.tickDrain.resources | default .Values.resources) | nindent 16 }}
               volumeMounts:
