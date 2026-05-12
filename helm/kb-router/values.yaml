@@ -48,7 +48,6 @@ tpl:
     variables:
       # Service URLs default to namespace-less ClusterIP DNS — works in any
       # namespace where the kernel app-of-apps deployed alongside.
-      OBSIDIAN_READER_URL: http://agentibrain-obsidian-reader:8080
       EMBEDDINGS_URL: http://agentibrain-embeddings:8080
       # Operator-side wiring — empty by default. Set in your overlay if you
       # have an artifact-store and an inference-gateway in the same cluster.
@@ -64,7 +63,7 @@ tpl:
     enabled: true
     external:
       enabled: true
-      # K8s Opaque Secret holding KB_ROUTER_TOKEN, OBSIDIAN_READER_TOKEN,
+      # K8s Opaque Secret holding KB_ROUTER_TOKEN,
       # EMBEDDINGS_API_KEY (and any other tokens kb-router consumes).
       # Create manually with `local/k8s-bootstrap.sh` or via your secrets
       # manager (ESO/OpenBao/AWS SM — see externalSecret block below).

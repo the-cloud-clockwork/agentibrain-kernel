@@ -24,7 +24,7 @@ def test_render_local_includes_minio(tmp_path):
     data = yaml.safe_load(rendered)
     assert "minio" in data["services"]
     assert "minio-init" in data["services"]
-    assert {"kb-router", "obsidian-reader", "embeddings", "postgres", "redis"} <= set(
+    assert {"kb-router", "embeddings", "postgres", "redis"} <= set(
         data["services"]
     )
 
@@ -34,7 +34,7 @@ def test_render_s3_excludes_minio(tmp_path):
     data = yaml.safe_load(rendered)
     assert "minio" not in data["services"]
     assert "minio-init" not in data["services"]
-    assert {"kb-router", "obsidian-reader", "embeddings", "postgres", "redis"} <= set(
+    assert {"kb-router", "embeddings", "postgres", "redis"} <= set(
         data["services"]
     )
 
@@ -43,5 +43,5 @@ def test_render_mounts_vault(tmp_path):
     vault = tmp_path / "vault"
     rendered = render_compose(_settings("local", vault))
     data = yaml.safe_load(rendered)
-    mounts = data["services"]["obsidian-reader"]["volumes"]
+    mounts = data["services"]["kb-router"]["volumes"]
     assert any(str(vault.resolve()) in m for m in mounts)

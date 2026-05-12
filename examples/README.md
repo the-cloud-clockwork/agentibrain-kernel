@@ -12,14 +12,14 @@ examples/
 ├── values-overlays/        ← per-chart values overlays (operator-side)
 │   ├── kb-router/{values-dev,values-prod}.yaml.example
 │   ├── embeddings/{values-dev,values-prod}.yaml.example
-│   ├── obsidian-reader/{values-dev,values-prod}.yaml.example
+│   ├── mcp/{values-dev,values-prod}.yaml.example
 │   ├── brain-keeper/values-prod.yaml.example
 │   └── brain-cron/values.yaml.example          (singleton — one per cluster)
 │
 └── argocd/                 ← ArgoCD Application CRs (operator-side)
     ├── agentibrain-root.yaml.example           (app-of-apps, picks one env)
-    ├── dev/agentibrain-{kb-router,embeddings,obsidian-reader,brain-keeper,brain-cron,mcp}.yaml.example
-    └── prod/agentibrain-{kb-router,embeddings,obsidian-reader,brain-keeper,mcp}.yaml.example
+    ├── dev/agentibrain-{kb-router,embeddings,brain-keeper,brain-cron,mcp}.yaml.example
+    └── prod/agentibrain-{kb-router,embeddings,brain-keeper,mcp}.yaml.example
                                                  (no brain-cron-prod — singleton)
 ```
 
@@ -49,7 +49,7 @@ examples/
 
 ## Singletons vs per-env
 
-- **kb-router, embeddings, obsidian-reader, brain-keeper** — deploy one per env (`-dev`, `-prod`).
+- **kb-router, embeddings, brain-keeper** — deploy one per env (`-dev`, `-prod`).
 - **brain-cron, mcp-agentibrain** — singletons. One CronJob set + one MCP server per cluster, since they operate on a single operator vault.
 
 ## See also

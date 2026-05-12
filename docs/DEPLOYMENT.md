@@ -11,7 +11,7 @@ How to get the kernel running on a Kubernetes cluster. Three patterns, in order 
 ## Patterns
 
 ### A — Vendored chart in your own repo (current operator pattern)
-Copy `helm/brain-cron/` and `helm/brain-keeper/` from this repo into your own repo's `k8s/charts/` and write your own ArgoCD apps that point at them. You also write your own charts for kb-router, obsidian-reader, embeddings (the kernel ships only the brain-cron + brain-keeper helm assets today).
+Copy `helm/brain-cron/` and `helm/brain-keeper/` from this repo into your own repo's `k8s/charts/` and write your own ArgoCD apps that point at them. You also write your own charts for kb-router, embeddings (the kernel ships only the brain-cron + brain-keeper helm assets today).
 
 Pros: full control, operator-specific overrides live in your values. Drift caught at PR time.
 Cons: kernel template changes don't auto-propagate — you sync manually.
@@ -119,9 +119,9 @@ Each kernel service has its own image, tagged per branch:
 | Service | Image |
 |---|---|
 | kb-router | `ghcr.io/the-cloud-clockwork/agentibrain-kb-router:dev|latest` |
-| obsidian-reader | `ghcr.io/the-cloud-clockwork/agentibrain-obsidian-reader:dev|latest` |
 | embeddings | `ghcr.io/the-cloud-clockwork/agentibrain-embeddings:dev|latest` |
 | tick-engine | `ghcr.io/the-cloud-clockwork/agentibrain-tick-engine:dev|latest` |
+| mcp | `ghcr.io/the-cloud-clockwork/agentibrain-mcp:dev|latest` |
 | brain-keeper | `ghcr.io/the-cloud-clockwork/agenticore:dev|latest` (uses agenticore base; brain-keeper is an agenticore agent, not its own image) |
 
 Branch → tag: push to `dev` → `:dev`, push to `main` → `:latest`. ArgoCD image-updater watches the tag regex per app and bumps the digest.
