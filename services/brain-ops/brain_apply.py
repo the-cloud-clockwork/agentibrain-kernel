@@ -33,6 +33,20 @@ sys.path.insert(0, str(Path(__file__).parent))
 import markers
 
 
+# Edge-type priority. Used when collapsing multi-type same-pair collisions.
+# Structural hierarchy first; sibling/peer; directional dependencies; the
+# generic catch-all last. Anything outside this set (causal, temporal, AI
+# hallucinations) sorts after `related` via _rank().
+EDGE_TYPE_PRIORITY = ("parent", "child", "sibling", "unblocks", "supersedes", "related")
+
+
+def _rank(t: str) -> int:
+    try:
+        return EDGE_TYPE_PRIORITY.index(t)
+    except ValueError:
+        return len(EDGE_TYPE_PRIORITY)
+
+
 # ── Parsers for AI tick output sections ───────────────────────────────
 
 def parse_edges(section: str) -> list[dict]:
@@ -195,32 +209,47 @@ def find_arc_file(vault_root: Path, arc_id: str) -> Path | None:
 def apply_edges(vault_root: Path, edges: list[dict], dry_run: bool) -> int:
     """Insert @edge markers into source arc files.
 
-    Dedupes within the tick by (src_norm, type, target_norm) so duplicate
-    edges emitted in a single AI output land on disk once. The literal
-    `marker in text` check below is the cross-tick guard.
+    Two-pass:
+      1. Group AI-emitted edges by (src_norm, tgt_norm); keep the
+         highest-priority type per pair (so a tick that emits both
+         `child` and `parent` to the same target lands one canonical
+         edge).
+      2. For each chosen edge, reject if ANY edge already targets that
+         arc from the same source on disk — regardless of type. This is
+         the cross-tick guard that prevents multi-type accumulation over
+         time (the bug that produced 295 collisions in the live vault).
     """
     applied = 0
-    seen: set[tuple[str, str, str]] = set()
+
+    # Pass 1: per-(src,tgt) priority collapse within this tick.
+    chosen: dict[tuple[str, str], dict] = {}
     for edge in edges:
         src_norm = edge["source"].strip("`")
         tgt_norm = edge["target"].strip("`")
         if src_norm == tgt_norm:
-            continue  # belt-and-suspenders self-loop guard
-        dedup_key = (src_norm, edge["type"], tgt_norm)
-        if dedup_key in seen:
-            continue
-        seen.add(dedup_key)
+            continue  # self-loop
+        key = (src_norm, tgt_norm)
+        if key not in chosen or _rank(edge["type"]) < _rank(chosen[key]["type"]):
+            chosen[key] = {**edge, "source": src_norm, "target": tgt_norm}
 
+    # Pass 2: write markers, guarded by any-type-to-same-target check.
+    for (src_norm, tgt_norm), edge in chosen.items():
         src_file = find_arc_file(vault_root, src_norm)
         if not src_file:
             print(f"  SKIP edge: source {src_norm} not found", file=sys.stderr)
             continue
 
         text = src_file.read_text()
-        marker = f'<!-- @edge type={edge["type"]} target={tgt_norm} -->'
 
-        if marker in text:
-            continue  # already exists
+        # Cross-tick guard: any existing @edge from this source to this
+        # target (any type) blocks the write. One edge per pair, forever.
+        any_to_target = re.compile(
+            r"<!--\s*@edge\s+type=\w+\s+target=" + re.escape(tgt_norm) + r"\s*-->"
+        )
+        if any_to_target.search(text):
+            continue
+
+        marker = f'<!-- @edge type={edge["type"]} target={tgt_norm} -->'
 
         # Insert before ## Source sessions (or at end)
         if "## Source sessions" in text:
