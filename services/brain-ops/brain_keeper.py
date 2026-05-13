@@ -242,7 +242,7 @@ def write_signals_feed(
 
 
 def write_inject_feed(path: Path, injects: list[markers.Marker]) -> None:
-    """Generate inject.md from collected @inject markers."""
+    """Generate inject.md from collected @inject markers. Deduplicates by content hash."""
     if not injects:
         path.write_text("---\nid: inject\ntitle: Brain Inject\npriority: 9\nttl: 3600\nseverity: info\n---\n\nNo inject blocks.\n")
         return
@@ -256,7 +256,12 @@ def write_inject_feed(path: Path, injects: list[markers.Marker]) -> None:
         "---",
         "",
     ]
+    seen: set[str] = set()
     for inj in injects:
+        content_hash = hashlib.sha256(inj.content.strip().encode("utf-8")).hexdigest()[:16]
+        if content_hash in seen:
+            continue
+        seen.add(content_hash)
         target = inj.attr("target", "all")
         lines.append(f"**[{target}]** {inj.content.strip()}")
         lines.append("")
