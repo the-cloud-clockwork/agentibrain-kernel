@@ -1,17 +1,2 @@
 name: brain-keeper
-description: "First-class brain ops agent. Vault hygiene, end-to-end tests, signal triage, arc enrichment, replay, dashboard checks. Single point of contact for all brain operations — invocable as LiteLLM model 'brain-keeper'."
-
-claude:
-  model: opus
-  max_turns: 40
-  permission_mode: bypassPermissions
-  no_session_persistence: true
-  output_format: json
-  worktree: false
-  effort: medium
-  timeout: 600
-
-auto_pr: false
-mcp_categories:
-  - tools-knowledge
-  - tools-notifications
+description: "Brain ops agent — end-to-end tests, signal triage, arc enrichment, heal drift. The 20% AI reasoning surface for the brain nervous system."

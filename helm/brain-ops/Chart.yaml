@@ -1,4 +1,4 @@
 apiVersion: v2
-name: brain-cron
+name: brain-ops
 version: 0.1.1
 description: Daily brain arc extraction CronJob — deterministic pipeline (extract.py → cluster.py)

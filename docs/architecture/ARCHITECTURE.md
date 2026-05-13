@@ -43,7 +43,7 @@ The tick runs as a K8s CronJob every 2h at HH:07 UTC (12 ticks/day). Full extrac
 
 ### 1. Tick Engine (`services/tick-engine/`)
 
-Python scripts, pure stdlib on the runtime side (no pip dependencies beyond `redis` for the amygdala consumer), packaged as `ghcr.io/the-cloud-clockwork/agentibrain-tick-engine:latest` (built from `services/tick-engine/`).
+Python scripts, pure stdlib on the runtime side (no pip dependencies beyond `redis` for the amygdala consumer), packaged as `ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:latest` (built from `services/tick-engine/`).
 
 | Script | Purpose | Time |
 |--------|---------|------|
@@ -194,12 +194,12 @@ BRAIN_REFRESH_INTERVAL: "30"      # turns between refresh checks
 
 **Channel subscription required:** Broadcast system reads `.agentihooks.json` from project CWD for `channels` array. Without `["brain", "amygdala"]`, brain messages are published but filtered out at delivery.
 
-### 7. brain-cron (K8s CronJob)
+### 7. brain-ops (K8s CronJob)
 
 Hybrid tick every 2h at HH:07 UTC (`7 */2 * * *`). Full extraction runs once daily at 04:07; every tick runs the 5-phase hybrid pipeline (deterministic → AI prompt → LLM call → apply → verify).
 
 ```bash
-# What brain-cron runs (every 2h):
+# What brain-ops runs (every 2h):
 # Phase 0 — extraction (04:07 UTC only):
 python3 /app/extract.py --since 26h --min-turns 5 \
   --projects-dir /shared/.claude/projects \
@@ -208,13 +208,13 @@ python3 /app/extract.py --since 26h --min-turns 5 \
 python3 /app/brain_tick.py --vault /vault --brain-feed /vault/brain-feed
 ```
 
-**Deployment:** `helm/brain-cron/` (CronJob). Operators pick a namespace (e.g. `<your-ops-namespace>`).
-**Image:** `ghcr.io/the-cloud-clockwork/agentibrain-tick-engine:latest`
-**Vault mount:** RW at `/vault` (NFS or PVC — see `helm/brain-cron/values.yaml`). Shared-FS at `/shared` (RO) is optional and only needed when co-located with agenticore runtime pods.
+**Deployment:** `helm/brain-ops/` (CronJob). Operators pick a namespace (e.g. `<your-ops-namespace>`).
+**Image:** `ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:latest`
+**Vault mount:** RW at `/vault` (NFS or PVC — see `helm/brain-ops/values.yaml`). Shared-FS at `/shared` (RO) is optional and only needed when co-located with agenticore runtime pods.
 
 ### 8. brain-keeper (K8s StatefulSet)
 
-Agenticore instance deployed for the 20% AI tasks (edge discovery, synthesis, complex reasoning). The deterministic tick (`brain_keeper.py`) runs in brain-cron; the AI tick dispatches to this pod.
+Agenticore instance deployed for the 20% AI tasks (edge discovery, synthesis, complex reasoning). The deterministic tick (`brain_keeper.py`) runs in brain-ops; the AI tick dispatches to this pod.
 
 **Deployment:** `helm/brain-keeper/` (StatefulSet; operators pick a namespace).
 **Profile:** `profiles/brain-keeper/` (kernel canonical — agentihooks-bundle clones at install).
@@ -328,7 +328,7 @@ services/tick-engine/
 ├── brain_apply.py       ← AI recommendation applier (edges, merges, signals)
 └── brain_tick.py        ← Orchestrator (all phases in one command)
 
-helm/brain-cron/     ← CronJob + amygdala Deployment (HH:07 every 2h)
+helm/brain-ops/     ← CronJob + amygdala Deployment (HH:07 every 2h)
 helm/brain-keeper/   ← StatefulSet chart (agenticore agent for AI tasks)
 
 # ArgoCD Application manifests are operator-specific and live in each

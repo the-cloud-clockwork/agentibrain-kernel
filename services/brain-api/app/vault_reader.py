@@ -1,15 +1,7 @@
-"""Obsidian vault reader — read-only filesystem access to the Obsidian vault.
+"""Vault reader — direct filesystem access to the Obsidian vault.
 
-Exposes a minimal FastAPI surface for federated KB search:
-  GET /health             → liveness
-  GET /list?prefix=...    → list vault files (relative paths)
-  GET /read?path=...      → read a single file's content
-  GET /search?q=...       → substring search across .md files with snippets
-  POST /write             → write to raw/inbox/ ONLY (guarded, used by kb-router)
-
-Authentication: Bearer token via VAULT_READER_TOKENS (comma-separated).
-All paths are validated to stay within the mounted vault root (no traversal).
-Writes are restricted to the RAW_INBOX_PREFIX subdirectory.
+Absorbed from the former obsidian-reader microservice. All operations are
+local filesystem calls against the NFS-mounted vault at VAULT_ROOT.
 """
 
 from __future__ import annotations
@@ -19,61 +11,33 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query
-
-
 VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "/vault")).resolve()
 RAW_INBOX_PREFIX = os.environ.get("RAW_INBOX_PREFIX", "raw/inbox").strip("/")
-MAX_FILE_BYTES = int(os.environ.get("MAX_FILE_BYTES", str(5 * 1024 * 1024)))  # 5 MB
+MAX_FILE_BYTES = int(os.environ.get("MAX_FILE_BYTES", str(5 * 1024 * 1024)))
 SEARCH_EXTENSIONS = {".md", ".markdown", ".txt"}
 SEARCH_SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules"}
 
-_TOKENS = [t.strip() for t in os.environ.get("VAULT_READER_TOKENS", "").split(",") if t.strip()]
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
-def require_token(authorization: str | None = Header(None)) -> None:
-    if not _TOKENS:
-        return
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="missing bearer token")
-    token = authorization.split(" ", 1)[1].strip()
-    if token not in _TOKENS:
-        raise HTTPException(status_code=401, detail="invalid token")
-
-
-def _resolve_inside_vault(rel_path: str) -> Path:
-    """Resolve a relative vault path; raise 400 on traversal."""
+def resolve_inside_vault(rel_path: str) -> Path:
+    """Resolve a relative vault path; raise ValueError on traversal."""
     if not rel_path:
-        raise HTTPException(400, "path required")
+        raise ValueError("path required")
     p = (VAULT_ROOT / rel_path.lstrip("/")).resolve()
     try:
         p.relative_to(VAULT_ROOT)
     except ValueError:
-        raise HTTPException(400, "path escapes vault root")
+        raise ValueError("path escapes vault root")
     return p
 
 
-app = FastAPI(title="Obsidian Vault Reader", version="0.1.0")
-
-
-@app.get("/health")
-def health() -> dict:
-    return {
-        "status": "ok",
-        "service": "obsidian-reader",
-        "vault_root": str(VAULT_ROOT),
-        "vault_mounted": VAULT_ROOT.exists(),
-    }
-
-
-@app.get("/list")
 def list_files(
-    prefix: str = Query("", description="Directory prefix to list (relative to vault root)"),
-    extensions: str = Query(".md,.markdown,.txt", description="Comma-separated extensions to include"),
-    limit: int = Query(500, ge=1, le=5000),
-    _: None = Depends(require_token),
+    prefix: str = "",
+    extensions: str = ".md,.markdown,.txt",
+    limit: int = 500,
 ) -> dict:
-    base = _resolve_inside_vault(prefix) if prefix else VAULT_ROOT
+    base = resolve_inside_vault(prefix) if prefix else VAULT_ROOT
     if not base.exists():
         return {"prefix": prefix, "count": 0, "files": []}
     if base.is_file():
@@ -83,7 +47,11 @@ def list_files(
             "files": [str(base.relative_to(VAULT_ROOT))],
         }
 
-    ext_set = {e.strip() if e.startswith(".") else f".{e.strip()}" for e in extensions.split(",") if e.strip()}
+    ext_set = {
+        e.strip() if e.startswith(".") else f".{e.strip()}"
+        for e in extensions.split(",")
+        if e.strip()
+    }
 
     hits: list[str] = []
     for dirpath, dirnames, filenames in os.walk(base):
@@ -99,17 +67,14 @@ def list_files(
     return {"prefix": prefix, "count": len(hits), "files": hits}
 
 
-@app.get("/read")
-def read_file(
-    path: str = Query(..., description="Relative path inside vault"),
-    max_bytes: int = Query(MAX_FILE_BYTES, ge=1, le=MAX_FILE_BYTES),
-    _: None = Depends(require_token),
-) -> dict:
-    p = _resolve_inside_vault(path)
+def read_file(path: str, max_bytes: int | None = None) -> dict:
+    if max_bytes is None:
+        max_bytes = MAX_FILE_BYTES
+    p = resolve_inside_vault(path)
     if not p.exists():
-        raise HTTPException(404, "not found")
+        raise FileNotFoundError(f"not found: {path}")
     if not p.is_file():
-        raise HTTPException(400, "path is not a file")
+        raise ValueError("path is not a file")
     size = p.stat().st_size
     with open(p, "rb") as f:
         raw = f.read(max_bytes)
@@ -126,21 +91,13 @@ def read_file(
     }
 
 
-@app.get("/search")
 def search_vault(
-    q: str = Query(..., min_length=1, description="Search query (substring, case-insensitive)"),
-    prefix: str = Query("", description="Limit to a subdirectory"),
-    limit: int = Query(20, ge=1, le=200),
-    context_lines: int = Query(2, ge=0, le=10),
-    _: None = Depends(require_token),
+    q: str,
+    prefix: str = "",
+    limit: int = 20,
+    context_lines: int = 2,
 ) -> dict:
-    """Tokenized search over vault text files.
-
-    Multi-word queries are split into tokens and matched with OR logic.
-    Score = sum of per-token hit counts + bonus for filename match + bonus
-    for files matching ALL tokens. Single-word queries behave as before.
-    """
-    base = _resolve_inside_vault(prefix) if prefix else VAULT_ROOT
+    base = resolve_inside_vault(prefix) if prefix else VAULT_ROOT
     if not base.exists():
         return {"query": q, "count": 0, "results": []}
 
@@ -206,58 +163,59 @@ def search_vault(
     return {"query": q, "count": len(results), "results": results}
 
 
-_SLUG_RE = re.compile(r"[^a-z0-9]+")
-
-
 def _slugify(text: str, max_len: int = 60) -> str:
     s = _SLUG_RE.sub("-", (text or "").lower()).strip("-")
     return (s or "note")[:max_len]
 
 
-@app.post("/write_inbox")
 def write_inbox(
-    title: str = Form(..., max_length=200),
-    content: str = Form(..., max_length=200_000),
-    tags: str = Form("", description="Comma-separated tags for YAML frontmatter"),
-    artifact_refs: str = Form("", description="Comma-separated artifact keys to cross-reference"),
-    _: None = Depends(require_token),
+    title: str,
+    content: str,
+    tags: list[str] | None = None,
+    artifact_refs: list[str] | None = None,
 ) -> dict:
-    """Write a new note to raw/inbox/. This is the ONLY allowed write path.
+    """Write a new note to raw/inbox/. Returns the relative vault path."""
+    tags = tags or []
+    artifact_refs = artifact_refs or []
 
-    Returns the relative vault path of the created note.
-    """
-    inbox_root = _resolve_inside_vault(RAW_INBOX_PREFIX)
+    inbox_root = resolve_inside_vault(RAW_INBOX_PREFIX)
     inbox_root.mkdir(parents=True, exist_ok=True)
 
     date_part = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     slug = _slugify(title)
     rel_path = f"{RAW_INBOX_PREFIX}/{date_part}-{slug}.md"
-    target = _resolve_inside_vault(rel_path)
+    target = resolve_inside_vault(rel_path)
 
-    # Avoid overwriting — append short id if collision
-    if target.exists():
+    try:
+        target.open("x").close()
+    except FileExistsError:
         from uuid import uuid4
         rel_path = f"{RAW_INBOX_PREFIX}/{date_part}-{slug}-{uuid4().hex[:6]}.md"
-        target = _resolve_inside_vault(rel_path)
+        target = resolve_inside_vault(rel_path)
 
-    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-    ref_list = [r.strip() for r in artifact_refs.split(",") if r.strip()]
-    frontmatter_lines = ["---", f"title: {title}", f"created: {datetime.now(timezone.utc).isoformat()}"]
-    if tag_list:
+    frontmatter_lines = [
+        "---",
+        f"title: {title}",
+        f"created: {datetime.now(timezone.utc).isoformat()}",
+    ]
+    if tags:
         frontmatter_lines.append("tags:")
-        for t in tag_list:
+        for t in tags:
             frontmatter_lines.append(f"  - {t}")
-    if ref_list:
+    if artifact_refs:
         frontmatter_lines.append("artifact_refs:")
-        for r in ref_list:
+        for r in artifact_refs:
             frontmatter_lines.append(f"  - {r}")
     frontmatter_lines.append("---")
     frontmatter_lines.append("")
 
-    target.write_text("\n".join(frontmatter_lines) + content + ("" if content.endswith("\n") else "\n"), encoding="utf-8")
+    target.write_text(
+        "\n".join(frontmatter_lines) + content + ("" if content.endswith("\n") else "\n"),
+        encoding="utf-8",
+    )
     return {
         "path": rel_path,
         "size_bytes": target.stat().st_size,
-        "artifact_refs": ref_list,
-        "tags": tag_list,
+        "artifact_refs": artifact_refs,
+        "tags": tags,
     }

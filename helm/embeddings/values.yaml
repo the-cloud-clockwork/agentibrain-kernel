@@ -75,5 +75,5 @@ tpl:
   externalSecret:                                  # nosecret
     enabled: false                                 # nosecret
     storeName: ""                                  # nosecret
-    awsSecretPath: k8s/agentibrain-embeddings-dev  # nosecret
+    secretPath: k8s/agentibrain-embeddings-dev  # nosecret
     targetSecretName: embeddings-secrets           # nosecret

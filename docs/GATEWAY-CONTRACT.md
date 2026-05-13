@@ -6,7 +6,7 @@ nav_order: 5
 
 # Brain LLM Gateway Contract
 
-The brain (kb-router, kb_brief MCP tool, tick-engine) is a vanilla
+The brain (brain-api, kb_brief MCP tool, tick-engine) is a vanilla
 OpenAI-compatible client. It speaks `POST /v1/chat/completions` with an
 auth header sourced from env. Wire it at any compatible endpoint:
 LiteLLM proxy, OpenAI direct, Anthropic-via-proxy, Ollama, OpenRouter,
@@ -18,7 +18,7 @@ Three call sites, two model names:
 
 | Code | Model env | Default | Purpose |
 |---|---|---|---|
-| `services/kb-router/app/router.py` | `BRAIN_CLASSIFY_MODEL` | `brain-classify` | Classify ingest message into JSON |
+| `services/brain-api/app/router.py` | `BRAIN_CLASSIFY_MODEL` | `brain-classify` | Classify ingest message into JSON |
 | `services/mcp/app/tools/kb.py` (`kb_brief`) | `BRAIN_BRIEF_MODEL` | `brain-brief` | Synthesize KB brief |
 | `services/tick-engine/brain_tick.py` | `BRAIN_BRIEF_MODEL` | `brain-brief` | Reason over hot arcs in the tick |
 
@@ -36,7 +36,7 @@ Four env vars drive the contract. All have safe defaults except
 - `BRAIN_BRIEF_MODEL` — name of the synthesis model alias.
 
 When `INFERENCE_URL` is empty the brain runs deterministic-only:
-kb-router falls back to regex classification; kb_brief and tick-engine
+brain-api falls back to regex classification; kb_brief and tick-engine
 return an explanatory error string instead of a brief. Empty
 `INFERENCE_API_KEY` skips the auth header — fine for trusted-LAN
 proxies, required to be set for OpenAI / LiteLLM.
@@ -86,7 +86,7 @@ Set `INFERENCE_URL` at `http://ollama:11434/v1`, leave
 `BRAIN_BRIEF_MODEL` to whatever models you have `ollama pull`'d
 (typical: `qwen2.5:1.5b` and `qwen2.5:7b`).
 
-JSON-mode support varies by Ollama version and model — kb-router falls
+JSON-mode support varies by Ollama version and model — brain-api falls
 back to regex on malformed JSON, so degradation is graceful.
 
 ## Adding a new brain route
@@ -122,7 +122,7 @@ Response is parsed as standard OpenAI shape
 
 | Condition | Brain behavior |
 |---|---|
-| `INFERENCE_URL` empty | kb-router uses regex classifier; kb_brief / tick return error string |
+| `INFERENCE_URL` empty | brain-api uses regex classifier; kb_brief / tick return error string |
 | Network error / timeout | same as empty (fail-closed graceful) |
 | 401 / 403 | logged warning, regex fallback for classify; error string for brief |
 | 4xx other | error string returned to caller |

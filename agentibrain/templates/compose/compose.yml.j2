@@ -116,8 +116,8 @@ services:
       retries: 3
       start_period: 10s
 
-  kb-router:
-    image: {{ kb_router_image | default("ghcr.io/the-cloud-clockwork/agentibrain-kb-router:latest") }}
+  brain-api:
+    image: {{ kb_router_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-api:latest") }}
     container_name: agentibrain_kb_router
     restart: unless-stopped
     depends_on:

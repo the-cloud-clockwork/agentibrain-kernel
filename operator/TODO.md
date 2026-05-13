@@ -10,7 +10,7 @@ updated: 2026-05-03
 
 ## Now
 
-1. **24h prod log re-check (2026-05-04)** — count ERROR/FATAL/Traceback in `kb-router-prod` + `brain-keeper-prod` last 5000 lines vs today's baseline (kb-router=0, keeper=1). No new spikes ⇒ Block 2 fully closed.
+1. **24h prod log re-check (2026-05-04)** — count ERROR/FATAL/Traceback in `brain-api-prod` + `brain-keeper-prod` last 5000 lines vs today's baseline (brain-api=0, keeper=1). No new spikes ⇒ Block 2 fully closed.
 
 ## Soon
 
@@ -30,7 +30,7 @@ See `ENHANCEMENTS.md`. Pull when prod parity has soaked, friend-install becomes 
 # Verify all dev brain apps Synced+Healthy
 KUBECONFIG=~/.kube/config-k3s kubectl -n argocd get applications | grep agentibrain
 
-# Smoke /feed against live kb-router (in-pod, picks up env)
-KUBECONFIG=~/.kube/config-k3s kubectl -n anton-dev exec agentibrain-kb-router-0 -- \
+# Smoke /feed against live brain-api (in-pod, picks up env)
+KUBECONFIG=~/.kube/config-k3s kubectl -n anton-dev exec agentibrain-brain-api-0 -- \
   sh -c 'curl -fsSL -H "Authorization: Bearer ${KB_ROUTER_TOKEN}" http://localhost:8080/feed | head -c 500'
 ```

@@ -8,8 +8,8 @@ tpl:
       tag: latest
   env:
     variables:
-      KB_ROUTER_URL: http://agentibrain-kb-router.<your-namespace>.svc:8080
-      OBSIDIAN_READER_URL: http://agentibrain-obsidian-reader.<your-namespace>.svc:8080
+      KB_ROUTER_URL: http://agentibrain-brain-api.<your-namespace>.svc:8080
+      OBSIDIAN_READER_URL: http://agentibrain-brain-api.<your-namespace>.svc:8080
       EMBEDDINGS_URL: http://agentibrain-embeddings.<your-namespace>.svc:8080
       INFERENCE_URL: http://<your-llm-gateway>.<your-namespace>.svc:4000
       BRAIN_BRIEF_MODEL: <your-brief-model>

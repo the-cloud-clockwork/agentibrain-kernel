@@ -1,0 +1,5 @@
+claude:
+  model: opus
+  permission_mode: bypassPermissions
+  effort: high
+  max_turns: 40

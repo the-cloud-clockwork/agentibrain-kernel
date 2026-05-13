@@ -146,7 +146,7 @@ Phone-friendly: sortable by `region` or `status`, filterable for FAILs, chartabl
 
 Per agent.yml `mcp_categories`:
 
-- `tools-knowledge` — artifact_store (19), jobs MCP (7), atlassian (72, optional), obsidian (0 — MCP not wired, vault via NFS)
+- `tools-knowledge` — artifact_store (19), jobs MCP (7), atlassian (72, optional)
 - `tools-notifications` — notifications (10)
 
 Plus native Claude Code tools (Bash, Read, Write, Glob, Grep) and NFS-mounted `/vault` for Obsidian file I/O.
@@ -193,7 +193,7 @@ Findings from the run: brain self-diagnosed **DEGRADED** status — throttle sup
 2. **Reports only in `/tmp`** — pod restart wipes them. Fix: upload to artifact-store is already the persistence path, but brain-keeper should also write to `/shared/brain-reports/` as an on-pod archive.
 3. **Storage MCP fix not in image** — `hooks/mcp/storage.py` `storage_url` field fix shipped to agentihooks git but agenticore image still has the broken copy baked in. Live-patched, image rebuild pending (`gh run list` shows dev build queued).
 4. **AgentiBridge wait timeout fix not in image** — live-patched on both prod + dev agentibridge pods, PR #36 merged to dev, image rebuild pending dev→main promotion.
-5. **obsidian MCP has 0 tools** — server is FastAPI REST, not MCP-ified. brain-keeper uses NFS mount instead. Nice-to-have: MCP wrap the 4 endpoints (list_files, read_file, search_vault, write_inbox).
+5. **Vault access via brain-api or NFS** — brain-keeper accesses the vault through the NFS mount or the brain-api API (`/vault/search`, `/feed`, etc.). obsidian-reader has been removed; all vault read/write is owned by brain-api.
 6. **Custom `brain-keeper-tools` unit not consumed** — 93-tool curated unit exists in LiteLLM (grafana + agentibridge + artifact_store + ...) but needs an entry in `agentihooks-bundle/.claude/.mcp.json` + a key env var injection to be usable. Would unlock native Grafana queries instead of raw curl.
 
 ### Opportunities
