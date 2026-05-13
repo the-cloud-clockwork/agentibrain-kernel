@@ -4,27 +4,59 @@
 
 ## Quick Start (Docker Compose)
 
+### 1. Clone and bootstrap
+
 ```bash
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
-
-# Bootstrap — generates .env with auth tokens, scaffolds vault
-./local/bootstrap.sh
-
-# Start all services (postgres, redis, brain-api, embeddings, mcp, tick-cron, amygdala)
-docker compose up -d --build
-
-# Verify
-docker compose ps                  # 7 containers, all healthy
-curl http://localhost:8104/ping    # pong — MCP server is up
+./local/bootstrap.sh      # generates .env with auth tokens, scaffolds ./vault
 ```
 
-**Wire Claude Code** — copy the MCP config and paste your generated key:
+### 2. Configure your LLM provider
+
+Edit `.env` — set at minimum one API key to enable the full brain:
+
+```env
+# Required for embeddings (semantic search) — OpenAI or any compatible provider
+LLM_API_KEY=<your-openai-key>
+
+# Required for AI tick + kb_brief synthesis — any OpenAI-compatible endpoint
+INFERENCE_URL=https://api.openai.com/v1
+INFERENCE_API_KEY=<your-openai-key>
+
+# Model names the brain uses (defaults work with OpenAI)
+BRAIN_CLASSIFY_MODEL=gpt-4o-mini       # classification during /ingest
+BRAIN_BRIEF_MODEL=gpt-4o-mini          # synthesis for kb_brief
+```
+
+**Free local alternative (Ollama):** skip the `.env` edits above and use:
+```bash
+docker compose -f compose.yml -f local/compose.ollama.yml up -d
+docker compose exec ollama ollama pull llama3.2
+```
+Ollama covers AI tick + `kb_brief`. Embeddings still need `LLM_API_KEY` (Ollama embedding quality is poor).
+
+**No API key at all?** The brain still works — `brain_ingest`, `kb_search` (vault text), `brain_get_arc` all function. Only semantic search and AI synthesis are disabled.
+
+### 3. Start
+
+```bash
+docker compose up -d --build    # 7 containers: postgres, redis, brain-api,
+                                # embeddings, mcp, tick-cron, amygdala
+docker compose ps               # all healthy
+curl http://localhost:8104/ping  # pong — MCP server is up
+```
+
+### 4. Wire Claude Code
 
 ```bash
 cp .mcp.json.example .mcp.json
-# Edit .mcp.json — replace ${MCP_PROXY_API_KEY} with value from .env:
-grep MCP_PROXY_API_KEY .env
+```
+
+Edit `.mcp.json` — replace `PASTE_YOUR_MCP_PROXY_API_KEY_HERE` with your actual key:
+
+```bash
+grep MCP_PROXY_API_KEY .env     # copy this value into .mcp.json
 ```
 
 Restart Claude Code, run `/mcp` — you'll see `agentibrain` with 5 tools:
@@ -32,27 +64,30 @@ Restart Claude Code, run `/mcp` — you'll see `agentibrain` with 5 tools:
 | Tool | Purpose |
 |------|---------|
 | `kb_search` | Federated search (embeddings + vault text) |
-| `kb_brief` | Search + LLM synthesis → 3-5 line brief |
+| `kb_brief` | Search + LLM synthesis (3-5 line brief) |
 | `brain_search_arcs` | Semantic search over brain arcs |
 | `brain_get_arc` | Fetch full arc by cluster_id |
 | `brain_ingest` | Write text to the brain vault |
 
-**Optional: enable AI tick** (edge discovery, signal escalation, intent inference):
+### 5. Test it
 
 ```bash
-# Option A: Local Ollama
-docker compose -f compose.yml -f local/compose.ollama.yml up -d
-docker compose exec ollama ollama pull llama3.2
+# Write something to the brain
+TOK=$(grep ^KB_ROUTER_TOKEN .env | cut -d= -f2)
+curl -X POST http://localhost:8103/ingest \
+  -H "Authorization: Bearer $TOK" \
+  -F "message=The quick brown fox jumped over the lazy dog"
 
-# Option B: OpenAI / LiteLLM — set in .env:
-#   INFERENCE_URL=https://api.openai.com/v1
-#   INFERENCE_API_KEY=sk-...
-#   LLM_API_KEY=sk-...          (also enables embeddings)
+# Search for it
+curl -X POST http://localhost:8103/search \
+  -H "Authorization: Bearer $TOK" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "fox"}'
 ```
 
-Without `INFERENCE_URL`, the brain runs **deterministic-only** — hot arcs, signals, decay, marker writes, and broadcasts still work. Only the AI reasoning phase is skipped.
+Content lands in `./vault/raw/inbox/`. The tick-cron drains it to a region dir, recomputes heat, and updates brain-feed — all within one tick cycle (default 2h, configurable via `TICK_INTERVAL_SECONDS` in `.env`).
 
-See [`local/README.md`](local/README.md) for full local docs, troubleshooting, and inference modes.
+See [`local/README.md`](local/README.md) for full local docs, troubleshooting, port overrides, and inference modes.
 
 ---
 

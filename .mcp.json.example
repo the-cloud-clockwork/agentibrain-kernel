@@ -3,7 +3,7 @@
     "agentibrain": {
       "url": "http://localhost:8104/mcp",
       "headers": {
-        "x-api-key": "${MCP_PROXY_API_KEY}"
+        "x-api-key": "PASTE_YOUR_MCP_PROXY_API_KEY_HERE"
       }
     }
   }
