@@ -139,6 +139,29 @@ def prune(producer: str, keep_keys: list[str]) -> dict:
         }
 
 
+def get_by_key(key: str) -> list[dict]:
+    pool = get_pool()
+    with pool.connection() as conn:
+        cur = conn.execute(
+            """SELECT key, producer, chunk_idx, content_type, text_preview, metadata
+               FROM content_embeddings
+               WHERE key = %s
+               ORDER BY chunk_idx""",
+            (key,),
+        )
+        return [
+            {
+                "key": row[0],
+                "producer": row[1],
+                "chunk_idx": row[2],
+                "content_type": row[3],
+                "text_preview": row[4],
+                "metadata": row[5],
+            }
+            for row in cur.fetchall()
+        ]
+
+
 def get_vector_count() -> int:
     pool = get_pool()
     with pool.connection() as conn:

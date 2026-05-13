@@ -12,6 +12,11 @@ from tools.common import http_request
 
 EMBED_URL = os.getenv("EMBEDDINGS_URL", "http://agentibrain-embeddings:8080")
 EMBED_KEY = os.getenv("EMBEDDINGS_API_KEY", "")
+BRAIN_API_URL = os.getenv(
+    "BRAIN_API_URL",
+    os.getenv("OBSIDIAN_READER_URL", "http://agentibrain-brain-api:8080"),
+)
+BRAIN_API_TOKEN = os.getenv("KB_ROUTER_TOKEN", "")
 
 
 def _headers() -> dict:
@@ -104,40 +109,70 @@ def register(mcp: FastMCP):
         """Fetch the full text preview and metadata for a single arc by cluster_id.
 
         Useful as a follow-up to brain_search_arcs when you need more than the
-        short preview. Returns the first chunk's text_preview (up to ~2000 chars).
+        short preview. Tries direct DB lookup first, falls back to vault file read.
 
         Args:
             cluster_id: The arc's cluster_id (the `key` field from brain_search_arcs).
         """
-        if not EMBED_KEY:
-            return json.dumps({"error": "EMBEDDINGS_API_KEY not set"})
+        # Try direct key lookup in pgvector (fast, no embedding needed)
+        if EMBED_KEY:
+            raw = await http_request(
+                "GET",
+                f"{EMBED_URL.rstrip('/')}/by-key/{cluster_id}",
+                headers=_headers(),
+                timeout=10,
+            )
+            try:
+                data = json.loads(raw)
+                if "chunks" in data and data["chunks"]:
+                    chunk = data["chunks"][0]
+                    return json.dumps(
+                        {
+                            "cluster_id": cluster_id,
+                            "source": "embeddings",
+                            "metadata": chunk.get("metadata") or {},
+                            "text_preview": chunk.get("text_preview", ""),
+                        },
+                        indent=2,
+                    )
+            except json.JSONDecodeError:
+                pass
 
-        body = {
-            "query": cluster_id,
-            "producer": "brain-arc",
-            "limit": 50,
-            "min_score": 0.0,
-        }
-        raw = await http_request(
-            "POST",
-            f"{EMBED_URL.rstrip('/')}/search",
-            headers=_headers(),
-            body=body,
-            timeout=15,
-        )
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError:
-            return json.dumps({"error": "invalid response", "raw": raw[:500]})
+        # Fallback: search vault for arc file by cluster_id filename
+        if BRAIN_API_URL:
+            headers = {}
+            if BRAIN_API_TOKEN:
+                headers["Authorization"] = f"Bearer {BRAIN_API_TOKEN}"
+            raw = await http_request(
+                "GET",
+                f"{BRAIN_API_URL.rstrip('/')}/vault/search",
+                headers=headers,
+                params={"q": cluster_id, "limit": "3"},
+                timeout=10,
+            )
+            try:
+                data = json.loads(raw)
+                for hit in data.get("results", []):
+                    if cluster_id in hit.get("path", ""):
+                        read_raw = await http_request(
+                            "GET",
+                            f"{BRAIN_API_URL.rstrip('/')}/vault/read",
+                            headers=headers,
+                            params={"path": hit["path"]},
+                            timeout=10,
+                        )
+                        read_data = json.loads(read_raw)
+                        if read_data.get("content"):
+                            return json.dumps(
+                                {
+                                    "cluster_id": cluster_id,
+                                    "source": "vault",
+                                    "path": hit["path"],
+                                    "content": read_data["content"][:2000],
+                                },
+                                indent=2,
+                            )
+            except (json.JSONDecodeError, KeyError):
+                pass
 
-        for r in data.get("results") or []:
-            if r.get("key") == cluster_id:
-                return json.dumps(
-                    {
-                        "cluster_id": cluster_id,
-                        "metadata": r.get("metadata") or {},
-                        "text_preview": r.get("text_preview", ""),
-                    },
-                    indent=2,
-                )
         return json.dumps({"error": f"cluster_id not found: {cluster_id}"})

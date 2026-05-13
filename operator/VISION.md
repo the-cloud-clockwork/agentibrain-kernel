@@ -10,11 +10,11 @@ created: 2026-04-22
 
 ## What it is
 
-The 6th agenti* ecosystem pillar. A standalone, Helm-chart + container-image (and optionally pip-installable) brain + knowledge-base kernel that packages everything that used to live inside antoncore's brain stack (kb-router, obsidian-reader, embeddings, tick-engine, brain-keeper, brain profile) as one shippable unit.
+The 6th agenti* ecosystem pillar. A standalone, Helm-chart + container-image (and optionally pip-installable) brain + knowledge-base kernel that packages everything that used to live inside antoncore's brain stack (brain-api, embeddings, tick-engine, brain-keeper, brain profile) as one shippable unit.
 
 **Repo:** `github.com/The-Cloud-Clockwork/agentibrain-kernel`
 **Tag (current):** `v0.1.1` (HTTP contract v1, brain-blind boundary, generic OpenAI gateway contract, decoupling cutover)
-**Live deploy (operator reference):** 5 pods per env — `agentibrain-{kb-router,obsidian-reader,embeddings,brain-keeper,mcp}-0` in dev + prod, plus the singleton `brain-cron` CronJob set + `amygdala` Deployment in `<your-ops-namespace>`.
+**Live deploy (operator reference):** 4 pods per env — `agentibrain-{brain-api,embeddings,brain-keeper,mcp}-0` in dev + prod, plus the singleton `brain-ops` CronJob set + `amygdala` Deployment in `<your-ops-namespace>`.
 
 ## What "100% mature" means
 

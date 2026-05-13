@@ -7,10 +7,10 @@ Runtime services shipped by `agentibrain-kernel`. Each service has its own
 
 | Service | Port | Purpose |
 |---|---|---|
-| `kb-router` | 8080 (host 8102) | Universal ingest + federated search. FastAPI. |
-| `obsidian-reader` | 8080 (host 8101) | Read/write interface to the Obsidian-compatible vault. |
+| `brain-api` | 8080 (host 8102) | Universal ingest + federated search + vault read/write. FastAPI. |
 | `embeddings` | 8080 | pgvector embedding service. |
-| `tick-engine` | — (CronJob) | 15 scripts for the cognitive tick: extract / cluster / embed / heal / apply / markers. |
+| `mcp` | 8080 (host 8104) | MCP server exposing brain + KB retrieval tools to agents. |
+| `brain-ops` | — (CronJob) | 15 scripts for the cognitive tick: extract / cluster / embed / heal / apply / markers. |
 
 ## Local solo-dev
 
@@ -19,16 +19,16 @@ shared external network `agentibrain_net`:
 
 ```bash
 docker network create agentibrain_net  # once
-cd services/kb-router
+cd services/brain-api
 docker compose up --build
 ```
 
-For the full stack (all 4 services + Postgres + Redis + optional MinIO), use
+For the full stack (all services + Postgres + Redis + optional MinIO), use
 the unified compose rendered by `brain up` (Phase 5).
 
 ## Env var convention
 
-- Upstream service URLs default to short DNS names (`http://obsidian-reader:8080`)
+- Upstream service URLs default to short DNS names (`http://brain-api:8080`, `http://embeddings:8080`)
   which work inside the kernel compose network.
 - Secrets and required config (`OPENAI_API_KEY`, `KB_ROUTER_TOKEN`) come from
   env; services fail fast with a clear error if missing.

@@ -242,7 +242,7 @@ def write_signals_feed(
 
 
 def write_inject_feed(path: Path, injects: list[markers.Marker]) -> None:
-    """Generate inject.md from collected @inject markers."""
+    """Generate inject.md from collected @inject markers. Deduplicates by content hash."""
     if not injects:
         path.write_text("---\nid: inject\ntitle: Brain Inject\npriority: 9\nttl: 3600\nseverity: info\n---\n\nNo inject blocks.\n")
         return
@@ -256,7 +256,12 @@ def write_inject_feed(path: Path, injects: list[markers.Marker]) -> None:
         "---",
         "",
     ]
+    seen: set[str] = set()
     for inj in injects:
+        content_hash = hashlib.sha256(inj.content.strip().encode("utf-8")).hexdigest()[:16]
+        if content_hash in seen:
+            continue
+        seen.add(content_hash)
         target = inj.attr("target", "all")
         lines.append(f"**[{target}]** {inj.content.strip()}")
         lines.append("")
@@ -286,6 +291,60 @@ def update_dashboard(date_dir: Path, arcs: list[markers.DocumentMeta]) -> None:
 
 # ── Main tick ─────────────────────────────────────────────────────────
 
+REGION_DIRS = ("bridge", "left", "right", "frontal-lobe", "pineal", "amygdala")
+
+TAG_REGION_MAP = {
+    "architecture": "left", "infrastructure": "left", "deployment": "left",
+    "code": "left", "bug": "left", "fix": "left", "ci": "left",
+    "database": "left", "api": "left", "security": "left",
+    "research": "left/research", "incident": "left/incidents",
+    "decision": "left/decisions", "reference": "left/reference",
+    "idea": "right/ideas", "strategy": "right/strategy",
+    "creative": "right/creative", "vision": "right",
+    "risk": "right/risk", "life": "right/life",
+    "brain-system": "bridge", "cross-cutting": "bridge",
+}
+INBOX_DEFAULT_REGION = "left"
+
+
+def drain_inbox(vault_root: Path, dry_run: bool = False) -> dict:
+    """Move notes from raw/inbox/ to appropriate region dirs based on tags."""
+    inbox = vault_root / "raw" / "inbox"
+    if not inbox.is_dir():
+        return {"drained": 0, "skipped": 0}
+
+    stats = {"drained": 0, "skipped": 0, "errors": 0}
+    for md in sorted(inbox.glob("*.md")):
+        try:
+            doc = markers.extract_all(md)
+        except Exception as e:
+            print(f"WARN: inbox parse failed {md.name}: {e}", file=sys.stderr)
+            stats["errors"] += 1
+            continue
+
+        tags = doc.frontmatter.get("tags", [])
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.split(",")]
+
+        region = INBOX_DEFAULT_REGION
+        for tag in tags:
+            tag_lower = tag.lower().strip()
+            if tag_lower in TAG_REGION_MAP:
+                region = TAG_REGION_MAP[tag_lower]
+                break
+
+        target_dir = vault_root / region
+        if not dry_run:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            dest = target_dir / md.name
+            if dest.exists():
+                dest = target_dir / f"{md.stem}-{datetime.now(timezone.utc).strftime('%H%M%S')}{md.suffix}"
+            shutil.move(str(md), str(dest))
+        stats["drained"] += 1
+        print(f"INBOX: {md.name} → {region}/")
+    return stats
+
+
 def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
          quick_refresh: bool = False) -> dict:
     """One maintenance tick. Pure deterministic. Returns stats.
@@ -298,37 +357,51 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
     conscious = vault_root / "frontal-lobe" / "conscious"
     unconscious = vault_root / "frontal-lobe" / "unconscious"
 
-    if not clusters_dir.exists():
-        return {"error": f"clusters dir not found: {clusters_dir}"}
+    # Phase 0: drain raw/inbox/ → region dirs before scanning arcs
+    inbox_stats = drain_inbox(vault_root, dry_run=dry_run)
 
-    # 1. Scan all arc files
+    # 1. Scan all arc files — region dirs first, then clusters/
     arcs: list[markers.DocumentMeta] = []
     arcs_by_date: dict[str, list[markers.DocumentMeta]] = {}
-    for date_dir in sorted(clusters_dir.iterdir()):
-        if not date_dir.is_dir():
-            continue
-        date_arcs = []
-        # Skip dashboard files (_*) and the unmerged source of any arc that
-        # also has a `.merged.md` companion — the merged file is canonical
-        # post-consolidation, but if only one form exists, parse it.
-        files = list(sorted(date_dir.glob("*.md")))
+    seen_ids: set[str] = set()
+
+    def _scan_and_collect(directory: Path, recurse: bool = False):
+        """Scan .md files, parse, collect into arcs list. Deduplicates by stem."""
+        if not directory.is_dir():
+            return
+        pattern = "**/*.md" if recurse else "*.md"
+        files = list(sorted(directory.glob(pattern)))
         merged_stems = {
             f.name.replace(".merged.md", "") for f in files if f.name.endswith(".merged.md")
         }
         for md_file in files:
             if md_file.name.startswith("_"):
                 continue
-            # Skip the unmerged source if its merged twin exists
-            stem = md_file.name[:-3]  # strip .md
+            stem = md_file.name[:-3]
             if not md_file.name.endswith(".merged.md") and stem in merged_stems:
                 continue
+            arc_id = md_file.stem.replace(".merged", "")
+            if arc_id in seen_ids:
+                continue
+            seen_ids.add(arc_id)
             try:
                 doc = markers.extract_all(md_file)
                 arcs.append(doc)
-                date_arcs.append(doc)
             except Exception as e:
                 print(f"WARN: failed to parse {md_file}: {e}", file=sys.stderr)
-        arcs_by_date[date_dir.name] = date_arcs
+
+    # Region dirs (authoritative — promoted/graduated arcs)
+    for region in REGION_DIRS:
+        _scan_and_collect(vault_root / region, recurse=True)
+
+    # Clusters dir (date-bucketed raw arcs — only if not already seen in a region)
+    if clusters_dir.is_dir():
+        for date_dir in sorted(clusters_dir.iterdir()):
+            if not date_dir.is_dir():
+                continue
+            before = len(arcs)
+            _scan_and_collect(date_dir)
+            arcs_by_date[date_dir.name] = arcs[before:]
 
     # 2a. Build replay-edge boost map: count recent (<14d) arcs referencing
     #     each arc via `replayed_from`. Used by compute_heat below.
@@ -376,17 +449,21 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
             fname = arc.path.name
 
             if heat >= BRAIN_PROMOTE_HEAT:
-                if not dry_run:
-                    conscious.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(str(arc.path), str(conscious / fname))
-                promotions += 1
+                dest = conscious / fname
+                if arc.path.resolve() != dest.resolve():
+                    if not dry_run:
+                        conscious.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(str(arc.path), str(dest))
+                    promotions += 1
             elif heat < BRAIN_DEMOTE_HEAT:
                 conscious_file = conscious / fname
                 if conscious_file.exists():
-                    if not dry_run:
-                        unconscious.mkdir(parents=True, exist_ok=True)
-                        shutil.move(str(conscious_file), str(unconscious / fname))
-                    demotions += 1
+                    dest = unconscious / fname
+                    if conscious_file.resolve() != dest.resolve():
+                        if not dry_run:
+                            unconscious.mkdir(parents=True, exist_ok=True)
+                            shutil.move(str(conscious_file), str(dest))
+                        demotions += 1
 
     # 3a. Extract workflow templates for hot reproducible arcs (skipped in quick_refresh)
     templates_written = 0
@@ -454,10 +531,12 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
             region_map = {"left-hemisphere": "left", "right-hemisphere": "right",
                           "bridge": "bridge", "amygdala": "amygdala", "pineal": "pineal"}
             target_dir = vault_root / region_map.get(region, "left")
-            if not dry_run:
-                target_dir.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(arc.path), str(target_dir / arc.path.name))
-            graduations += 1
+            dest = target_dir / arc.path.name
+            if arc.path.resolve() != dest.resolve():
+                if not dry_run:
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(arc.path), str(dest))
+                graduations += 1
 
     # 4. Build mitigation map. Any arc with status in {resolved, graduated}
     #    AND a `mitigates` frontmatter field tombstones signals whose source
@@ -530,6 +609,8 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
             update_dashboard(date_dir, date_arcs)
 
     stats = {
+        "inbox_drained": inbox_stats.get("drained", 0),
+        "inbox_errors": inbox_stats.get("errors", 0),
         "arcs_scanned": len(arcs),
         "heat_changes": heat_changes,
         "promotions": promotions,

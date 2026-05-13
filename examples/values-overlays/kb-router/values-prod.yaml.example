@@ -1,4 +1,4 @@
-# Sample overlay — agentibrain-kb-router (prod).
+# Sample overlay — agentibrain-brain-api (prod).
 tpl:
   global:
     environment: prod
@@ -7,7 +7,7 @@ tpl:
       tag: latest
   env:
     variables:
-      OBSIDIAN_READER_URL: http://agentibrain-obsidian-reader.<your-namespace>.svc:8080
+      OBSIDIAN_READER_URL: http://agentibrain-brain-api.<your-namespace>.svc:8080
       EMBEDDINGS_URL: http://agentibrain-embeddings.<your-namespace>.svc:8080
       INFERENCE_URL: http://<your-llm-gateway>.<your-namespace>.svc:4000
       BRAIN_CLASSIFY_MODEL: <your-classify-model>

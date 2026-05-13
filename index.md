@@ -2,7 +2,7 @@
 layout: home
 title: Home
 nav_order: 1
-description: "AgentiBrain — the brain + KB substrate every Claude Code agent fleet plugs into. HTTP contract, six Helm charts, vault schema, MCP retrieval gateway."
+description: "AgentiBrain — the brain + KB substrate every Claude Code agent fleet plugs into. HTTP contract, five Helm charts, vault schema, MCP retrieval gateway."
 permalink: /
 ---
 
@@ -30,20 +30,20 @@ The brain + KB substrate for Claude Code agent fleets — services, Helm charts,
 
 ```mermaid
 flowchart LR
-    Agent["Claude Code agent"] -->|HTTP| KB["kb-router\n/feed /signal /marker /tick /ingest"]
+    Agent["Claude Code agent"] -->|HTTP| KB["brain-api\n/feed /signal /marker /tick /ingest"]
     Agent -->|MCP| MCP["agentibrain-mcp\nkb_search · kb_brief · brain_search_arcs · brain_get_arc"]
-    KB --> Reader["obsidian-reader"]
+    MCP -->|/vault/search| KB
+    KB --> Vault[("Obsidian vault\nleft / right hemisphere")]
     KB --> Embed["embeddings"]
-    Reader --> Vault[("Obsidian vault\nleft / right hemisphere")]
     Embed --> PG[("Postgres + pgvector")]
-    Tick["tick-engine"] --> CH[("ClickHouse\nbrain.tick_health")]
+    Tick["brain-ops"] --> CH[("ClickHouse\nbrain.tick_health")]
     Tick --> Vault
     Keeper["brain-keeper agent"] --> KB
     Keeper --> MCP
 ```
 
-- **5 service images** auto-published to GHCR — `kb-router`, `obsidian-reader`, `embeddings`, `mcp`, `tick-engine`.
-- **6 Helm charts** — the five services above plus `brain-cron` and `brain-keeper`.
+- **4 service images** auto-published to GHCR — `brain-api`, `embeddings`, `mcp`, `brain-ops`.
+- **5 Helm charts** — `brain-api`, `embeddings`, `mcp`, `brain-ops`, `brain-keeper`.
 - **Brain-keeper agent definition** in-tree (`agents/brain-keeper/`) — drop-in Claude Code custom agent.
 - **Brain profile overlays** for [agentihooks](https://github.com/The-Cloud-Clockwork/agentihooks) — markers, broadcast channels, hook wiring.
 - **Vault schema v1** — six-region Obsidian vault layout that the kernel writes to.
@@ -63,7 +63,7 @@ The kernel ships in exactly two shapes — Docker Compose for local / isolated e
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel
 cd agentibrain-kernel
 ./local/bootstrap.sh                  # mints tokens, scaffolds vault + .env
-docker compose up -d                  # five services on localhost
+docker compose up -d                  # four services on localhost
 ```
 
 See [`local/README.md`](https://github.com/The-Cloud-Clockwork/agentibrain-kernel/blob/main/local/README.md) for the laptop walkthrough.
@@ -71,9 +71,9 @@ See [`local/README.md`](https://github.com/The-Cloud-Clockwork/agentibrain-kerne
 ### 2. Kubernetes (Helm)
 
 ```bash
-helm dep update helm/kb-router
-helm install kb-router helm/kb-router -n brain --create-namespace
-# repeat for obsidian-reader, embeddings, mcp, brain-cron, brain-keeper
+helm dep update helm/brain-api
+helm install brain-api helm/brain-api -n brain --create-namespace
+# repeat for embeddings, mcp, brain-ops, brain-keeper
 ```
 
 Bare-cluster path with no platform prerequisites — see [`docs/HELM-QUICKSTART.md`]({{ site.baseurl }}/docs/HELM-QUICKSTART). For ArgoCD + ESO + multi-source patterns: [`docs/DEPLOYMENT.md`]({{ site.baseurl }}/docs/DEPLOYMENT).
@@ -131,6 +131,6 @@ The sidebar groups every page into four sections — pick the one that matches y
 
 ## Status
 
-**v0.1.1 — first stable.** Six Helm charts, five service images on GHCR (`:dev` from dev branch, `:latest` from main), HTTP contract frozen at v1, brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds; every embed flows through `POST /index_artifact`).
+**v0.1.1 — first stable.** Five Helm charts, four service images on GHCR (`:dev` from dev branch, `:latest` from main), HTTP contract frozen at v1, brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds; every embed flows through `POST /index_artifact`).
 
 The kernel is self-contained and the canonical source of truth for everything brain-related — services, Helm charts, brain-keeper agent definition, brain profile overlays, and the vault layout schema. All deployment-specific plumbing (cluster namespaces, model name aliases, secret-store paths, NFS hosts) lives in your own platform repo, not here.

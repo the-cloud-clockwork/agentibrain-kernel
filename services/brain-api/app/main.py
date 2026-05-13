@@ -1,14 +1,19 @@
-"""KB Router — ingest + brain HTTP contract.
+"""KB Router — brain API (ingest + vault read/write + brain HTTP contract).
 
 Endpoints:
   GET  /health                         — liveness
   POST /ingest                         — classify + fan out (operator message)
   POST /ingest_with_files              — same, with multipart attachments
+  POST /index_artifact                 — embed + index an artifact (called by artifact-store)
   GET  /feed                           — hot arcs + inject blocks + intent
   GET  /signal                         — current amygdala signal (single file)
   POST /marker                         — emit lesson/milestone/signal/decision
   POST /tick                           — request a manual brain tick
   GET  /tick/{job_id}                  — look up tick status
+  GET  /vault/list                     — list vault files
+  GET  /vault/read                     — read a single vault file
+  GET  /vault/search                   — substring search across vault text files
+  POST /vault/write_inbox              — write a note to raw/inbox/
 
 Bearer auth via KB_ROUTER_TOKENS (plural, comma-sep) or KB_ROUTER_TOKEN (singular).
 """
@@ -41,9 +46,10 @@ from .markers import MarkerError, write_marker
 from .router import IngestResult, ingest_message
 from .signal import read_signal
 from .tick_trigger import enqueue_tick, get_tick_status
+from . import vault_reader
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
-log = logging.getLogger("kb-router.main")
+log = logging.getLogger("brain-api.main")
 
 
 def _load_tokens() -> list[str]:
@@ -56,9 +62,6 @@ KB_ROUTER_TOKENS = _load_tokens()
 IDEMPOTENCY_TTL_SECONDS = int(os.getenv("IDEMPOTENCY_TTL_SECONDS", "3600"))
 _FEED_CACHE_TTL = int(os.getenv("FEED_CACHE_TTL_SECONDS", "30"))
 
-# Idempotency: simple in-memory store. Best-effort — survives a single replica
-# only. Cluster-wide dedup should use Redis via a future layer; brain markers
-# are additive (append/new-file) so replay cost is low.
 _idempotency_cache: dict[str, tuple[float, dict]] = {}
 _feed_cache: dict[str, Any] = {"ts": 0.0, "payload": None}
 
@@ -80,17 +83,88 @@ def require_token(authorization: str | None = Header(None)) -> None:
         raise HTTPException(status_code=401, detail="invalid token")
 
 
-app = FastAPI(title="agentibrain kb-router", version="0.2.0")
+app = FastAPI(title="agentibrain brain-api", version="0.3.0")
 
 
 @app.get("/health")
 def health() -> dict:
     return {
         "status": "ok",
-        "service": "kb-router",
+        "service": "brain-api",
         "vault_root": str(VAULT_ROOT),
         "vault_mounted": VAULT_ROOT.exists(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Vault read/write — absorbed from the former obsidian-reader microservice
+# ---------------------------------------------------------------------------
+
+
+@app.get("/vault/list")
+def vault_list(
+    prefix: str = Query("", description="Directory prefix to list (relative to vault root)"),
+    extensions: str = Query(".md,.markdown,.txt", description="Comma-separated extensions to include"),
+    limit: int = Query(500, ge=1, le=5000),
+    _: None = Depends(require_token),
+) -> dict:
+    try:
+        return vault_reader.list_files(prefix=prefix, extensions=extensions, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/vault/read")
+def vault_read(
+    path: str = Query(..., description="Relative path inside vault"),
+    max_bytes: int = Query(vault_reader.MAX_FILE_BYTES, ge=1, le=vault_reader.MAX_FILE_BYTES),
+    _: None = Depends(require_token),
+) -> dict:
+    try:
+        return vault_reader.read_file(path, max_bytes=max_bytes)
+    except FileNotFoundError:
+        raise HTTPException(404, "not found")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/vault/search")
+def vault_search(
+    q: str = Query(..., min_length=1, description="Search query (substring, case-insensitive)"),
+    prefix: str = Query("", description="Limit to a subdirectory"),
+    limit: int = Query(20, ge=1, le=200),
+    context_lines: int = Query(2, ge=0, le=10),
+    _: None = Depends(require_token),
+) -> dict:
+    try:
+        return vault_reader.search_vault(q=q, prefix=prefix, limit=limit, context_lines=context_lines)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/vault/write_inbox")
+def vault_write_inbox(
+    title: str = Form(..., max_length=200),
+    content: str = Form(..., max_length=200_000),
+    tags: str = Form("", description="Comma-separated tags for YAML frontmatter"),
+    artifact_refs: str = Form("", description="Comma-separated artifact keys to cross-reference"),
+    _: None = Depends(require_token),
+) -> dict:
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+    ref_list = [r.strip() for r in artifact_refs.split(",") if r.strip()]
+    try:
+        return vault_reader.write_inbox(
+            title=title, content=content, tags=tag_list, artifact_refs=ref_list,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except OSError as exc:
+        raise HTTPException(503, f"vault write failed: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Ingest
+# ---------------------------------------------------------------------------
 
 
 @app.post("/ingest")
@@ -109,58 +183,37 @@ async def ingest_with_files(
     files: list[UploadFile] = File(default=[]),
     _: None = Depends(require_token),
 ) -> dict:
-    """Ingest with multipart files attached. Each file is uploaded to artifact-store
-    as an ingest artifact BEFORE classification, then included in the Obsidian note's
-    artifact_refs.
+    """Ingest with multipart files attached. Files are written to the vault inbox
+    as text notes, then the message is classified and ingested normally.
     """
-    import httpx
-    from .router import _upload_bytes_to_artifact_store, _slugify, ARTIFACT_STORE_URL
-    from uuid import uuid4
-    batch_id = uuid4().hex[:12]
-    pre_keys: list[str] = []
+    from .router import _slugify
+    pre_paths: list[str] = []
     errors: list[str] = []
 
-    async with httpx.AsyncClient(timeout=120) as client:
-        for f in files or []:
-            content = await f.read()
-            filename = f.filename or "upload.bin"
-            ct = f.content_type or "application/octet-stream"
-            stem = filename.rsplit(".", 1)[0]
-            ext = filename.rsplit(".", 1)[-1] if "." in filename else "bin"
-            slug = _slugify(stem)
-            try:
-                r = await _upload_bytes_to_artifact_store(
-                    content,
-                    filename=filename,
-                    content_type=ct,
-                    producer="ingest",
-                    artifact_type=ext,
-                    slug=slug,
-                    tags={"source": "multipart", "ingest_batch": batch_id, "original_filename": filename},
-                    client=client,
-                )
-                if r.get("key"):
-                    pre_keys.append(r["key"])
-            except Exception as exc:
-                errors.append(f"multipart upload failed: {filename} — {exc}")
+    for f in files or []:
+        content_bytes = await f.read()
+        filename = f.filename or "upload.bin"
+        slug = _slugify(filename.rsplit(".", 1)[0])
+        try:
+            text = content_bytes.decode("utf-8", errors="replace")
+            result = vault_reader.write_inbox(
+                title=slug,
+                content=f"# Uploaded File: {filename}\n\n{text[:500_000]}",
+                tags=["uploaded-file", "multipart"],
+                artifact_refs=[],
+            )
+            if result.get("path"):
+                pre_paths.append(result["path"])
+        except Exception as exc:
+            errors.append(f"multipart write failed: {filename} — {exc}")
 
-    # Now run classification on the message — it can reference URLs/repos/paths independently.
     result: IngestResult = await ingest_message(message)
-    # Merge pre-uploaded multipart refs into the result
-    result.artifact_keys = pre_keys + result.artifact_keys
+    result.vault_paths = pre_paths + result.vault_paths
     result.errors = errors + result.errors
-    payload = result.to_dict()
-    payload["multipart_keys"] = pre_keys
-    return payload
+    return result.to_dict()
 
 
 # ── /index_artifact — sole brain-side write surface for artifact embeddings ──
-#
-# artifact-store calls this endpoint AFTER successfully storing an artifact
-# in S3. kb-router proxies to agentibrain-embeddings /embed so that the
-# brain stack remains the only thing writing into the embedding index.
-# This is the read/write boundary the operator decreed: brain owns retrieval
-# and ingestion; artifact-store owns artifact CRUD only.
 
 EMBEDDINGS_URL = os.getenv("EMBEDDINGS_URL", "")
 _EMBEDDINGS_API_KEY = (
@@ -220,12 +273,7 @@ async def index_artifact(
 
 @app.get("/feed")
 def feed(_: None = Depends(require_token)) -> dict:
-    """Hot arcs + inject blocks + operator intent from $VAULT_ROOT/brain-feed/.
-
-    Cached in-memory for FEED_CACHE_TTL_SECONDS (default 30s) — ticks happen
-    every 2h by default so staler cache is acceptable and saves FS walks
-    under high-concurrency agent sessions.
-    """
+    """Hot arcs + inject blocks + operator intent from $VAULT_ROOT/brain-feed/."""
     now = time.time()
     cached = _feed_cache.get("payload")
     ts = float(_feed_cache.get("ts") or 0.0)
@@ -239,7 +287,7 @@ def feed(_: None = Depends(require_token)) -> dict:
 
 @app.get("/signal")
 def signal(_: None = Depends(require_token)) -> dict:
-    """Current amygdala signal. Absent file → active=false, severity=null."""
+    """Current amygdala signal. Absent file -> active=false, severity=null."""
     return read_signal()
 
 
@@ -266,7 +314,7 @@ def post_marker(
         "attrs": {"severity": str?, "source": str?, "session_id": str?, ...}
       }
     Headers:
-      X-Idempotency-Key: optional — repeat calls with the same key return the
+      X-Idempotency-Key: optional -- repeat calls with the same key return the
       original response without re-writing. Falls back to a content-hash key
       if absent.
     """
@@ -308,15 +356,14 @@ def post_marker(
 def post_tick(
     dry_run: bool = Query(False),
     no_ai: bool = Query(False),
-    source: str = Query("kb-router"),
+    source: str = Query("brain-api"),
     _: None = Depends(require_token),
 ) -> dict:
     """Request a manual brain tick. Returns 202 with a job_id.
 
     Writes a request file to brain-feed/ticks/requested/. The tick-engine
-    CronJob (or brain-keeper agent) picks this up and moves it to
-    completed/ or failed/ when done. Clients poll GET /tick/{job_id} for
-    status.
+    CronJob picks this up and moves it to completed/ or failed/ when done.
+    Clients poll GET /tick/{job_id} for status.
     """
     try:
         return enqueue_tick(dry_run=dry_run, no_ai=no_ai, source=source)

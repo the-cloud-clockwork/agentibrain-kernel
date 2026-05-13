@@ -40,17 +40,16 @@ docker compose down -v         # nuke volumes too (full reset)
                                    │  HTTP + Bearer
        ┌───────────────────────────┴───────────────────────────┐
        │                                                         │
-   ┌───▼─────────┐  ┌───────────────┐  ┌─────────────────┐   ┌───▼───┐
-   │ kb-router   │──│ obsidian-     │  │ embeddings      │   │ mcp   │
-   │ :8103       │  │ reader :8101  │  │ :8102           │   │ :8104 │
-   └─┬─────┬─────┘  └───────┬───────┘  └────────┬────────┘   └───────┘
-     │     │                │                   │
-     │     │                ▼                   ▼
-     │     │         ┌──────────────┐    ┌──────────────┐
-     │     │         │ vault (RW)   │    │ postgres+    │
-     │     │         │ ./vault by   │    │ pgvector     │
-     │     │         │ default      │    └──────────────┘
-     │     │         └──────────────┘
+   ┌───▼─────────┐                  ┌─────────────────┐   ┌───▼───┐
+   │ brain-api   │                  │ embeddings      │   │ mcp   │
+   │ :8103       │                  │ :8102           │   │ :8104 │
+   └─┬─────┬─────┘                  └────────┬────────┘   └───────┘
+     │     │                                 │
+     │     │         ┌──────────────┐        ▼
+     │     │         │ vault (RW)   │ ┌──────────────┐
+     │     ├────────▶│ ./vault by   │ │ postgres+    │
+     │     │         │ default      │ │ pgvector     │
+     │     │         └──────────────┘ └──────────────┘
      │     │                ▲
      │  tick-cron ──────────┤  (every TICK_INTERVAL_SECONDS — default 2h)
      │  amygdala  ──────────┤  (continuous, polls Redis stream)
@@ -59,8 +58,8 @@ docker compose down -v         # nuke volumes too (full reset)
   redis (DB 11) ────────────┘
 ```
 
-8 containers: 4 service-layer (kb-router, obsidian-reader, embeddings, mcp)
-+ 2 tick-engine workers (cron + amygdala) + postgres + redis.
+7 containers: 3 service-layer (brain-api, embeddings, mcp)
++ 2 brain-ops workers (cron + amygdala) + postgres + redis.
 
 ## Inference modes
 
@@ -117,7 +116,7 @@ Path can be absolute or relative.
 
 ```bash
 # Watch a service log
-docker compose logs -f kb-router
+docker compose logs -f brain-api
 
 # Run an immediate tick (don't wait the 2 hours)
 docker compose exec tick-cron python3 /app/brain_tick.py \
@@ -154,7 +153,7 @@ docker compose down -v
   mounts.
 
 **Port collisions**
-- 5432, 6379, 8101–8104 default. Override in `.env`:
+- 5432, 6379, 8102–8104 default. Override in `.env`:
   ```
   PORT_KB_ROUTER=18103
   PORT_POSTGRES=15432
@@ -190,8 +189,7 @@ images instead, edit `compose.yml`:
 image: ghcr.io/the-cloud-clockwork/agentibrain-<service>:latest
 ```
 
-Available services: `kb-router`, `obsidian-reader`, `embeddings`,
-`tick-engine`, `mcp`. Tags `:latest` track main; `:dev` tracks dev branch.
+Available services: `brain-api`, `embeddings`, `brain-ops`, `mcp`. Tags `:latest` track main; `:dev` tracks dev branch.
 
 ## What's NOT in local mode
 

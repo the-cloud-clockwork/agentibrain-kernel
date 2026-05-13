@@ -2,6 +2,95 @@
 
 > A standalone brain + knowledge-base kernel for Claude Code agent fleets. Bring your own vault, your own LLM keys, your own embeddings. Runs on a laptop, a server, or a Kubernetes cluster.
 
+## Quick Start (Docker Compose)
+
+### 1. Clone and bootstrap
+
+```bash
+git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
+cd agentibrain-kernel
+./local/bootstrap.sh      # generates .env with auth tokens, scaffolds ./vault
+```
+
+### 2. Configure your LLM provider
+
+Edit `.env` — set at minimum one API key to enable the full brain:
+
+```env
+# Required for embeddings (semantic search) — OpenAI or any compatible provider
+LLM_API_KEY=<your-openai-key>
+
+# Required for AI tick + kb_brief synthesis — any OpenAI-compatible endpoint
+INFERENCE_URL=https://api.openai.com/v1
+INFERENCE_API_KEY=<your-openai-key>
+
+# Model names the brain uses (defaults work with OpenAI)
+BRAIN_CLASSIFY_MODEL=gpt-4o-mini       # classification during /ingest
+BRAIN_BRIEF_MODEL=gpt-4o-mini          # synthesis for kb_brief
+```
+
+**Free local alternative (Ollama):** skip the `.env` edits above and use:
+```bash
+docker compose -f compose.yml -f local/compose.ollama.yml up -d
+docker compose exec ollama ollama pull llama3.2
+```
+Ollama covers AI tick + `kb_brief`. Embeddings still need `LLM_API_KEY` (Ollama embedding quality is poor).
+
+**No API key at all?** The brain still works — `brain_ingest`, `kb_search` (vault text), `brain_get_arc` all function. Only semantic search and AI synthesis are disabled.
+
+### 3. Start
+
+```bash
+docker compose up -d --build    # 7 containers: postgres, redis, brain-api,
+                                # embeddings, mcp, tick-cron, amygdala
+docker compose ps               # all healthy
+curl http://localhost:8104/ping  # pong — MCP server is up
+```
+
+### 4. Wire Claude Code
+
+```bash
+cp .mcp.json.example .mcp.json
+```
+
+Edit `.mcp.json` — replace `PASTE_YOUR_MCP_PROXY_API_KEY_HERE` with your actual key:
+
+```bash
+grep MCP_PROXY_API_KEY .env     # copy this value into .mcp.json
+```
+
+Restart Claude Code, run `/mcp` — you'll see `agentibrain` with 5 tools:
+
+| Tool | Purpose |
+|------|---------|
+| `kb_search` | Federated search (embeddings + vault text) |
+| `kb_brief` | Search + LLM synthesis (3-5 line brief) |
+| `brain_search_arcs` | Semantic search over brain arcs |
+| `brain_get_arc` | Fetch full arc by cluster_id |
+| `brain_ingest` | Write text to the brain vault |
+
+### 5. Test it
+
+```bash
+# Write something to the brain
+TOK=$(grep ^KB_ROUTER_TOKEN .env | cut -d= -f2)
+curl -X POST http://localhost:8103/ingest \
+  -H "Authorization: Bearer $TOK" \
+  -F "message=The quick brown fox jumped over the lazy dog"
+
+# Search for it
+curl -X POST http://localhost:8103/search \
+  -H "Authorization: Bearer $TOK" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "fox"}'
+```
+
+Content lands in `./vault/raw/inbox/`. The tick-cron drains it to a region dir, recomputes heat, and updates brain-feed — all within one tick cycle (default 2h, configurable via `TICK_INTERVAL_SECONDS` in `.env`).
+
+See [`local/README.md`](local/README.md) for full local docs, troubleshooting, port overrides, and inference modes.
+
+---
+
 `agentibrain` is a pillar of the **agenti ecosystem** alongside
 [`agenticore`](https://github.com/The-Cloud-Clockwork/agenticore) ·
 [`agentihooks`](https://github.com/The-Cloud-Clockwork/agentihooks) ·
@@ -15,7 +104,7 @@ AI agents have no long-term memory. Every session boots blind and forgets everyt
 
 **agentibrain is the filesystem-first alternative.** Memory lives outside the model, in a structured markdown vault you can open in Obsidian. A scheduled *tick* (deterministic + LLM-assisted) writes hot arcs, signals, decay, and synthesis into the vault. A single HTTP kernel fans that vault out to every agent in your fleet over a tiny REST contract.
 
-Five services, one vault, one HTTP contract — no AWS lock-in, no proprietary storage, no vendor SDK.
+Four services, one vault, one HTTP contract — no AWS lock-in, no proprietary storage, no vendor SDK.
 
 ---
 
@@ -40,19 +129,23 @@ flowchart LR
         direction TB
         subgraph EDGE["Edge — HTTP &amp; MCP"]
             direction TB
-            KB["kb-router :8103<br/>/feed · /signal · /marker<br/>/tick · /ingest"]
+            KB["brain-api :8103<br/>/feed · /signal · /marker<br/>/tick · /ingest<br/>/vault/list · /vault/read<br/>/vault/search · /vault/write_inbox"]
             MCP["mcp :8104<br/>kb_search · kb_brief<br/>brain_search_arcs<br/>brain_get_arc"]
         end
-        subgraph CORE["Read &amp; embed"]
+        subgraph CORE["Embed"]
             direction TB
-            OR["obsidian-reader :8101<br/>vault read API"]
             EMB["embeddings :8102<br/>pgvector ingest + query"]
         end
         subgraph LOOP["Brain loop"]
             direction TB
-            TICK["tick-engine<br/>cluster · synthesise · inject<br/>(every 2 h)"]
+            TICK["brain-ops<br/>cluster · synthesise · inject<br/>(every 2 h)"]
         end
     end
+
+    %% =======================
+    %% Inference
+    %% =======================
+    LITELLM["LiteLLM gateway<br/>(external)"]
 
     %% =======================
     %% Persistence
@@ -73,15 +166,14 @@ flowchart LR
     A1 ==>|MCP| MCP
     A2 ==>|MCP| MCP
 
-    KB --> OR
     KB --> EMB
-    KB -. "/marker write" .-> VAULT
+    KB --> LITELLM
+    KB -. "vault read/write" .-> VAULT
     KB -. "/signal" .-> REDIS
 
-    MCP --> OR
     MCP --> EMB
+    MCP --> KB
 
-    OR --> VAULT
     EMB <--> PG
 
     TICK --> VAULT
@@ -96,22 +188,23 @@ flowchart LR
     classDef core fill:#10b981,stroke:#059669,color:#fff
     classDef loop fill:#f59e0b,stroke:#d97706,color:#fff
     classDef store fill:#6366f1,stroke:#4338ca,color:#fff
+    classDef ext fill:#94a3b8,stroke:#64748b,color:#fff
     class A1,A2,A3 client
     class KB,MCP edge
-    class OR,EMB core
+    class EMB core
     class TICK loop
     class VAULT,PG,REDIS store
+    class LITELLM ext
 ```
 
 | Service | Port | Role |
 |---|---|---|
-| **kb-router** | 8103 | Brain HTTP contract (`/feed /signal /marker /tick /ingest`) + federated search |
-| **obsidian-reader** | 8101 | Read-only vault access (list, read, search, bounded inbox writes) |
+| **brain-api** | 8103 | Brain HTTP contract — vault read/write, ingest, `/feed`, `/signal`, `/marker`, `/tick` |
 | **embeddings** | 8102 | pgvector wrapper — `/embed`, `/search`, OpenAI-compatible |
 | **mcp** | 8104 | MCP retrieval tools — `kb_search`, `kb_brief`, `brain_search_arcs`, `brain_get_arc` |
-| **tick-engine** | — | Hybrid 2-hour tick (deterministic clustering + optional LLM synthesis) |
+| **brain-ops** | — | Hybrid 2-hour tick (deterministic clustering + optional LLM synthesis) + amygdala consumer |
 
-Plus an **opt-in `brain-keeper`** agent (ops oracle for triage, enrichment, replay) and **six Helm charts** for Kubernetes (`kb-router`, `obsidian-reader`, `embeddings`, `mcp`, `brain-cron`, `brain-keeper`).
+Plus an **opt-in `brain-keeper`** agent (ops oracle for triage, enrichment, replay) and **six Helm charts** for Kubernetes (`brain-api`, `embeddings`, `mcp`, `brain-ops`, `brain-keeper`).
 
 ---
 
@@ -123,10 +216,10 @@ Plus an **opt-in `brain-keeper`** agent (ops oracle for triage, enrichment, repl
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
 ./local/bootstrap.sh           # writes .env (random tokens) + scaffolds ./vault
-docker compose up -d           # 8 containers come up
+docker compose up -d           # 7 containers come up
 ```
 
-> **Note:** the default Compose stack **builds the 5 service images locally** from `services/*/Dockerfile` on first run (~5 min). To pull pre-built images instead, see [Images & forking](#images--forking).
+> **Note:** the default Compose stack **builds the 4 service images locally** from `services/*/Dockerfile` on first run (~5 min). To pull pre-built images instead, see [Images & forking](#images--forking).
 
 Smoke test:
 
@@ -152,7 +245,7 @@ Same `compose.yml` works on any Linux box with Docker. Bind the vault to a real 
 
 ### 3. Kubernetes (Helm)
 
-Six charts ship in [`helm/`](helm/) — `kb-router`, `obsidian-reader`, `embeddings`, `mcp`, `brain-cron`, `brain-keeper`. The first five depend on `tcc-k8s-service-template:0.3.8` (vendored as `.tgz` under each chart's `charts/` for offline install). `brain-cron` is a custom 3-template chart for the CronJob + amygdala consumer.
+Six charts ship in [`helm/`](helm/) — `brain-api`, `embeddings`, `mcp`, `brain-ops`, `brain-keeper`. The first four depend on `tcc-k8s-service-template:0.3.8` (vendored as `.tgz` under each chart's `charts/` for offline install). `brain-ops` is a custom 3-template chart for the CronJob + amygdala consumer.
 
 #### Step 1 — Scaffold the vault on persistent storage
 
@@ -179,16 +272,15 @@ Wire your secrets manager (OpenBao / AWS Secrets Manager / Vault) via an ESO `Cl
 #### Step 3 — `helm install` the six charts
 
 ```bash
-helm install agentibrain-kb-router       ./helm/kb-router        -f values-kb-router.yaml
-helm install agentibrain-obsidian-reader ./helm/obsidian-reader  -f values-obsidian-reader.yaml
-helm install agentibrain-embeddings      ./helm/embeddings       -f values-embeddings.yaml
-helm install agentibrain-mcp             ./helm/mcp              -f values-mcp.yaml
-helm install agentibrain-brain-cron      ./helm/brain-cron       -f values-brain-cron.yaml   # singleton, deploy ONCE per cluster
-helm install agentibrain-brain-keeper    ./helm/brain-keeper     -f values-brain-keeper.yaml # OPTIONAL ops oracle (see note below)
+helm install agentibrain-brain-api    ./helm/brain-api    -f values-brain-api.yaml
+helm install agentibrain-embeddings   ./helm/embeddings   -f values-embeddings.yaml
+helm install agentibrain-mcp          ./helm/mcp          -f values-mcp.yaml
+helm install agentibrain-brain-ops   ./helm/brain-ops   -f values-brain-ops.yaml   # singleton, deploy ONCE per cluster
+helm install agentibrain-brain-keeper ./helm/brain-keeper -f values-brain-keeper.yaml # OPTIONAL ops oracle (see note below)
 ```
 
 Each `values-*.yaml` overlay sets:
-* `extraVolumes` → NFS server + path or PVC claim for the vault from step 1
+* `extraVolumes` → NFS server + path or PVC claim for the vault from step 1 (brain-api mounts vault at `/vault`)
 * `env.variables.INFERENCE_URL` + `BRAIN_CLASSIFY_MODEL` + `BRAIN_BRIEF_MODEL` → your LLM gateway + model names
 * `secrets.external.secretRef` → the Secret from step 2
 
@@ -203,7 +295,7 @@ Same outcome, declarative. Copy `examples/argocd/` into your platform repo, swap
 Once running, every agent in your fleet gets two env vars and consumes the brain over HTTP:
 
 ```yaml
-BRAIN_URL: http://agentibrain-kb-router.<your-namespace>.svc:8080
+BRAIN_URL: http://agentibrain-brain-api.<your-namespace>.svc:8080
 KB_ROUTER_TOKEN: <from-the-secret-in-step-2>
 ```
 
@@ -265,22 +357,21 @@ Full reference (incl. LiteLLM gateway path): [`docs/MCP.md`](docs/MCP.md).
 
 ## Images & forking
 
-The kernel publishes 5 service images via GitHub Actions. **Standard consumers don't build anything** — pull and go.
+The kernel publishes 4 service images via GitHub Actions. **Standard consumers don't build anything** — pull and go.
 
 | Image | Source | Tag |
 |---|---|---|
-| `ghcr.io/the-cloud-clockwork/agentibrain-kb-router` | `services/kb-router/` | `:dev`, `:latest` |
-| `ghcr.io/the-cloud-clockwork/agentibrain-obsidian-reader` | `services/obsidian-reader/` | `:dev`, `:latest` |
+| `ghcr.io/the-cloud-clockwork/agentibrain-brain-api` | `services/brain-api/` | `:dev`, `:latest` |
 | `ghcr.io/the-cloud-clockwork/agentibrain-embeddings` | `services/embeddings/` | `:dev`, `:latest` |
-| `ghcr.io/the-cloud-clockwork/agentibrain-tick-engine` | `services/tick-engine/` | `:dev`, `:latest` |
 | `ghcr.io/the-cloud-clockwork/agentibrain-mcp` | `services/mcp/` | `:dev`, `:latest` |
+| `ghcr.io/the-cloud-clockwork/agentibrain-brain-ops` | `services/brain-ops/` | `:dev`, `:latest` |
 
 CI: [`.github/workflows/docker-build.yml`](.github/workflows/docker-build.yml) runs on every push to `dev` (→ `:dev`) and `main` (→ `:latest`).
 
 | Path | Builds locally? | Pulls from GHCR? |
 |---|:---:|:---:|
 | `docker compose up -d` (default) | ✅ first run, ~5 min | ❌ |
-| Helm charts | ❌ | ✅ all 5 service images |
+| Helm charts | ❌ | ✅ all 4 service images |
 | Air-gapped install | ✅ via your registry mirror | n/a |
 
 **For forkers:** push to your fork's `dev` or `main`, the same workflow runs under your namespace and publishes to `ghcr.io/<your-org>/agentibrain-*`. Edit each chart's `image.repository` (or your values overlay) to point at your namespace. The vendored `tcc-k8s-service-template-0.3.8.tgz` makes `helm install` work offline; refresh from upstream with `helm dep update helm/<chart>`.
@@ -312,6 +403,10 @@ curl -s "$BRAIN_URL/feed" -H "Authorization: Bearer $KB_ROUTER_TOKEN"
 
 Cached server-side for `FEED_CACHE_TTL_SECONDS` (default 30s). Read on every agent's SessionStart.
 
+### `GET /health` — liveness probe
+
+Returns `{ "status": "ok" }`.
+
 ### `GET /signal` — current amygdala alert
 
 Empty `amygdala-active.md` → `{ "active": false, ... }`. Dedup via `hash`.
@@ -337,15 +432,30 @@ Idempotency-key window 1h (configurable via `IDEMPOTENCY_TTL_SECONDS`). Replay r
 
 ### `POST /tick` — request a manual brain tick
 
-File-protocol: writes a request to `brain-feed/ticks/requested/`. The tick-engine picks it up and moves it to `completed/` or `failed/`. Poll `GET /tick/{job_id}`.
+File-protocol: writes a request to `brain-feed/ticks/requested/`. The brain-ops picks it up and moves it to `completed/` or `failed/`. Poll `GET /tick/{job_id}`.
 
 ### `POST /ingest` — universal ingest
 
 Free-text in. The model named in `BRAIN_CLASSIFY_MODEL` classifies via your inference gateway (any OpenAI-compatible — see [`docs/GATEWAY-CONTRACT.md`](docs/GATEWAY-CONTRACT.md)), fans URLs/repos/files to artifact-store, drops a markdown note in `raw/inbox/`. Spec: [`api/openapi.yaml`](api/openapi.yaml).
 
+### `POST /ingest_with_files` — multipart ingest
+
+Same as `/ingest` but accepts file attachments as `multipart/form-data`.
+
 ### `POST /index_artifact` — sole brain-side embedding write
 
-Per-artifact embedding write surface. Called by ingest pipelines after artifact-store accepts a blob. The artifact-store no longer auto-embeds (brain-blind boundary, 2026-04-26) — every embed flows through this endpoint.
+Per-artifact embedding write surface. Called by ingest pipelines after artifact-store accepts a blob. Every embed flows through this endpoint. Spec: [`api/openapi.yaml`](api/openapi.yaml).
+
+### Vault endpoints
+
+All vault reads and writes flow through brain-api (which mounts `/vault` directly):
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/vault/list` | GET | List vault files under a path |
+| `/vault/read` | GET | Read a vault file by path |
+| `/vault/search` | GET | Full-text search across the vault |
+| `/vault/write_inbox` | POST | Write a file to `raw/inbox/` |
 
 ---
 
@@ -358,7 +468,7 @@ Obsidian-compatible folder tree, writable by humans and by kernel services. `bra
   .brain-schema           # version marker (JSON)
   README.md  CLAUDE.md    # vault rules for AI agents
 
-  # Cognitive regions (owned by tick-engine + daemons)
+  # Cognitive regions (owned by brain-ops + daemons)
   raw/{inbox,articles,media,transcripts}/
   clusters/               # canonical arc storage
   brain-feed/             # /feed reads here, /tick writes ticks/requested/
@@ -384,16 +494,15 @@ Scaffold is idempotent. Schema-version mismatch is a hard error unless `--force-
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `VAULT_ROOT` | `/vault` | Vault mount path inside containers |
+| `VAULT_ROOT` | `/vault` | Vault mount path inside containers (NFS in K8s, bind mount in Compose) |
 | `KB_ROUTER_TOKEN` / `KB_ROUTER_TOKENS` | — | Bearer auth (single token or comma-sep list) |
-| `OBSIDIAN_READER_URL` | `http://obsidian-reader:8080` | Reader service URL |
 | `EMBEDDINGS_URL` | `http://embeddings:8080` | Embeddings service URL |
+| `EMBEDDINGS_API_KEY` | — | Bearer token for the embeddings service |
 | `INFERENCE_URL` | — | OpenAI-compatible LLM gateway. Empty = deterministic-only ticks. See [`docs/GATEWAY-CONTRACT.md`](docs/GATEWAY-CONTRACT.md) |
 | `INFERENCE_API_KEY` | — | Bearer token for the inference gateway. Empty = no auth header (trusted-LAN ok) |
-| `BRAIN_CLASSIFY_MODEL` | `brain-classify` | Model name for kb-router classifier |
+| `BRAIN_CLASSIFY_MODEL` | `brain-classify` | Model name for brain-api classifier |
 | `BRAIN_BRIEF_MODEL` | `brain-brief` | Model name for `kb_brief` / tick synthesis |
-| `LLM_API_KEY` | — | API key for embeddings (optional — empty disables semantic search) |
-| `MCP_PROXY_API_KEY` | — | Bearer mcp-proxy enforces on inbound calls |
+| `MCP_PROXY_API_KEY` | — | Bearer token mcp enforces on inbound calls |
 | `FEED_CACHE_TTL_SECONDS` | `30` | `/feed` cache window |
 | `IDEMPOTENCY_TTL_SECONDS` | `3600` | `/marker` replay window |
 | `TICK_INTERVAL_SECONDS` | `7200` | Tick cadence (compose mode) |
@@ -408,11 +517,11 @@ The kernel ships a starter Grafana dashboard at [`observability/brain-health.jso
 
 ![Brain dashboard](observability/brain-dashboard.png)
 
-**How to wire it.** The JSON is a mock — every panel queries a `grafana-clickhouse-datasource` with `uid: clickhouse`, against the `brain.*` schema that [`services/tick-engine`](services/tick-engine) writes into ClickHouse on every tick (`brain.tick_health`, `brain.signals`, `brain.arcs`, `brain.lessons`, `brain.embeddings`, …). To go from mock to live:
+**How to wire it.** The JSON is a mock — every panel queries a `grafana-clickhouse-datasource` with `uid: clickhouse`, against the `brain.*` schema that [`services/brain-ops`](services/brain-ops) writes into ClickHouse on every tick (`brain.tick_health`, `brain.signals`, `brain.arcs`, `brain.lessons`, `brain.embeddings`, …). To go from mock to live:
 
 1. **Import** — in Grafana, *Dashboards → New → Import* → paste `observability/brain-health.json`.
-2. **Datasource** — install the [ClickHouse datasource plugin](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/), point it at the ClickHouse instance the tick-engine writes to, and either name its uid `clickhouse` or remap the dashboard's datasource at import time.
-3. **Schema** — the queries assume the tick-engine's default table layout. If you've renamed tables or split databases, edit the panel `rawSql` blocks — column names match the `BrainTickHealth` model in [`services/tick-engine/brain_tick.py`](services/tick-engine/brain_tick.py).
+2. **Datasource** — install the [ClickHouse datasource plugin](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/), point it at the ClickHouse instance the brain-ops writes to, and either name its uid `clickhouse` or remap the dashboard's datasource at import time.
+3. **Schema** — the queries assume the brain-ops's default table layout. If you've renamed tables or split databases, edit the panel `rawSql` blocks — column names match the `BrainTickHealth` model in [`services/brain-ops/brain_tick.py`](services/brain-ops/brain_tick.py).
 4. **Refresh** — default cadence is `30s` over a `now-6h` window; override per your appetite.
 
 If you don't run ClickHouse, the JSON is still useful as a panel layout reference — swap each `rawSql` for the equivalent in your TSDB of choice and keep the structure.
@@ -428,9 +537,9 @@ python -m venv .venv && . .venv/bin/activate
 pip install -e '.[dev]'
 
 pytest tests/unit                              # scaffold + compose tests
-PYTHONPATH=services/kb-router:. pytest services/kb-router/tests -q   # 25 service tests
+PYTHONPATH=services/brain-api:. pytest services/brain-api/tests -q   # service tests
 
-docker build -t agentibrain-kb-router:local services/kb-router
+docker build -t agentibrain-brain-api:local services/brain-api
 ```
 
 Workflow: `dev` is the working branch; PRs go `dev` → `main`. CI on `main` ships `:latest` GHCR images automatically.
@@ -439,7 +548,7 @@ Workflow: `dev` is the working branch; PRs go `dev` → `main`. CI on `main` shi
 
 ## Status
 
-**v0.1.1 — first stable.** Six Helm charts. Five service images auto-published to GHCR (`:dev` from dev branch, `:latest` from main). HTTP contract frozen at v1. Generic OpenAI gateway — kernel speaks chat-completions to any compatible upstream (LiteLLM, OpenAI, Ollama, vLLM, …). Brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds; every embed flows through `POST /index_artifact`).
+**v0.1.x — stable.** Six Helm charts. Four service images auto-published to GHCR (`:dev` from dev branch, `:latest` from main). HTTP contract frozen at v1. Generic OpenAI gateway — kernel speaks chat-completions to any compatible upstream (LiteLLM, OpenAI, Ollama, vLLM, …). Brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds; every embed flows through `POST /index_artifact`). Vault read/write absorbed into brain-api directly via `vault_reader` module — no separate reader service.
 
 The kernel is self-contained and the canonical source of truth for everything brain-related — services, Helm charts, brain-keeper agent definition (`agents/brain-keeper/`), brain profile overlays (`profiles/brain/`, `profiles/brain-keeper/`), and the vault layout schema. All deployment-specific plumbing (cluster namespaces, model name aliases, secret-store paths, NFS hosts) lives in your own platform repo, not here.
 

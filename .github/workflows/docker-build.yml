@@ -24,10 +24,9 @@ jobs:
       fail-fast: false
       matrix:
         service:
-          - kb-router
-          - obsidian-reader
+          - brain-api
           - embeddings
-          - tick-engine
+          - brain-ops
           - mcp
     steps:
       - uses: actions/checkout@v4
