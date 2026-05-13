@@ -333,12 +333,16 @@ def drain_inbox(vault_root: Path, dry_run: bool = False) -> dict:
                 region = TAG_REGION_MAP[tag_lower]
                 break
 
+        region_label = {"left": "left-hemisphere", "right": "right-hemisphere"}.get(region.split("/")[0], region.split("/")[0])
         target_dir = vault_root / region
         if not dry_run:
             target_dir.mkdir(parents=True, exist_ok=True)
             dest = target_dir / md.name
             if dest.exists():
                 dest = target_dir / f"{md.stem}-{datetime.now(timezone.utc).strftime('%H%M%S')}{md.suffix}"
+            _update_frontmatter_field(md, "region", region_label)
+            if not doc.frontmatter.get("status"):
+                _update_frontmatter_field(md, "status", "active")
             shutil.move(str(md), str(dest))
         stats["drained"] += 1
         print(f"INBOX: {md.name} → {region}/")
