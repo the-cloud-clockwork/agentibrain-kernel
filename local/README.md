@@ -9,7 +9,7 @@ deploy for laptops. This directory holds the compose entry point.
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
 ./local/bootstrap.sh              # writes .env + scaffolds ./vault
-docker compose up -d              # 8 containers come up
+docker compose up -d              # 7 containers come up
 docker compose ps                 # all healthy
 ```
 
@@ -155,7 +155,7 @@ docker compose down -v
 **Port collisions**
 - 5432, 6379, 8102–8104 default. Override in `.env`:
   ```
-  PORT_KB_ROUTER=18103
+  PORT_BRAIN_API=18103
   PORT_POSTGRES=15432
   ```
 

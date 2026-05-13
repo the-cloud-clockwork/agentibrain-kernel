@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -88,13 +89,24 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
             edge_lines.append(f"  {cid} --{etype}--> {target}")
     edge_map = "\n".join(edge_lines) if edge_lines else "  (no edges found — this is a gap)"
 
-    # Signals
+    # Signals — dedup by (source, content_hash) so a signal promoted to
+    # frontal-lobe/conscious/ doesn't appear twice (once from the cluster
+    # arc, once from the promoted copy). The duplicate undermines the "do
+    # NOT create new signals for issues already covered" instruction below.
     signal_lines = []
+    seen_signals: set[tuple[str, str]] = set()
     for arc in arcs:
         for sig in arc.signals:
             sev = sig.attr("severity", "info")
             src = sig.attr("source", "?")
             content = sig.content.splitlines()[0] if sig.content else "(empty)"
+            content_hash = hashlib.sha256(
+                (sig.content or "").strip().encode("utf-8")
+            ).hexdigest()[:16]
+            dedup_key = (src, content_hash)
+            if dedup_key in seen_signals:
+                continue
+            seen_signals.add(dedup_key)
             signal_lines.append(f"  [{sev}] ({src}) {content}")
     signals_text = "\n".join(signal_lines) if signal_lines else "  (none)"
 

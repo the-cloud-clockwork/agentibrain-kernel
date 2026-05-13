@@ -142,8 +142,13 @@ def search_vault(
                 snippets.append({"line": idx + 1, "snippet": snippet})
 
             all_tokens_matched = len(tokens_found) == len(tokens)
+            # Cap the line-hit component so a large journal-style file with
+            # 500 matching lines doesn't dominate a tight 3-line arc that
+            # matches everything. Without this cap, in-batch normalization
+            # in kb.py awards 1.0 to the longest file and crushes semantic
+            # hits with genuine cosine similarity >= 0.8.
             score = (
-                len(hit_indices)
+                min(len(hit_indices), 30)
                 + (10 * filename_token_hits)
                 + (20 if all_tokens_matched else 0)
             )
