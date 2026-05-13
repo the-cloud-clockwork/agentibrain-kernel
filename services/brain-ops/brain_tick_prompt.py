@@ -154,8 +154,9 @@ Format: `MERGE: arc-A + arc-B → suggested-title` or `SPLIT: arc-A → arc-A-pa
 If none, say "None."
 
 ### 3. Signal Escalation
-Should any signals be escalated (warning → critical, or critical → nuclear)?
-Should any signals be CLEARED (the issue was resolved)?
+Should any EXISTING signals be escalated (warning → critical, or critical → nuclear)?
+Should any EXISTING signals be CLEARED (the issue was resolved)?
+Do NOT create new signals for issues already covered by the active signals listed above — they are already broadcasting. Only escalate, clear, or leave unchanged.
 
 Format:
 - `ESCALATE: signal-source → new-severity (reason)`
