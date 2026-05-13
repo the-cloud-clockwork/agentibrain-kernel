@@ -158,6 +158,15 @@ Your job: REASON about the data below. Do NOT read files — everything is pre-e
 ### 1. Missing Edges
 List edges that SHOULD exist based on the arc titles/content but DON'T appear in the edge map.
 Format: `arc-id-A --type--> arc-id-B` with a one-line reason.
+
+Permitted type values: parent, child, sibling, unblocks, supersedes, related.
+Use the strongest type that applies: parent/child for structural hierarchy,
+sibling for peer arcs in the same work thread, unblocks/supersedes for
+directional dependencies, related as a last resort.
+
+Emit AT MOST ONE edge per (source, target) pair — never the same pair under
+two different types in a single response.
+
 If no missing edges, say "None detected."
 
 ### 2. Merge/Split Candidates
