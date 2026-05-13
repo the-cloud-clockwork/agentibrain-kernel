@@ -36,15 +36,27 @@ import markers
 # ── Parsers for AI tick output sections ───────────────────────────────
 
 def parse_edges(section: str) -> list[dict]:
-    """Parse '### 1. Missing Edges' section."""
+    """Parse '### 1. Missing Edges' section.
+
+    Backticks around the whole line (`` `arc-a --related--> arc-b` ``) get
+    absorbed into the `\\S+` groups by the regex, so strip them after capture.
+    Without this, `arc-a` parses as `arc-a\\`` and find_arc_file() silently
+    fails — edges are dropped and the AI re-emits them every tick.
+
+    Also drops self-loops at parse time.
+    """
     edges = []
     for line in section.splitlines():
         m = re.match(r'`?(\S+)\s+--(\w+)-->\s+(\S+)`?\s*[—–-]\s*(.*)', line)
         if m:
+            source = m.group(1).strip("`")
+            target = m.group(3).strip("`")
+            if source == target:
+                continue  # self-loops pollute connectivity metrics
             edges.append({
-                "source": m.group(1),
+                "source": source,
                 "type": m.group(2),
-                "target": m.group(3),
+                "target": target,
                 "reason": m.group(4).strip(),
             })
     return edges
@@ -181,16 +193,31 @@ def find_arc_file(vault_root: Path, arc_id: str) -> Path | None:
 
 
 def apply_edges(vault_root: Path, edges: list[dict], dry_run: bool) -> int:
-    """Insert @edge markers into source arc files."""
+    """Insert @edge markers into source arc files.
+
+    Dedupes within the tick by (src_norm, type, target_norm) so duplicate
+    edges emitted in a single AI output land on disk once. The literal
+    `marker in text` check below is the cross-tick guard.
+    """
     applied = 0
+    seen: set[tuple[str, str, str]] = set()
     for edge in edges:
-        src_file = find_arc_file(vault_root, edge["source"])
+        src_norm = edge["source"].strip("`")
+        tgt_norm = edge["target"].strip("`")
+        if src_norm == tgt_norm:
+            continue  # belt-and-suspenders self-loop guard
+        dedup_key = (src_norm, edge["type"], tgt_norm)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
+        src_file = find_arc_file(vault_root, src_norm)
         if not src_file:
-            print(f"  SKIP edge: source {edge['source']} not found", file=sys.stderr)
+            print(f"  SKIP edge: source {src_norm} not found", file=sys.stderr)
             continue
 
         text = src_file.read_text()
-        marker = f'<!-- @edge type={edge["type"]} target={edge["target"]} -->'
+        marker = f'<!-- @edge type={edge["type"]} target={tgt_norm} -->'
 
         if marker in text:
             continue  # already exists
@@ -206,7 +233,7 @@ def apply_edges(vault_root: Path, edges: list[dict], dry_run: bool) -> int:
         if not dry_run:
             src_file.write_text(text)
         applied += 1
-        print(f"  +edge: {edge['source']} --{edge['type']}--> {edge['target']}")
+        print(f"  +edge: {src_norm} --{edge['type']}--> {tgt_norm}")
 
     return applied
 
