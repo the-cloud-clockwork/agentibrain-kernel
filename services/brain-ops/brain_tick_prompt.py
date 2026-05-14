@@ -121,13 +121,17 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
     seen_lessons: set[str] = set()
     for arc in arcs:
         for lesson in arc.lessons:
-            first = lesson.content.splitlines()[0] if lesson.content else ""
-            content_hash = hashlib.sha256(
-                (lesson.content or "").strip().encode("utf-8")
-            ).hexdigest()[:16]
-            if content_hash in seen_lessons:
+            first = (lesson.content.splitlines()[0] if lesson.content else "").strip()
+            if not first:
+                continue  # empty lesson body — nothing useful to show the AI
+            # Key on first_line, not full content. The AI sees only the
+            # first line in the sample, so two lessons sharing a first
+            # line are visually identical to the AI even if their bodies
+            # differ in metadata footers. Dedup on what's visible.
+            key = first.lower()
+            if key in seen_lessons:
                 continue
-            seen_lessons.add(content_hash)
+            seen_lessons.add(key)
             all_lessons.append(first)
     lessons_sample = "\n".join(f"  - {l}" for l in all_lessons[:10])
     if len(all_lessons) > 10:
