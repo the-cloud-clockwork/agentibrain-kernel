@@ -110,11 +110,25 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
             signal_lines.append(f"  [{sev}] ({src}) {content}")
     signals_text = "\n".join(signal_lines) if signal_lines else "  (none)"
 
-    # Lessons (just count + sample)
+    # Lessons — dedup by content_hash so the 10-item sample contains 10
+    # distinct entries. Without this, a lesson repeating in many arc files
+    # (legitimate per-arc authorship — each writer session captures its own
+    # "NFS dirs need chmod 777" lesson when it hits the same issue) dominates
+    # the sample and the AI flags it as "lesson dedup broken". The vault
+    # data is fine; only the prompt rendering needs dedup. Same pattern as
+    # seen_signals above and seen in brain_keeper.write_inject_feed.
     all_lessons = []
+    seen_lessons: set[str] = set()
     for arc in arcs:
         for lesson in arc.lessons:
-            all_lessons.append(lesson.content.splitlines()[0] if lesson.content else "")
+            first = lesson.content.splitlines()[0] if lesson.content else ""
+            content_hash = hashlib.sha256(
+                (lesson.content or "").strip().encode("utf-8")
+            ).hexdigest()[:16]
+            if content_hash in seen_lessons:
+                continue
+            seen_lessons.add(content_hash)
+            all_lessons.append(first)
     lessons_sample = "\n".join(f"  - {l}" for l in all_lessons[:10])
     if len(all_lessons) > 10:
         lessons_sample += f"\n  ... and {len(all_lessons) - 10} more"
