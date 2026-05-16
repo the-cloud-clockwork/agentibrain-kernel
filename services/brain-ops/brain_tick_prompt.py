@@ -47,19 +47,53 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
     stats = brain_keeper.tick(vault_root, brain_feed_dir)
 
     # 2. Collect all arc data for the prompt
+    # Walk the full region tree so the prompt sees the same arc set the
+    # deterministic keeper does. Prior version scanned only clusters/ and
+    # additionally filtered out every .merged.md file — net result was a
+    # single arc reaching the AI even though brain_keeper.tick() scans
+    # 144+. That undercount drove the health-score floor and the "only 1
+    # arc visible / coverage cannot be assessed" complaint that was looping
+    # in every tick reason. Mirrors brain_keeper._scan_and_collect
+    # (brain_keeper.py:372-395) and reuses brain_keeper.REGION_DIRS as the
+    # single source of truth for which region dirs are authoritative.
     clusters_dir = vault_root / "clusters"
-    arcs = []
-    for date_dir in sorted(clusters_dir.iterdir()):
-        if not date_dir.is_dir():
-            continue
-        for md_file in sorted(date_dir.glob("*.md")):
-            if md_file.name.startswith("_") or ".merged." in md_file.name:
+    arcs: list[markers.DocumentMeta] = []
+    seen_ids: set[str] = set()
+
+    def _scan(directory: Path, recurse: bool = False) -> None:
+        if not directory.is_dir():
+            return
+        files = sorted(directory.glob("**/*.md" if recurse else "*.md"))
+        merged_stems = {
+            f.name.replace(".merged.md", "") for f in files
+            if f.name.endswith(".merged.md")
+        }
+        for md_file in files:
+            if md_file.name.startswith("_"):
                 continue
+            stem = md_file.name[:-3]
+            # Prefer .merged.md over the raw counterpart in the same dir.
+            if not md_file.name.endswith(".merged.md") and stem in merged_stems:
+                continue
+            arc_id = md_file.stem.replace(".merged", "")
+            if arc_id in seen_ids:
+                continue
+            seen_ids.add(arc_id)
             try:
-                doc = markers.extract_all(md_file)
-                arcs.append(doc)
+                arcs.append(markers.extract_all(md_file))
             except Exception:
                 continue
+
+    # Region dirs first — promoted/graduated arcs are authoritative.
+    for region in brain_keeper.REGION_DIRS:
+        _scan(vault_root / region, recurse=True)
+
+    # Clusters last — raw date-bucketed tail; dedup against seen_ids
+    # silently drops any arc already covered by a region.
+    if clusters_dir.is_dir():
+        for date_dir in sorted(clusters_dir.iterdir()):
+            if date_dir.is_dir():
+                _scan(date_dir)
 
     # 3. Build the compressed context
     now = datetime.now(timezone.utc)
