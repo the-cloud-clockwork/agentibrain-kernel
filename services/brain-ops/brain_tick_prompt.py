@@ -64,16 +64,24 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
         if not directory.is_dir():
             return
         files = sorted(directory.glob("**/*.md" if recurse else "*.md"))
-        merged_stems = {
-            f.name.replace(".merged.md", "") for f in files
-            if f.name.endswith(".merged.md")
-        }
+        # Dir-bucketed merged_stems — a `.merged.md` in dir X only
+        # suppresses the raw counterpart in the SAME dir X. Prior flat
+        # set would silently drop an unrelated `foo.md` in a sibling
+        # subdir if some other `foo.merged.md` existed elsewhere under
+        # the recursive root.
+        merged_stems_by_dir: dict[Path, set[str]] = {}
+        for f in files:
+            if f.name.endswith(".merged.md"):
+                merged_stems_by_dir.setdefault(f.parent, set()).add(
+                    f.name.replace(".merged.md", "")
+                )
         for md_file in files:
             if md_file.name.startswith("_"):
                 continue
             stem = md_file.name[:-3]
             # Prefer .merged.md over the raw counterpart in the same dir.
-            if not md_file.name.endswith(".merged.md") and stem in merged_stems:
+            if (not md_file.name.endswith(".merged.md")
+                and stem in merged_stems_by_dir.get(md_file.parent, set())):
                 continue
             arc_id = md_file.stem.replace(".merged", "")
             if arc_id in seen_ids:
@@ -81,7 +89,10 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
             seen_ids.add(arc_id)
             try:
                 arcs.append(markers.extract_all(md_file))
-            except Exception:
+            except Exception as e:
+                # Surface parse failures — parity with brain_keeper, otherwise
+                # a corrupt frontmatter at 270 files-per-scan disappears silently.
+                print(f"WARN: failed to parse {md_file}: {e}", file=sys.stderr)
                 continue
 
     # Region dirs first — promoted/graduated arcs are authoritative.

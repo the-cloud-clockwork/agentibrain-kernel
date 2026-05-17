@@ -370,19 +370,28 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
     seen_ids: set[str] = set()
 
     def _scan_and_collect(directory: Path, recurse: bool = False):
-        """Scan .md files, parse, collect into arcs list. Deduplicates by stem."""
+        """Scan .md files, parse, collect into arcs list. Deduplicates by stem.
+
+        Dir-bucketed merged_stems so a `.merged.md` in subdir X only
+        suppresses the raw counterpart in subdir X — never across
+        siblings when recurse=True.
+        """
         if not directory.is_dir():
             return
         pattern = "**/*.md" if recurse else "*.md"
         files = list(sorted(directory.glob(pattern)))
-        merged_stems = {
-            f.name.replace(".merged.md", "") for f in files if f.name.endswith(".merged.md")
-        }
+        merged_stems_by_dir: dict[Path, set[str]] = {}
+        for f in files:
+            if f.name.endswith(".merged.md"):
+                merged_stems_by_dir.setdefault(f.parent, set()).add(
+                    f.name.replace(".merged.md", "")
+                )
         for md_file in files:
             if md_file.name.startswith("_"):
                 continue
             stem = md_file.name[:-3]
-            if not md_file.name.endswith(".merged.md") and stem in merged_stems:
+            if (not md_file.name.endswith(".merged.md")
+                and stem in merged_stems_by_dir.get(md_file.parent, set())):
                 continue
             arc_id = md_file.stem.replace(".merged", "")
             if arc_id in seen_ids:
