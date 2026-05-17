@@ -206,8 +206,19 @@ def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: boo
         wrote = write_signal_file(brain_feed_dir, active_events, dry_run)
         stats["signal_file_written"] = wrote
 
-        # Write incident arcs for nuclear/critical
+        # Write incident arcs for nuclear/critical — but never for events
+        # the brain itself emitted. The brain's tick.complete output is a
+        # status broadcast, not an incident. Creating a vault @signal arc
+        # from it would seed the next tick's reasoning with self-generated
+        # noise: brain says "score=3" → amygdala writes @signal nuclear →
+        # next brain tick reads it → AI scores ≤4 again → loop. The
+        # primary defense is brain_tick.py's explicit severity field
+        # (paired with the "brain." event prefix amygdala honors), but
+        # this source-based skip is defense in depth so the loop cannot
+        # re-form if a future code path forgets to set severity.
         for ev in active_events:
+            if ev.get("source") == "brain-cron":
+                continue
             if ev["severity"] in ("nuclear", "critical"):
                 write_incident_arc(vault_root, ev, dry_run)
 

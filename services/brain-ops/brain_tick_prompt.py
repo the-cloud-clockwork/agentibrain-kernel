@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -46,19 +47,64 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
     stats = brain_keeper.tick(vault_root, brain_feed_dir)
 
     # 2. Collect all arc data for the prompt
+    # Walk the full region tree so the prompt sees the same arc set the
+    # deterministic keeper does. Prior version scanned only clusters/ and
+    # additionally filtered out every .merged.md file — net result was a
+    # single arc reaching the AI even though brain_keeper.tick() scans
+    # 144+. That undercount drove the health-score floor and the "only 1
+    # arc visible / coverage cannot be assessed" complaint that was looping
+    # in every tick reason. Mirrors brain_keeper._scan_and_collect
+    # (brain_keeper.py:372-395) and reuses brain_keeper.REGION_DIRS as the
+    # single source of truth for which region dirs are authoritative.
     clusters_dir = vault_root / "clusters"
-    arcs = []
-    for date_dir in sorted(clusters_dir.iterdir()):
-        if not date_dir.is_dir():
-            continue
-        for md_file in sorted(date_dir.glob("*.md")):
-            if md_file.name.startswith("_") or ".merged." in md_file.name:
+    arcs: list[markers.DocumentMeta] = []
+    seen_ids: set[str] = set()
+
+    def _scan(directory: Path, recurse: bool = False) -> None:
+        if not directory.is_dir():
+            return
+        files = sorted(directory.glob("**/*.md" if recurse else "*.md"))
+        # Dir-bucketed merged_stems — a `.merged.md` in dir X only
+        # suppresses the raw counterpart in the SAME dir X. Prior flat
+        # set would silently drop an unrelated `foo.md` in a sibling
+        # subdir if some other `foo.merged.md` existed elsewhere under
+        # the recursive root.
+        merged_stems_by_dir: dict[Path, set[str]] = {}
+        for f in files:
+            if f.name.endswith(".merged.md"):
+                merged_stems_by_dir.setdefault(f.parent, set()).add(
+                    f.name.replace(".merged.md", "")
+                )
+        for md_file in files:
+            if md_file.name.startswith("_"):
                 continue
+            stem = md_file.name[:-3]
+            # Prefer .merged.md over the raw counterpart in the same dir.
+            if (not md_file.name.endswith(".merged.md")
+                and stem in merged_stems_by_dir.get(md_file.parent, set())):
+                continue
+            arc_id = md_file.stem.replace(".merged", "")
+            if arc_id in seen_ids:
+                continue
+            seen_ids.add(arc_id)
             try:
-                doc = markers.extract_all(md_file)
-                arcs.append(doc)
-            except Exception:
+                arcs.append(markers.extract_all(md_file))
+            except Exception as e:
+                # Surface parse failures — parity with brain_keeper, otherwise
+                # a corrupt frontmatter at 270 files-per-scan disappears silently.
+                print(f"WARN: failed to parse {md_file}: {e}", file=sys.stderr)
                 continue
+
+    # Region dirs first — promoted/graduated arcs are authoritative.
+    for region in brain_keeper.REGION_DIRS:
+        _scan(vault_root / region, recurse=True)
+
+    # Clusters last — raw date-bucketed tail; dedup against seen_ids
+    # silently drops any arc already covered by a region.
+    if clusters_dir.is_dir():
+        for date_dir in sorted(clusters_dir.iterdir()):
+            if date_dir.is_dir():
+                _scan(date_dir)
 
     # 3. Build the compressed context
     now = datetime.now(timezone.utc)
@@ -88,21 +134,50 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
             edge_lines.append(f"  {cid} --{etype}--> {target}")
     edge_map = "\n".join(edge_lines) if edge_lines else "  (no edges found — this is a gap)"
 
-    # Signals
+    # Signals — dedup by (source, content_hash) so a signal promoted to
+    # frontal-lobe/conscious/ doesn't appear twice (once from the cluster
+    # arc, once from the promoted copy). The duplicate undermines the "do
+    # NOT create new signals for issues already covered" instruction below.
     signal_lines = []
+    seen_signals: set[tuple[str, str]] = set()
     for arc in arcs:
         for sig in arc.signals:
             sev = sig.attr("severity", "info")
             src = sig.attr("source", "?")
             content = sig.content.splitlines()[0] if sig.content else "(empty)"
+            content_hash = hashlib.sha256(
+                (sig.content or "").strip().encode("utf-8")
+            ).hexdigest()[:16]
+            dedup_key = (src, content_hash)
+            if dedup_key in seen_signals:
+                continue
+            seen_signals.add(dedup_key)
             signal_lines.append(f"  [{sev}] ({src}) {content}")
     signals_text = "\n".join(signal_lines) if signal_lines else "  (none)"
 
-    # Lessons (just count + sample)
+    # Lessons — dedup by content_hash so the 10-item sample contains 10
+    # distinct entries. Without this, a lesson repeating in many arc files
+    # (legitimate per-arc authorship — each writer session captures its own
+    # "NFS dirs need chmod 777" lesson when it hits the same issue) dominates
+    # the sample and the AI flags it as "lesson dedup broken". The vault
+    # data is fine; only the prompt rendering needs dedup. Same pattern as
+    # seen_signals above and seen in brain_keeper.write_inject_feed.
     all_lessons = []
+    seen_lessons: set[str] = set()
     for arc in arcs:
         for lesson in arc.lessons:
-            all_lessons.append(lesson.content.splitlines()[0] if lesson.content else "")
+            first = (lesson.content.splitlines()[0] if lesson.content else "").strip()
+            if not first:
+                continue  # empty lesson body — nothing useful to show the AI
+            # Key on first_line, not full content. The AI sees only the
+            # first line in the sample, so two lessons sharing a first
+            # line are visually identical to the AI even if their bodies
+            # differ in metadata footers. Dedup on what's visible.
+            key = first.lower()
+            if key in seen_lessons:
+                continue
+            seen_lessons.add(key)
+            all_lessons.append(first)
     lessons_sample = "\n".join(f"  - {l}" for l in all_lessons[:10])
     if len(all_lessons) > 10:
         lessons_sample += f"\n  ... and {len(all_lessons) - 10} more"
@@ -146,6 +221,15 @@ Your job: REASON about the data below. Do NOT read files — everything is pre-e
 ### 1. Missing Edges
 List edges that SHOULD exist based on the arc titles/content but DON'T appear in the edge map.
 Format: `arc-id-A --type--> arc-id-B` with a one-line reason.
+
+Permitted type values: parent, child, sibling, unblocks, supersedes, related.
+Use the strongest type that applies: parent/child for structural hierarchy,
+sibling for peer arcs in the same work thread, unblocks/supersedes for
+directional dependencies, related as a last resort.
+
+Emit AT MOST ONE edge per (source, target) pair — never the same pair under
+two different types in a single response.
+
 If no missing edges, say "None detected."
 
 ### 2. Merge/Split Candidates
@@ -154,8 +238,9 @@ Format: `MERGE: arc-A + arc-B → suggested-title` or `SPLIT: arc-A → arc-A-pa
 If none, say "None."
 
 ### 3. Signal Escalation
-Should any signals be escalated (warning → critical, or critical → nuclear)?
-Should any signals be CLEARED (the issue was resolved)?
+Should any EXISTING signals be escalated (warning → critical, or critical → nuclear)?
+Should any EXISTING signals be CLEARED (the issue was resolved)?
+Do NOT create new signals for issues already covered by the active signals listed above — they are already broadcasting. Only escalate, clear, or leave unchanged.
 
 Format:
 - `ESCALATE: signal-source → new-severity (reason)`

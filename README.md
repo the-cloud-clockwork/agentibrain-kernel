@@ -305,7 +305,7 @@ Architecture reference: [`docs/architecture/ARCHITECTURE.md`](docs/architecture/
 
 ## Connect Claude Code
 
-After install, register the kernel's MCP server with Claude Code so the agent can reach the brain via four tools (`kb_search`, `kb_brief`, `brain_search_arcs`, `brain_get_arc`).
+After install, register the kernel's MCP server with Claude Code so the agent can reach the brain via five tools (`kb_search`, `kb_brief`, `brain_search_arcs`, `brain_get_arc`, `brain_ingest`).
 
 ### Laptop (Docker Compose)
 
@@ -317,7 +317,7 @@ Add to `~/.claude/.mcp.json` or your project-local `.mcp.json`:
     "agentibrain": {
       "url": "http://localhost:8104/mcp",
       "headers": {
-        "Authorization": "Bearer ${MCP_PROXY_API_KEY}"
+        "x-api-key": "${MCP_PROXY_API_KEY}"
       }
     }
   }
@@ -330,7 +330,7 @@ Get the bearer value from `.env`:
 grep ^MCP_PROXY_API_KEY .env
 ```
 
-Restart Claude Code, then verify with `/mcp` — the `agentibrain` server should appear with 4 tools (`mcp__agentibrain__kb_search`, etc.).
+Restart Claude Code, then verify with `/mcp` — the `agentibrain` server should appear with 5 tools (`mcp__agentibrain__kb_search`, etc.).
 
 ### Kubernetes (agent-mode pod)
 
@@ -342,7 +342,7 @@ For Claude Code running in agent mode inside a pod, point at the in-cluster Serv
     "agentibrain": {
       "url": "http://agentibrain-mcp.<your-namespace>.svc:8080/mcp",
       "headers": {
-        "Authorization": "Bearer ${MCP_PROXY_API_KEY}"
+        "x-api-key": "${MCP_PROXY_API_KEY}"
       }
     }
   }
