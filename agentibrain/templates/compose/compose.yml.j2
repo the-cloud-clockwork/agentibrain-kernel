@@ -95,39 +95,17 @@ services:
       retries: 3
       start_period: 15s
 
-  obsidian-reader:
-    image: {{ obsidian_reader_image | default("ghcr.io/the-cloud-clockwork/agentibrain-obsidian-reader:latest") }}
-    container_name: agentibrain_obsidian_reader
-    restart: unless-stopped
-    environment:
-      VAULT_ROOT: /vault
-      RAW_INBOX_PREFIX: raw/inbox
-      OBSIDIAN_READER_TOKEN: ${KB_ROUTER_TOKEN}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    volumes:
-      - "{{ vault_path }}:/vault:rw"
-    ports:
-      - "{{ obsidian_reader_port | default(8101) }}:8080"
-    networks: [agentibrain_net]
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-
   brain-api:
-    image: {{ kb_router_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-api:latest") }}
-    container_name: agentibrain_kb_router
+    image: {{ brain_api_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-api:latest") }}
+    container_name: agentibrain_brain_api
     restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
-      obsidian-reader: { condition: service_started }
       embeddings: { condition: service_started }
     environment:
       ARTIFACT_STORE_URL: ${ARTIFACT_STORE_URL:-}
-      OBSIDIAN_READER_URL: http://obsidian-reader:8080
-      OBSIDIAN_READER_TOKEN: ${KB_ROUTER_TOKEN}
+      VAULT_ROOT: /vault
+      RAW_INBOX_PREFIX: raw/inbox
       EMBEDDINGS_URL: http://embeddings:8080
       INFERENCE_URL: ${INFERENCE_URL:-}
       INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
@@ -136,8 +114,10 @@ services:
       KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - "{{ vault_path }}:/vault:rw"
     ports:
-      - "{{ kb_router_port | default(8102) }}:8080"
+      - "{{ brain_api_port | default(8102) }}:8080"
     networks: [agentibrain_net]
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
