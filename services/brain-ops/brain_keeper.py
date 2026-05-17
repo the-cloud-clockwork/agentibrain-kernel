@@ -333,12 +333,16 @@ def drain_inbox(vault_root: Path, dry_run: bool = False) -> dict:
                 region = TAG_REGION_MAP[tag_lower]
                 break
 
+        region_label = {"left": "left-hemisphere", "right": "right-hemisphere"}.get(region.split("/")[0], region.split("/")[0])
         target_dir = vault_root / region
         if not dry_run:
             target_dir.mkdir(parents=True, exist_ok=True)
             dest = target_dir / md.name
             if dest.exists():
                 dest = target_dir / f"{md.stem}-{datetime.now(timezone.utc).strftime('%H%M%S')}{md.suffix}"
+            _update_frontmatter_field(md, "region", region_label)
+            if not doc.frontmatter.get("status"):
+                _update_frontmatter_field(md, "status", "active")
             shutil.move(str(md), str(dest))
         stats["drained"] += 1
         print(f"INBOX: {md.name} → {region}/")
@@ -366,19 +370,28 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
     seen_ids: set[str] = set()
 
     def _scan_and_collect(directory: Path, recurse: bool = False):
-        """Scan .md files, parse, collect into arcs list. Deduplicates by stem."""
+        """Scan .md files, parse, collect into arcs list. Deduplicates by stem.
+
+        Dir-bucketed merged_stems so a `.merged.md` in subdir X only
+        suppresses the raw counterpart in subdir X — never across
+        siblings when recurse=True.
+        """
         if not directory.is_dir():
             return
         pattern = "**/*.md" if recurse else "*.md"
         files = list(sorted(directory.glob(pattern)))
-        merged_stems = {
-            f.name.replace(".merged.md", "") for f in files if f.name.endswith(".merged.md")
-        }
+        merged_stems_by_dir: dict[Path, set[str]] = {}
+        for f in files:
+            if f.name.endswith(".merged.md"):
+                merged_stems_by_dir.setdefault(f.parent, set()).add(
+                    f.name.replace(".merged.md", "")
+                )
         for md_file in files:
             if md_file.name.startswith("_"):
                 continue
             stem = md_file.name[:-3]
-            if not md_file.name.endswith(".merged.md") and stem in merged_stems:
+            if (not md_file.name.endswith(".merged.md")
+                and stem in merged_stems_by_dir.get(md_file.parent, set())):
                 continue
             arc_id = md_file.stem.replace(".merged", "")
             if arc_id in seen_ids:

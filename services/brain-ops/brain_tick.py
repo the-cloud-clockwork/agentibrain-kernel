@@ -73,12 +73,48 @@ _BRAIN_SCHEMA_DDL = (
 )
 
 
+def _classify_tick_severity(report: dict) -> str:
+    """Severity for the brain's own tick.complete event.
+
+    Never escalates an AI health assessment to nuclear via keyword guessing —
+    the loop where the AI reads the active signals (which contain the word
+    "nuclear"), reasons about them, and the amygdala re-classifies the
+    output as nuclear because of that keyword is what stacked 14+
+    redundant brain-cron signals over 30h.
+
+    Rules:
+      * nuclear  — the tick mechanism itself failed (AI output unparseable
+                   → score=0 sentinel, or the AI phase recorded error=true).
+                   These represent the brain genuinely not working.
+      * warning  — score 1-3. Surface in amygdala-active.md status banner
+                   but DO NOT create a vault @signal arc (warning is below
+                   the incident-arc threshold in amygdala.consume()).
+      * info     — score 4+. classify_severity returns None on the amygdala
+                   side, filtered out entirely. The Redis stream entry still
+                   exists for forensics but drives no amygdala behavior.
+    """
+    ai_phase = report.get("phases", {}).get("ai", {})
+    if ai_phase.get("error"):
+        return "nuclear"
+    health = report.get("phases", {}).get("apply", {}).get("result", {}).get("health", {})
+    score = health.get("score", 0)
+    if score == 0:
+        return "nuclear"  # parse-fail sentinel
+    if score <= 3:
+        return "warning"
+    return "info"
+
+
 def _push_event_bus(report: dict) -> None:
-    """Announce a tick.complete event on anton:events:brain (Redis DB 11).
+    """Announce a brain.tick.complete event on anton:events:brain (Redis DB 11).
 
     The amygdala consumes this stream — keeps the brain panel alive even on
     days when no markers/signals fire from sessions. Best-effort; any failure
     here is non-fatal and never blocks the tick.
+
+    Event name is prefixed with "brain." so amygdala.classify_severity honors
+    the explicit `severity` field instead of falling through to keyword-scan
+    heuristics on the AI's reason text. See _classify_tick_severity above.
     """
     try:
         import redis  # type: ignore
@@ -96,8 +132,9 @@ def _push_event_bus(report: dict) -> None:
     payload = {
         "v": "1",
         "domain": "brain",
-        "event": "tick.complete",
+        "event": "brain.tick.complete",
         "source": "brain-cron",
+        "severity": _classify_tick_severity(report),
         "host": os.getenv("HOSTNAME", "unknown"),
         "ts": str(int(time.time())),
         "title": f"brain tick (score={health.get('score', 0)})",

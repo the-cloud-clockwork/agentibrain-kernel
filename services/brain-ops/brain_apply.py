@@ -31,20 +31,47 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import markers
+import brain_keeper  # for REGION_DIRS — keep prompt + apply scanners aligned
+
+
+# Edge-type priority. Used when collapsing multi-type same-pair collisions.
+# Structural hierarchy first; sibling/peer; directional dependencies; the
+# generic catch-all last. Anything outside this set (causal, temporal, AI
+# hallucinations) sorts after `related` via _rank().
+EDGE_TYPE_PRIORITY = ("parent", "child", "sibling", "unblocks", "supersedes", "related")
+
+
+def _rank(t: str) -> int:
+    try:
+        return EDGE_TYPE_PRIORITY.index(t)
+    except ValueError:
+        return len(EDGE_TYPE_PRIORITY)
 
 
 # ── Parsers for AI tick output sections ───────────────────────────────
 
 def parse_edges(section: str) -> list[dict]:
-    """Parse '### 1. Missing Edges' section."""
+    """Parse '### 1. Missing Edges' section.
+
+    Backticks around the whole line (`` `arc-a --related--> arc-b` ``) get
+    absorbed into the `\\S+` groups by the regex, so strip them after capture.
+    Without this, `arc-a` parses as `arc-a\\`` and find_arc_file() silently
+    fails — edges are dropped and the AI re-emits them every tick.
+
+    Also drops self-loops at parse time.
+    """
     edges = []
     for line in section.splitlines():
         m = re.match(r'`?(\S+)\s+--(\w+)-->\s+(\S+)`?\s*[—–-]\s*(.*)', line)
         if m:
+            source = m.group(1).strip("`")
+            target = m.group(3).strip("`")
+            if source == target:
+                continue  # self-loops pollute connectivity metrics
             edges.append({
-                "source": m.group(1),
+                "source": source,
                 "type": m.group(2),
-                "target": m.group(3),
+                "target": target,
                 "reason": m.group(4).strip(),
             })
     return edges
@@ -164,12 +191,42 @@ def parse_ai_output(text: str) -> dict:
 # ── Apply functions ───────────────────────────────────────────────────
 
 def find_arc_file(vault_root: Path, arc_id: str) -> Path | None:
-    """Find an arc file by cluster_id across all date directories."""
-    for date_dir in (vault_root / "clusters").iterdir():
-        if not date_dir.is_dir():
+    """Locate an arc file by cluster_id or stem.
+
+    Walks brain_keeper.REGION_DIRS first (authoritative — promoted /
+    graduated arcs win), then clusters/<date>/ as the raw tail. Prefers
+    .merged.md over its raw counterpart in the same directory. Mirrors
+    brain_keeper._scan_and_collect's discovery order so the prompt and
+    apply phases agree on which file represents a given arc. Without
+    this, edges/signals targeting promoted region-resident arcs were
+    silently dropped — the bug behind edges_applied=0 after commit
+    72937f2 expanded the prompt to 144 arcs.
+    """
+    search_roots: list[Path] = [vault_root / r for r in brain_keeper.REGION_DIRS]
+    clusters = vault_root / "clusters"
+    if clusters.is_dir():
+        for date_dir in sorted(clusters.iterdir()):
+            if date_dir.is_dir():
+                search_roots.append(date_dir)
+
+    for root in search_roots:
+        if not root.is_dir():
             continue
-        for md_file in date_dir.glob("*.md"):
-            if md_file.name.startswith("_") or ".merged." in md_file.name:
+        files = sorted(root.rglob("*.md"))
+        # Dir-bucketed merged_stems — a .merged.md in dir X only suppresses
+        # the raw counterpart in the SAME dir X, never across subdirs.
+        merged_stems_by_dir: dict[Path, set[str]] = {}
+        for f in files:
+            if f.name.endswith(".merged.md"):
+                merged_stems_by_dir.setdefault(f.parent, set()).add(
+                    f.name.replace(".merged.md", "")
+                )
+        for md_file in files:
+            if md_file.name.startswith("_"):
+                continue
+            stem = md_file.name[:-3]
+            if (not md_file.name.endswith(".merged.md")
+                and stem in merged_stems_by_dir.get(md_file.parent, set())):
                 continue
             try:
                 fm, _ = markers.parse_frontmatter(md_file.read_text())
@@ -181,19 +238,49 @@ def find_arc_file(vault_root: Path, arc_id: str) -> Path | None:
 
 
 def apply_edges(vault_root: Path, edges: list[dict], dry_run: bool) -> int:
-    """Insert @edge markers into source arc files."""
+    """Insert @edge markers into source arc files.
+
+    Two-pass:
+      1. Group AI-emitted edges by (src_norm, tgt_norm); keep the
+         highest-priority type per pair (so a tick that emits both
+         `child` and `parent` to the same target lands one canonical
+         edge).
+      2. For each chosen edge, reject if ANY edge already targets that
+         arc from the same source on disk — regardless of type. This is
+         the cross-tick guard that prevents multi-type accumulation over
+         time (the bug that produced 295 collisions in the live vault).
+    """
     applied = 0
+
+    # Pass 1: per-(src,tgt) priority collapse within this tick.
+    chosen: dict[tuple[str, str], dict] = {}
     for edge in edges:
-        src_file = find_arc_file(vault_root, edge["source"])
+        src_norm = edge["source"].strip("`")
+        tgt_norm = edge["target"].strip("`")
+        if src_norm == tgt_norm:
+            continue  # self-loop
+        key = (src_norm, tgt_norm)
+        if key not in chosen or _rank(edge["type"]) < _rank(chosen[key]["type"]):
+            chosen[key] = {**edge, "source": src_norm, "target": tgt_norm}
+
+    # Pass 2: write markers, guarded by any-type-to-same-target check.
+    for (src_norm, tgt_norm), edge in chosen.items():
+        src_file = find_arc_file(vault_root, src_norm)
         if not src_file:
-            print(f"  SKIP edge: source {edge['source']} not found", file=sys.stderr)
+            print(f"  SKIP edge: source {src_norm} not found", file=sys.stderr)
             continue
 
         text = src_file.read_text()
-        marker = f'<!-- @edge type={edge["type"]} target={edge["target"]} -->'
 
-        if marker in text:
-            continue  # already exists
+        # Cross-tick guard: any existing @edge from this source to this
+        # target (any type) blocks the write. One edge per pair, forever.
+        any_to_target = re.compile(
+            r"<!--\s*@edge\s+type=\w+\s+target=" + re.escape(tgt_norm) + r"\s*-->"
+        )
+        if any_to_target.search(text):
+            continue
+
+        marker = f'<!-- @edge type={edge["type"]} target={tgt_norm} -->'
 
         # Insert before ## Source sessions (or at end)
         if "## Source sessions" in text:
@@ -206,7 +293,7 @@ def apply_edges(vault_root: Path, edges: list[dict], dry_run: bool) -> int:
         if not dry_run:
             src_file.write_text(text)
         applied += 1
-        print(f"  +edge: {edge['source']} --{edge['type']}--> {edge['target']}")
+        print(f"  +edge: {src_norm} --{edge['type']}--> {tgt_norm}")
 
     return applied
 
@@ -219,94 +306,113 @@ def apply_signal_changes(vault_root: Path, changes: list[dict], dry_run: bool) -
     source name. This lets the apply phase act on legacy @signal markers
     emitted without a structured source= attr (historically common — any
     shell heredoc inject could create such markers).
+
+    Walks region dirs first (authoritative — promoted/graduated arcs)
+    then clusters/<date>/ tail. Same discovery order as find_arc_file
+    above so escalate/clear can act on signals living in any arc the
+    AI saw in its prompt input. Without this, signals on promoted
+    region-resident arcs silently no-op.
     """
+
+    def _iter_arc_files():
+        roots: list[Path] = [vault_root / r for r in brain_keeper.REGION_DIRS]
+        clusters = vault_root / "clusters"
+        if clusters.is_dir():
+            for d in sorted(clusters.iterdir()):
+                if d.is_dir():
+                    roots.append(d)
+        for root in roots:
+            if not root.is_dir():
+                continue
+            files = sorted(root.rglob("*.md"))
+            merged_stems_by_dir: dict[Path, set[str]] = {}
+            for f in files:
+                if f.name.endswith(".merged.md"):
+                    merged_stems_by_dir.setdefault(f.parent, set()).add(
+                        f.name.replace(".merged.md", "")
+                    )
+            for md_file in files:
+                if md_file.name.startswith("_"):
+                    continue
+                stem = md_file.name[:-3]
+                if (not md_file.name.endswith(".merged.md")
+                    and stem in merged_stems_by_dir.get(md_file.parent, set())):
+                    continue
+                yield md_file
+
     applied = 0
     for change in changes:
         source = change["source"]
         source_slug = source[:30]
-        # Find all arcs containing signals from this source
-        for date_dir in (vault_root / "clusters").iterdir():
-            if not date_dir.is_dir():
+        for md_file in _iter_arc_files():
+            text = md_file.read_text()
+            has_source_attr = f'source={source}' in text
+            fuzzy_hit = (
+                not has_source_attr
+                and source_slug in text
+                and '<!-- @signal' in text
+            )
+            if not has_source_attr and not fuzzy_hit:
                 continue
-            for md_file in date_dir.glob("*.md"):
-                if md_file.name.startswith("_"):
-                    continue
-                text = md_file.read_text()
-                has_source_attr = f'source={source}' in text
-                # Fuzzy fallback: substring of source in @signal body, not in source= attr
-                fuzzy_hit = (
-                    not has_source_attr
-                    and source_slug in text
-                    and '<!-- @signal' in text
-                )
-                if not has_source_attr and not fuzzy_hit:
-                    continue
 
-                if change["op"] == "clear":
+            if change["op"] == "clear":
+                pattern = re.compile(
+                    r'<!-- @signal[^>]*source=' + re.escape(source) + r'[^>]*-->'
+                    r'(.*?)'
+                    r'<!-- @/signal -->',
+                    re.DOTALL,
+                )
+                match = pattern.search(text)
+                if not match and fuzzy_hit:
                     pattern = re.compile(
-                        r'<!-- @signal[^>]*source=' + re.escape(source) + r'[^>]*-->'
-                        r'(.*?)'
+                        r'<!-- @signal[^>]*-->\s*\n'
+                        r'([^<]*?' + re.escape(source_slug) + r'[^<]*?)\n'
                         r'<!-- @/signal -->',
                         re.DOTALL,
                     )
                     match = pattern.search(text)
-                    if not match and fuzzy_hit:
-                        # Fuzzy fallback: match any @signal block whose body
-                        # contains the source slug (works for legacy markers
-                        # lacking source= attr).
-                        pattern = re.compile(
-                            r'<!-- @signal[^>]*-->\s*\n'
-                            r'([^<]*?' + re.escape(source_slug) + r'[^<]*?)\n'
-                            r'<!-- @/signal -->',
-                            re.DOTALL,
-                        )
-                        match = pattern.search(text)
-                    if match:
-                        content = match.group(1).strip()
-                        # Tombstone: if already resolved+cleared, remove entirely
-                        if "severity=resolved" in match.group(0) and "(CLEARED:" in content:
-                            text = pattern.sub("", text, count=1)
-                            print(f"  TOMBSTONE: {change['source']} in {md_file.name}")
-                        else:
-                            replacement = f'<!-- @signal severity=resolved source={change["source"]} -->\n{content} (CLEARED: {change["reason"]})\n<!-- @/signal -->'
-                            text = pattern.sub(replacement, text, count=1)
-                            print(f"  CLEAR: {change['source']} in {md_file.name} ({change['reason']})")
-                        if not dry_run:
-                            md_file.write_text(text)
-                        applied += 1
+                if match:
+                    content = match.group(1).strip()
+                    if "severity=resolved" in match.group(0) and "(CLEARED:" in content:
+                        text = pattern.sub("", text, count=1)
+                        print(f"  TOMBSTONE: {change['source']} in {md_file.name}")
+                    else:
+                        replacement = f'<!-- @signal severity=resolved source={change["source"]} -->\n{content} (CLEARED: {change["reason"]})\n<!-- @/signal -->'
+                        text = pattern.sub(replacement, text, count=1)
+                        print(f"  CLEAR: {change['source']} in {md_file.name} ({change['reason']})")
+                    if not dry_run:
+                        md_file.write_text(text)
+                    applied += 1
 
-                elif change["op"] == "escalate":
-                    # Update severity — primary: source= attr present
-                    old_pattern = re.compile(
-                        r'(<!-- @signal\s+)severity=\w+(\s+source=' + re.escape(source) + r')'
+            elif change["op"] == "escalate":
+                old_pattern = re.compile(
+                    r'(<!-- @signal\s+)severity=\w+(\s+source=' + re.escape(source) + r')'
+                )
+                if not old_pattern.search(text) and fuzzy_hit:
+                    bare_pattern = re.compile(
+                        r'(<!-- @signal)(\s*-->\s*\n[^<]*?' + re.escape(source_slug) + r')',
                     )
-                    # Fuzzy fallback: inject severity=X source=<name> into a
-                    # bare `<!-- @signal -->` marker whose body matches.
-                    if not old_pattern.search(text) and fuzzy_hit:
-                        bare_pattern = re.compile(
-                            r'(<!-- @signal)(\s*-->\s*\n[^<]*?' + re.escape(source_slug) + r')',
-                        )
-                        if bare_pattern.search(text):
-                            text = bare_pattern.sub(
-                                rf'\1 severity={change["new_severity"]} source={source}\2',
-                                text,
-                                count=1,
-                            )
-                            if not dry_run:
-                                md_file.write_text(text)
-                            applied += 1
-                            print(f"  ESCALATE (fuzzy): {source} → {change['new_severity']} in {md_file.name}")
-                            continue
-                    if old_pattern.search(text):
-                        text = old_pattern.sub(
-                            rf'\1severity={change["new_severity"]}\2',
+                    if bare_pattern.search(text):
+                        text = bare_pattern.sub(
+                            rf'\1 severity={change["new_severity"]} source={source}\2',
                             text,
                             count=1,
                         )
                         if not dry_run:
                             md_file.write_text(text)
                         applied += 1
-                        print(f"  ESCALATE: {change['source']} → {change['new_severity']} in {md_file.name}")
+                        print(f"  ESCALATE (fuzzy): {source} → {change['new_severity']} in {md_file.name}")
+                        continue
+                if old_pattern.search(text):
+                    text = old_pattern.sub(
+                        rf'\1severity={change["new_severity"]}\2',
+                        text,
+                        count=1,
+                    )
+                    if not dry_run:
+                        md_file.write_text(text)
+                    applied += 1
+                    print(f"  ESCALATE: {change['source']} → {change['new_severity']} in {md_file.name}")
 
     return applied
 

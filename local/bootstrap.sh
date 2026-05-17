@@ -47,6 +47,24 @@ else
   echo "[bootstrap] generated random KB_ROUTER_TOKEN + VAULT_READER_TOKENS"
 fi
 
+# 1b. Ensure EMBEDDINGS_API_KEY (singular, used by consumers) matches
+#     EMBEDDINGS_API_KEYS (plural, embeddings service inbound whitelist).
+#     Without this, brain-api / tick-cron / mcp call embeddings without a
+#     bearer and get 401 when the embeddings service has any whitelist set.
+EMB_PLURAL="$(grep -E "^EMBEDDINGS_API_KEYS=" "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d "\r" || true)"
+if [[ -n "$EMB_PLURAL" ]]; then
+  if grep -qE "^EMBEDDINGS_API_KEY=" "$ENV_FILE"; then
+    if sed --version >/dev/null 2>&1; then
+      sed -i "s|^EMBEDDINGS_API_KEY=.*|EMBEDDINGS_API_KEY=${EMB_PLURAL}|" "$ENV_FILE"
+    else
+      sed -i "" "s|^EMBEDDINGS_API_KEY=.*|EMBEDDINGS_API_KEY=${EMB_PLURAL}|" "$ENV_FILE"
+    fi
+  else
+    printf "\n%s=%s\n" "EMBEDDINGS_API_KEY" "$EMB_PLURAL" >> "$ENV_FILE"
+  fi
+  echo "[bootstrap] aligned EMBEDDINGS_API_KEY = EMBEDDINGS_API_KEYS"
+fi
+
 # 2. Resolve vault path (default ./vault, override via VAULT_ROOT_HOST in .env)
 VAULT_HOST="$(grep -E '^VAULT_ROOT_HOST=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '\r' || echo './vault')"
 [[ -z "$VAULT_HOST" ]] && VAULT_HOST="./vault"
@@ -75,6 +93,15 @@ EOF
 else
   echo "[bootstrap] vault $VAULT_ABS already present — leaving alone"
   mkdir -p "$VAULT_ABS"/{brain-feed,clusters,raw/inbox}
+fi
+
+# 2b. Scaffold the full cognitive-region tree from the packaged template.
+#     cp -rn is non-clobber, so user edits to existing files are preserved
+#     and re-running this script is a no-op.
+TEMPLATE_DIR="$ROOT/agentibrain/templates/vault-layout"
+if [[ -d "$TEMPLATE_DIR" ]]; then
+  cp -rn "$TEMPLATE_DIR"/. "$VAULT_ABS"/
+  echo "[bootstrap] vault region tree scaffolded from $TEMPLATE_DIR"
 fi
 
 # 3. Done.
