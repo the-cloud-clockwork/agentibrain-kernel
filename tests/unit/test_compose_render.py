@@ -24,9 +24,7 @@ def test_render_local_includes_minio(tmp_path):
     data = yaml.safe_load(rendered)
     assert "minio" in data["services"]
     assert "minio-init" in data["services"]
-    assert {"brain-api", "embeddings", "postgres", "redis"} <= set(
-        data["services"]
-    )
+    assert {"brain-api", "embeddings", "postgres", "redis"} <= set(data["services"])
 
 
 def test_render_s3_excludes_minio(tmp_path):
@@ -34,9 +32,7 @@ def test_render_s3_excludes_minio(tmp_path):
     data = yaml.safe_load(rendered)
     assert "minio" not in data["services"]
     assert "minio-init" not in data["services"]
-    assert {"brain-api", "embeddings", "postgres", "redis"} <= set(
-        data["services"]
-    )
+    assert {"brain-api", "embeddings", "postgres", "redis"} <= set(data["services"])
 
 
 def test_render_mounts_vault(tmp_path):
