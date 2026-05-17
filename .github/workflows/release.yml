@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options: [patch, minor, major]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release:
+    uses: The-Cloud-Clockwork/.github/.github/workflows/release-reusable.yml@main
+    with:
+      bump: ${{ inputs.bump }}
+      # No PyPI publish for this kernel — distributes as container images.
+      # docker-build.yml runs on every push to main automatically; explicit
+      # downstream dispatch is unnecessary. Leaving this empty skips the
+      # "Dispatch downstream workflows" step in the reusable.
+      downstream_workflows: ""
+    secrets:
+      RELEASE_TOKEN: ${{ secrets.ORG_GITHUB_TOKEN }}

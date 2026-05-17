@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentibrain"
-dynamic = ["version"]
+version = "0.6.0"
 description = "Standalone brain + knowledge-base kernel (agenti ecosystem)"
 readme = "README.md"
 license = { text = "MIT" }
@@ -55,9 +55,6 @@ agentibrain = [
     "templates/vault-layout/**/*",
     "migrations/*.sql",
 ]
-
-[tool.setuptools.dynamic]
-version = { attr = "agentibrain.__version__" }
 
 [tool.ruff]
 line-length = 100
