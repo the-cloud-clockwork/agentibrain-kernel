@@ -388,7 +388,7 @@ The kernel publishes 4 service images via GitHub Actions. **Standard consumers d
 | `ghcr.io/the-cloud-clockwork/agentibrain-mcp` | `services/mcp/` | `:dev` |
 | `ghcr.io/the-cloud-clockwork/agentibrain-brain-ops` | `services/brain-ops/` | `:dev` |
 
-CI: [`.github/workflows/docker-build.yml`](.github/workflows/docker-build.yml) runs on every push to `dev` (→ `:dev`). Single-env collapse 2026-05-18: `main` is vestigial, `:latest` no longer published.
+CI: [`.github/workflows/docker-build.yml`](.github/workflows/docker-build.yml) runs on every push to `dev` (→ `:dev`). `main` is vestigial; `:latest` is not published.
 
 | Path | Builds locally? | Pulls from GHCR? |
 |---|:---:|:---:|
@@ -566,13 +566,13 @@ PYTHONPATH=services/brain-api:. pytest services/brain-api/tests -q   # service t
 docker build -t agentibrain-brain-api:local services/brain-api
 ```
 
-Workflow: `dev` is the working branch and the deploy branch. CI on `dev` ships `:dev` GHCR images automatically. `main` is vestigial (single-env collapse 2026-05-18).
+Workflow: `dev` is the working branch and the deploy branch. CI on `dev` ships `:dev` GHCR images automatically. `main` is vestigial.
 
 ---
 
 ## Status
 
-**v0.1.x — stable.** Six Helm charts. Four service images auto-published to GHCR (`:dev` from dev branch; single-env collapse 2026-05-18 — `:latest` from main no longer published). HTTP contract frozen at v1. Generic OpenAI gateway — kernel speaks chat-completions to any compatible upstream (LiteLLM, OpenAI, Ollama, vLLM, …). Brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds; every embed flows through `POST /index_artifact`). Vault read/write absorbed into brain-api directly via `vault_reader` module — no separate reader service.
+**v0.1.x — stable.** Six Helm charts. Four service images auto-published to GHCR (`:dev` from dev branch; `:latest` from main is not published). HTTP contract frozen at v1. Generic OpenAI gateway — kernel speaks chat-completions to any compatible upstream (LiteLLM, OpenAI, Ollama, vLLM, …). Brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds; every embed flows through `POST /index_artifact`). Vault read/write absorbed into brain-api directly via `vault_reader` module — no separate reader service.
 
 The kernel is self-contained and the canonical source of truth for everything brain-related — services, Helm charts, brain-keeper agent definition (`agents/brain-keeper/`), brain profile overlays (`profiles/brain/`, `profiles/brain-keeper/`), and the vault layout schema. All deployment-specific plumbing (cluster namespaces, model name aliases, secret-store paths, NFS hosts) lives in your own platform repo, not here.
 
