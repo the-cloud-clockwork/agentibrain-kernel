@@ -83,7 +83,7 @@ heat: 9                          # 0–10, decides frontal-lobe promotion
 
 ### ❌ Errors / learning
 - PR #275 merge conflict: post-squash divergence from PR #274. **Lesson**: after squash-merge to main, NEVER cherry-pick onto old dev tip — always fresh branch from main. Used this pattern for PRs #276, #277, #278 successfully.
-- Dev image tag `:dev` only builds from dev branch pushes. **Lesson**: ship to main → cherry-pick onto dev to trigger `:dev` image rebuild.
+- Dev image tag `:latest` only builds from dev branch pushes. **Lesson**: ship to main → cherry-pick onto dev to trigger `:latest` image rebuild.
 - In-session MCP tool catalog frozen at start. **Lesson**: after adding a new tool, operator must `/mcp` reload for this session to see it.
 
 ### 🏁 Resolution
