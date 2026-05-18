@@ -95,7 +95,7 @@ Tags are issued by the release workflow, not locally. See `docs/RELEASING.md` fo
 
 ### Migration
 
-Downstream Helm charts (antoncore) must:
+Downstream Helm charts (your platform repo) must:
 1. Remove `obsidian-reader` Application + chart references.
 2. Switch image pins from `agentibrain-kb-router` → `agentibrain-brain-api`.
 3. Switch image pins from `agentibrain-brain-cron` / `agentibrain-tick-engine` → `agentibrain-brain-ops`.

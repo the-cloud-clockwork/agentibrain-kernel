@@ -93,6 +93,6 @@ Full grammar: `architecture/MARKERS.md`.
 
 ## Environment
 
-**dev** — your dev namespace, image tag `:dev`, ArgoCD source branch `dev`, secret-store paths suffixed `-dev`.
+**dev** — the active development branch; CI publishes `:latest` images on every push.
 
-**prod** — your prod namespace, image tag `:latest`, ArgoCD source branch `main`, no suffix.
+**prod** — your prod namespace; consumes the `:latest` image tag.

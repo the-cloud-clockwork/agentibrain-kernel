@@ -1,0 +1,8 @@
+{
+    "mcpServers": {
+        "agentibrain": {
+            "type": "sse",
+            "url": "http://localhost:8104/sse"
+        }
+    }
+}

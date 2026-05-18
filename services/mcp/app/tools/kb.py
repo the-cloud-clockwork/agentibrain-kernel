@@ -132,7 +132,7 @@ async def _inference_chat(system_prompt: str, user_prompt: str, model: str) -> s
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{INFERENCE_URL.rstrip('/')}/v1/chat/completions",
+                f"{INFERENCE_URL.rstrip('/')}/chat/completions",
                 json=body,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=200),

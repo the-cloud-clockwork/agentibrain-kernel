@@ -21,7 +21,7 @@ tpl:
     type: statefulset
     image:
       repository: ghcr.io/the-cloud-clockwork/agentibrain-mcp
-      tag: dev
+      tag: latest
       pullPolicy: Always
     replicaCount: 1
     container:

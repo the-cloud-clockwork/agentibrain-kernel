@@ -57,7 +57,7 @@ helm upgrade --install <release> ./helm/<chart> \
 
 ## ArgoCD image-updater
 
-The kernel publishes `agentibrain-*` images via `.github/workflows/docker-build.yml` on every push to `main` (`:latest`) and `dev` (`:dev`). Consumers add an Application label + annotations to track them:
+The kernel publishes `agentibrain-*` images via `.github/workflows/docker-build.yml` on every push to `dev` (`:latest`). Consumers add an Application label + annotations to track them:
 
 ```yaml
 metadata:
