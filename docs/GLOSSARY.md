@@ -93,6 +93,6 @@ Full grammar: `architecture/MARKERS.md`.
 
 ## Environment
 
-**dev** — the only working branch (single-env collapse 2026-05-18). Anton runs everything under `anton-prod`; image tag is `:latest`.
+**dev** — the active development branch; CI publishes `:latest` images on every push.
 
-**prod** — your prod namespace, image tag `:latest`, ArgoCD source branch `main`, no suffix.
+**prod** — your prod namespace; consumes the `:latest` image tag.

@@ -248,7 +248,7 @@ Format:
 
 IMPORTANT source-name rules:
 - If the source name contains spaces, WRAP IT IN BACKTICKS:
-  `ESCALATE: \`ArgoCD Image Updater GHCR auth broken\` → critical (fleet-wide CD halt)`
+  `ESCALATE: \`image-updater registry auth broken\` → critical (fleet-wide CD halt)`
 - If the source name is a single token (kebab-case slug), no backticks needed:
   `ESCALATE: paper2slides-s3 → warning (all jobs fail)`
 - The apply phase uses the source name verbatim — do NOT paraphrase between ticks.

@@ -62,3 +62,9 @@ site/
 secrets/
 .secrets
 local/.k8s-tokens
+
+# Operator-private planning notes (BLOCKS, STATE, TODO, VISION, ENHANCEMENTS,
+# brain-models). These describe operator-specific deployment work that does
+# not belong in the public kernel repo. Files remain local for the operator;
+# tracked content was removed in the de-branding sweep.
+operator/
