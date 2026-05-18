@@ -20,7 +20,7 @@ tpl:
     image:
       # The agenticore image is published by the upstream agenticore repo
       # (https://github.com/The-Cloud-Clockwork/agenticore), NOT by this kernel.
-      # CI in that repo pushes :dev on dev branch (single-env, 2026-05-18 collapse). brain-keeper
+      # CI in that repo pushes :dev on every push to dev. brain-keeper
       # runs the same image with AGENT_MODE=true env (set below).
       repository: ghcr.io/the-cloud-clockwork/agenticore
       tag: dev

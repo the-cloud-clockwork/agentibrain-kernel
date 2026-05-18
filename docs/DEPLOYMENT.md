@@ -124,7 +124,7 @@ Each kernel service has its own image, tagged per branch:
 | mcp | `ghcr.io/the-cloud-clockwork/agentibrain-mcp:dev` |
 | brain-keeper | `ghcr.io/the-cloud-clockwork/agenticore:dev` (uses agenticore base; brain-keeper is an agenticore agent, not its own image) |
 
-Branch → tag: push to `dev` → `:dev`. Single-env collapse (2026-05-18): `main` is vestigial, ArgoCD tracks `dev`. Image-updater watches `:dev` digest.
+Branch → tag: push to `dev` → `:dev`. ArgoCD tracks `dev`; image-updater watches the `:dev` digest. `main` is vestigial.
 
 ## Smoke tests post-deploy
 
