@@ -23,7 +23,7 @@ The kernel is deployed twice in the reference setup: `<your-dev-ns>` and `<your-
 |---|---|---|
 | K8s namespace | `<your-dev-ns>` | `<your-prod-ns>` |
 | Cron namespace | `<your-ops-ns>` (shared) | `<your-ops-ns>` (shared, `-prod` suffix on CR name) |
-| Image tag | `:dev` | `:latest` |
+| Image tag | `:latest` | `:latest` |
 | ArgoCD source branch | `dev` | `main` |
 | ArgoCD app CR names | un-suffixed (`agentibrain-brain-api`) | `-prod` suffix (`agentibrain-brain-api-prod`) |
 | Secret-store path | `<your-prefix>/embeddings-dev` | `<your-prefix>/embeddings` |
@@ -44,7 +44,7 @@ Two reasons:
 Every kernel chart in this repo follows:
 
 ```
-values.yaml          ← dev defaults (env=dev, image tag :dev, cluster URLs <your-dev-ns>.svc)
+values.yaml          ← dev defaults (env=prod, image tag :latest, cluster URLs <your-dev-ns>.svc)
 values-prod.yaml     ← prod overlay (env=prod, image tag :latest, cluster URLs <your-prod-ns>.svc)
 ```
 
@@ -86,7 +86,7 @@ For a config-only change (no image rebuild needed):
 3. Merge → ArgoCD applies
 
 For an image change:
-1. Push to `dev` branch → CI builds `:dev`
+1. Push to `dev` branch → CI builds `:latest`
 2. Test in `<your-dev-ns>`
 3. PR `dev` → `main` → CI builds `:latest`
 4. ArgoCD image-updater bumps the `agentibrain-X-prod` app digest
