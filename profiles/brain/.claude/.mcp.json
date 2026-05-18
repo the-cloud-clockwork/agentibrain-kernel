@@ -1,0 +1,11 @@
+{
+    "mcpServers": {
+        "agentibrain": {
+            "type": "http",
+            "url": "http://localhost:8104/mcp/",
+            "headers": {
+                "Authorization": "Bearer ${MCP_PROXY_API_KEY}"
+            }
+        }
+    }
+}
