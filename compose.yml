@@ -216,7 +216,7 @@ services:
       KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN:-}
       EMBEDDINGS_URL: http://embeddings:8080
       EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
-      MCP_PROXY_API_KEY: ${MCP_PROXY_API_KEY:-}
+      MCP_PROXY_API_KEY: ""
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "${PORT_MCP:-8104}:8080"

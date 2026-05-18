@@ -1,11 +1,8 @@
 {
     "mcpServers": {
         "agentibrain": {
-            "type": "http",
-            "url": "http://localhost:8104/sse",
-            "headers": {
-                "x-api-key": "${MCP_PROXY_API_KEY}"
-            }
+            "type": "sse",
+            "url": "http://localhost:8104/sse"
         }
     }
 }
