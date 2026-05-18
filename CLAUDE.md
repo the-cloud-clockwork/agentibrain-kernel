@@ -85,8 +85,8 @@ not edit it manually. The runtime version lives in `agentibrain/__init__.py`
 
 Dev-first flow:
 - Work on `dev` → PR to `main` → merge.
-- `main` is the release trunk; CI publishes `:latest` images on every merge.
-- `dev` carries the in-flight changes; CI publishes `:latest` images on every push.
+- `main` is vestigial (single-env collapse 2026-05-18); CI no longer promotes to it.
+- `dev` is the working branch; CI publishes `:dev` images on every push to dev.
 - Image builds go to `ghcr.io/the-cloud-clockwork/agentibrain-*`.
 
 ## Downstream consumers

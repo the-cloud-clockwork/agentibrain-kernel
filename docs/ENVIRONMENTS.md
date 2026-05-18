@@ -6,14 +6,11 @@ nav_order: 3
 
 # Environments
 
-> **Note:** This doc walks through a reference dev/prod split (namespaces
-> `<your-dev-ns>`, `<your-prod-ns>`, `<your-ops-ns>`; LiteLLM at
-> `litellm.<your-prod-ns>.svc`; secrets at `<your-secret-store>`) as a
-> concrete example. **None of those names are baked into the kernel.**
-> Substitute your own namespaces, gateway URLs, and host addresses everywhere
-> — the kernel charts default to empty / placeholder values and accept
-> whatever your overlay sets. See [`DEPLOYMENT.md`](DEPLOYMENT.md) for the
-> generic placeholders.
+> **Note (2026-05-18 single-env collapse):** The reference setup below describes a two-namespace
+> dev/prod split. For the Anton platform this has been collapsed to a single environment
+> (`anton-prod`), `dev` branch is the working branch, and `main` is vestigial.
+> If you are running a multi-env setup, the patterns below still apply — substitute
+> your own namespaces. None of these names are baked into the kernel charts.
 
 The kernel is deployed twice in the reference setup: `<your-dev-ns>` and `<your-prod-ns>`. This doc lays out what differs and how the values overlay achieves it.
 
@@ -23,8 +20,8 @@ The kernel is deployed twice in the reference setup: `<your-dev-ns>` and `<your-
 |---|---|---|
 | K8s namespace | `<your-dev-ns>` | `<your-prod-ns>` |
 | Cron namespace | `<your-ops-ns>` (shared) | `<your-ops-ns>` (shared, `-prod` suffix on CR name) |
-| Image tag | `:latest` | `:latest` |
-| ArgoCD source branch | `dev` | `main` |
+| Image tag | `:dev` | `:dev` (single-env: `main` vestigial) |
+| ArgoCD source branch | `dev` | `dev` (single-env collapse 2026-05-18) |
 | ArgoCD app CR names | un-suffixed (`agentibrain-brain-api`) | `-prod` suffix (`agentibrain-brain-api-prod`) |
 | Secret-store path | `<your-prefix>/embeddings-dev` | `<your-prefix>/embeddings` |
 | Vault NFS path | shared (single dual-hemisphere vault) | shared |
@@ -44,8 +41,8 @@ Two reasons:
 Every kernel chart in this repo follows:
 
 ```
-values.yaml          ← dev defaults (env=prod, image tag :latest, cluster URLs <your-dev-ns>.svc)
-values-prod.yaml     ← prod overlay (env=prod, image tag :latest, cluster URLs <your-prod-ns>.svc)
+values.yaml          ← dev defaults (env=prod, image tag :dev, cluster URLs <your-dev-ns>.svc)
+values-prod.yaml     ← prod overlay (env=prod, image tag :dev, cluster URLs <your-prod-ns>.svc)
 ```
 
 ArgoCD apps reference both:
@@ -86,11 +83,9 @@ For a config-only change (no image rebuild needed):
 3. Merge → ArgoCD applies
 
 For an image change:
-1. Push to `dev` branch → CI builds `:latest`
-2. Test in `<your-dev-ns>`
-3. PR `dev` → `main` → CI builds `:latest`
-4. ArgoCD image-updater bumps the `agentibrain-X-prod` app digest
-5. Pod rollout
+1. Push to `dev` branch → CI builds `:dev`
+2. ArgoCD image-updater bumps digest → pod rollout in `<your-ns>`
+3. (Single-env: no main promotion — `dev` is the deploy branch)
 
 ## Running with a single environment
 
