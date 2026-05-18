@@ -23,9 +23,9 @@ Tool source: `services/mcp/app/tools/{arcs.py,kb.py}`.
 
 ## Image
 
-`ghcr.io/the-cloud-clockwork/agentibrain-mcp:dev|latest`
+`ghcr.io/the-cloud-clockwork/agentibrain-mcp:latest`
 
-Built from `services/mcp/Dockerfile` by the kernel `docker-build` workflow on every push to `dev` (→`:dev`) and `main` (→`:latest`).
+Built from `services/mcp/Dockerfile` by the kernel `docker-build` workflow on every push to `dev` (→`:latest`).
 
 ## Runtime
 

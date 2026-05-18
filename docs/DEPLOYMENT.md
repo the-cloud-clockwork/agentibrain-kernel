@@ -118,11 +118,11 @@ Each kernel service has its own image, tagged per branch:
 
 | Service | Image |
 |---|---|
-| brain-api | `ghcr.io/the-cloud-clockwork/agentibrain-brain-api:dev|latest` |
-| embeddings | `ghcr.io/the-cloud-clockwork/agentibrain-embeddings:dev|latest` |
-| tick-engine | `ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev|latest` |
-| mcp | `ghcr.io/the-cloud-clockwork/agentibrain-mcp:dev|latest` |
-| brain-keeper | `ghcr.io/the-cloud-clockwork/agenticore:dev|latest` (uses agenticore base; brain-keeper is an agenticore agent, not its own image) |
+| brain-api | `ghcr.io/the-cloud-clockwork/agentibrain-brain-api:latest` |
+| embeddings | `ghcr.io/the-cloud-clockwork/agentibrain-embeddings:latest` |
+| tick-engine | `ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:latest` |
+| mcp | `ghcr.io/the-cloud-clockwork/agentibrain-mcp:latest` |
+| brain-keeper | `ghcr.io/the-cloud-clockwork/agenticore:latest` (uses agenticore base; brain-keeper is an agenticore agent, not its own image) |
 
 Branch → tag: push to `dev` → `:latest`, push to `main` → `:latest`. ArgoCD image-updater watches the tag regex per app and bumps the digest.
 
