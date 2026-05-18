@@ -1,8 +1,8 @@
 # Brain Profile — Memory-Aware Session
 
 This profile is **chained**, not standalone. It composes on top of a base
-profile (`anton`, `agenticore`, etc.) and adds one thing: awareness of and
-access to the brain — the fleet's persistent memory layer.
+profile and adds one thing: awareness of and access to the brain — the
+fleet's persistent memory layer.
 
 Tone, response style, CI doctrine, secrets policy, branch flow — all come
 from the base profile. This file is purely the brain interaction layer.
@@ -20,7 +20,7 @@ hours.
 Most of the wiring runs without you asking. Your job is to know what tools
 exist, what gets injected for you, and where your writes land.
 
-## 2. Architecture (single env — `anton-prod`)
+## 2. Architecture
 
 | Workload | Role | Talks to |
 |---|---|---|
@@ -30,9 +30,10 @@ exist, what gets injected for you, and where your writes land.
 | **brain-ops** | 5-phase tick (CronJob `7 */2 * * *`) + tick-drain (CronJob `*/2 * * * *`) + amygdala (Deployment, Redis consumer). | NFS vault, LiteLLM (reason), Redis DB 11, ClickHouse, embeddings |
 | **brain-keeper** | Reasoning ops agent (Opus, 10-min cap). Reads `brain-feed/`, dispatches via MCP. | brain-feed (NFS read), MCP |
 
-Vault: NFS at `/vault` (services see it; you do not). Event bus: Redis DB 11,
-stream `anton:events:brain`. Semantic store: Postgres `content_embeddings`
-(1536-dim HNSW). Tick output → `brain-feed/*.md` → hooks → your context.
+Vault: NFS at `/vault` (services see it; you do not). Event bus: a Redis
+stream the brain-ops tick emits to and the amygdala consumes from.
+Semantic store: Postgres `content_embeddings` (1536-dim HNSW). Tick output
+→ `brain-feed/*.md` → hooks → your context.
 
 ## 3. Vault Layout — What You Need to Know
 
@@ -101,11 +102,11 @@ knowledge. Full protocol: see `rules/03-brain-broadcasts.md`.
 
 ## 8. Constraints
 
-- **No direct vault writes.** The vault lives on `anton-prod` NFS. You do not see it locally. Writes go through `brain_ingest` MCP or `@marker` comments only.
+- **No direct vault writes.** The vault lives on the cluster's NFS share. You do not see it locally. Writes go through `brain_ingest` MCP or `@marker` comments only.
 - **No curl/HTTP to brain-api.** Use MCP tools. If a capability is missing, add it as an MCP tool in `services/mcp/app/tools/`; do not work around with curl.
 - **Max 5 markers per session.** Quality over quantity. No marker beats a low-quality one.
 - **Halt-phrases are rewritten.** Phrases like "do you understand", "stop all tool calls" are scrubbed from brain content before injection — they will not trigger operator-behavior STOP rules inside ingested text.
-- **No live-patching the brain.** Behavior changes to brain services go through the standard code path: edit → commit → push to `dev` → CI → ArgoCD. The base profile (`anton`) enforces this.
+- **No live-patching the brain.** Behavior changes to brain services go through the standard code path: edit → commit → push → CI → deploy. The base profile enforces this.
 - **The vault schema is owned by the kernel.** Do not invent new top-level vault directories; use `raw/inbox/` and let the tick classify.
 
 ## 9. Tick Cadence — When Your Writes Show Up

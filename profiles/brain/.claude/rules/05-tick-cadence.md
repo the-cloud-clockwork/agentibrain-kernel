@@ -79,11 +79,13 @@ logged, no writes.
 After Phase 5, regardless of how the tick was triggered:
 
 - **ClickHouse** — `INSERT INTO brain.tick_health` row: `{ts, score, reason, arcs_scanned, signals_collected, heat_changes, promotions, demotions, graduations, total_ms, tick_type, signal_tombstone_counts}`. MergeTree, 90d TTL. Best-effort; skipped when `CLICKHOUSE_URL` is empty.
-- **Redis event bus** — `XADD anton:events:brain` (Redis DB 11, `maxlen=10000`):
+- **Redis event bus** — `XADD` on the brain event stream (`maxlen=10000`):
   ```
   {v, domain, event="brain.tick.complete", source="brain-cron",
    severity, host, ts, title, message, score, arcs_scanned, ...}
   ```
+  Stream name and Redis DB are environment-configurable; the producer reads
+  `REDIS_URL` from its base profile / service config.
   Severity is set **explicitly** by `_classify_tick_severity()`:
   - score = 0 or AI failure → `nuclear`
   - score 1-3 → `warning`
