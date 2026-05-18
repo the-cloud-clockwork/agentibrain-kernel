@@ -31,6 +31,6 @@ See `ENHANCEMENTS.md`. Pull when prod parity has soaked, friend-install becomes 
 KUBECONFIG=~/.kube/config-k3s kubectl -n argocd get applications | grep agentibrain
 
 # Smoke /feed against live brain-api (in-pod, picks up env)
-KUBECONFIG=~/.kube/config-k3s kubectl -n anton-dev exec agentibrain-brain-api-0 -- \
+KUBECONFIG=~/.kube/config-k3s kubectl -n anton-prod exec agentibrain-brain-api-0 -- \
   sh -c 'curl -fsSL -H "Authorization: Bearer ${KB_ROUTER_TOKEN}" http://localhost:8080/feed | head -c 500'
 ```

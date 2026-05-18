@@ -21,7 +21,7 @@ The 6th agenti* ecosystem pillar. A standalone, Helm-chart + container-image (an
 A friend can `pip install agentibrain`, run `brain init` + `brain up`, and stand up the full brain on their own machine (local compose OR k8s) with their own vault, their own LLM keys, their own embeddings provider — zero dependency on antoncore. Concretely:
 
 1. **Shippable** — Helm chart + Docker images on GHCR with semver tags. PyPI publish wired (`publish.yml`) and dormant; lights up when external pip-install adoption is in scope.
-2. **Dev+prod parity** — kernel runs in both `anton-dev` and `anton-prod`, legacy `anton-*` brain stacks fully retired.
+2. **Dev+prod parity** — kernel runs in both `anton-prod` and `anton-prod`, legacy `anton-*` brain stacks fully retired.
 3. **Self-install** — README quickstart works end-to-end on a fresh machine with <10 minutes of operator input.
 4. **Observable** — Grafana dashboards + Prometheus alerts for all 4 services; vault write audit trail queryable.
 5. **Resilient** — documented backup + restore playbook for vault + embeddings DB; disaster-recovery runbook.

@@ -9,7 +9,7 @@ for the agenti ecosystem.
 
 The brain system follows a 3-operation model: **ingest, read, update**.
 
-### Services (anton-dev namespace)
+### Services (anton-prod namespace)
 
 | Service | Image | Role | What it does |
 |---|---|---|---|
@@ -39,7 +39,7 @@ amygdala → Redis streams (anton:events:*) → fleet alerts
 
 - **NFS vault** (10.10.30.130): brain-api, brain-ops mount it. obsidian-reader removed (absorbed into brain-api).
 - **Postgres/pgvector**: embeddings service only
-- **LiteLLM** (anton-dev): brain-api, mcp, brain-ops for AI inference
+- **LiteLLM** (anton-prod): brain-api, mcp, brain-ops for AI inference
 - **Redis**: brain-ops writes events, amygdala reads them
 - **ClickHouse**: brain-ops writes tick metrics
 
