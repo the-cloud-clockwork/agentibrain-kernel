@@ -42,10 +42,10 @@ class TestParseSignals:
 
     def test_backtick_multi_word_source(self):
         out = brain_apply.parse_signals(
-            "`ESCALATE: `ArgoCD Image Updater GHCR auth broken` → critical (fleet-wide CD halt)`"
+            "`ESCALATE: `image updater registry auth broken` → critical (fleet-wide CD halt)`"
         )
         assert len(out) == 1
-        assert out[0]["source"] == "ArgoCD Image Updater GHCR auth broken"
+        assert out[0]["source"] == "image updater registry auth broken"
         assert out[0]["new_severity"] == "critical"
 
     def test_bullet_list_prefix(self):
@@ -133,10 +133,10 @@ class TestCollectorDedup:
             )
 
         sigs = [
-            markers.Marker(type="signal", content="broken auth", attrs={"source": "argocd"}),
-            markers.Marker(type="signal", content="broken auth", attrs={"source": "argocd"}),
-            markers.Marker(type="signal", content="broken auth\n", attrs={"source": "argocd"}),
-            markers.Marker(type="signal", content="different claim", attrs={"source": "argocd"}),
+            markers.Marker(type="signal", content="broken auth", attrs={"source": "ci-tool"}),
+            markers.Marker(type="signal", content="broken auth", attrs={"source": "ci-tool"}),
+            markers.Marker(type="signal", content="broken auth\n", attrs={"source": "ci-tool"}),
+            markers.Marker(type="signal", content="different claim", attrs={"source": "ci-tool"}),
         ]
         seen = set()
         kept = [s for s in sigs if (k := dedup_key(s)) not in seen and not seen.add(k)]
@@ -193,14 +193,14 @@ class TestApplyFuzzyFallback:
         arc.write_text(
             "# Test arc\n\n"
             "<!-- @signal -->\n"
-            "ArgoCD Image Updater GHCR auth broken — secret missing.\n"
+            "image updater registry auth broken — secret missing.\n"
             "<!-- @/signal -->\n"
         )
         applied = brain_apply.apply_signal_changes(
             tmp_path,
             [{
                 "op": "clear",
-                "source": "ArgoCD Image Updater GHCR auth broken",
+                "source": "image updater registry auth broken",
                 "reason": "verified secret present",
             }],
             dry_run=False,
