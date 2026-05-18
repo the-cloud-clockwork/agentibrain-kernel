@@ -37,8 +37,8 @@ docker compose exec ollama ollama pull llama3.2
 ### 3. Start
 
 ```bash
-docker compose up -d    # 7 containers: postgres, redis, brain-api,
-                        # embeddings, mcp, tick-cron, amygdala
+docker compose up -d    # 8 containers: postgres, redis, brain-api,
+                        # embeddings, mcp, tick-cron, tick-drain, amygdala
 docker compose ps       # all healthy
 curl http://localhost:8104/ping  # pong — MCP server is up
 ```
@@ -93,7 +93,18 @@ curl -X POST http://localhost:8103/search \
   -d '{"query": "fox"}'
 ```
 
-Content lands in `./vault/raw/inbox/`. The tick-cron drains it to a region dir, recomputes heat, and updates brain-feed — all within one tick cycle (default 2h, configurable via `TICK_INTERVAL_SECONDS` in `.env`).
+Content lands in `./vault/raw/inbox/`. The tick drains it to a region dir, recomputes heat, and updates brain-feed.
+
+**Force a tick on demand** (don't wait for the 2h scheduled cycle):
+
+```bash
+pip install -e .                          # one-time, installs the `brain` CLI
+brain tick --no-ai --wait                 # deterministic-only, blocks until done
+brain tick --wait                         # full AI tick
+brain tick --dry-run --wait               # read-only verify, no writes
+```
+
+The `tick-drain` service polls `brain-feed/ticks/requested/` every 30s and runs `brain_tick.py` per request — same UX as the K8s `tick-drain` CronJob. Scheduled ticks still run every `TICK_INTERVAL_SECONDS` (default 2h) via `tick-cron`.
 
 See [`local/README.md`](local/README.md) for full local docs, troubleshooting, port overrides, and inference modes.
 
@@ -210,7 +221,7 @@ flowchart LR
 | **brain-api** | 8103 | Brain HTTP contract — vault read/write, ingest, `/feed`, `/signal`, `/marker`, `/tick` |
 | **embeddings** | 8102 | pgvector wrapper — `/embed`, `/search`, OpenAI-compatible |
 | **mcp** | 8104 | MCP retrieval tools — `kb_search`, `kb_brief`, `brain_search_arcs`, `brain_get_arc` |
-| **brain-ops** | — | Hybrid 2-hour tick (deterministic clustering + optional LLM synthesis) + amygdala consumer |
+| **brain-ops** | — | Hybrid 2-hour tick (deterministic clustering + optional LLM synthesis), on-demand drain (polls `brain-feed/ticks/requested/`), and amygdala consumer |
 
 Plus an **opt-in `brain-keeper`** agent (ops oracle for triage, enrichment, replay) and **six Helm charts** for Kubernetes (`brain-api`, `embeddings`, `mcp`, `brain-ops`, `brain-keeper`).
 
@@ -224,7 +235,7 @@ Plus an **opt-in `brain-keeper`** agent (ops oracle for triage, enrichment, repl
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
 ./local/bootstrap.sh           # writes .env (random tokens) + scaffolds ./vault
-docker compose up -d           # 7 containers come up
+docker compose up -d           # 8 containers come up
 ```
 
 > **Note:** the default Compose stack **builds the 4 service images locally** from `services/*/Dockerfile` on first run (~5 min). To pull pre-built images instead, see [Images & forking](#images--forking).
@@ -443,7 +454,9 @@ Idempotency-key window 1h (configurable via `IDEMPOTENCY_TTL_SECONDS`). Replay r
 
 ### `POST /tick` — request a manual brain tick
 
-File-protocol: writes a request to `brain-feed/ticks/requested/`. The brain-ops picks it up and moves it to `completed/` or `failed/`. Poll `GET /tick/{job_id}`.
+File-protocol: writes a request to `brain-feed/ticks/requested/`. The `tick-drain` worker picks it up and moves it to `completed/` or `failed/`. Poll `GET /tick/{job_id}`.
+
+CLI wrapper: `brain tick [--dry-run] [--no-ai] [--wait]`. With `--wait`, blocks until the job leaves `requested/`.
 
 ### `POST /ingest` — universal ingest
 
