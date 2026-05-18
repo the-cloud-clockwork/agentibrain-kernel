@@ -245,7 +245,7 @@ def call_llm(prompt: str, inference_url: str = INFERENCE_URL) -> str:
         headers["Authorization"] = f"Bearer {token}"
 
     req = urllib.request.Request(
-        f"{inference_url}/v1/chat/completions",
+        f"{inference_url.rstrip('/')}/chat/completions",
         data=payload,
         headers=headers,
         method="POST",
