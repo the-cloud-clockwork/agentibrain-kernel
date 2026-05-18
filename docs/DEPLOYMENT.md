@@ -118,13 +118,13 @@ Each kernel service has its own image, tagged per branch:
 
 | Service | Image |
 |---|---|
-| brain-api | `ghcr.io/the-cloud-clockwork/agentibrain-brain-api:latest` |
-| embeddings | `ghcr.io/the-cloud-clockwork/agentibrain-embeddings:latest` |
-| tick-engine | `ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:latest` |
-| mcp | `ghcr.io/the-cloud-clockwork/agentibrain-mcp:latest` |
-| brain-keeper | `ghcr.io/the-cloud-clockwork/agenticore:latest` (uses agenticore base; brain-keeper is an agenticore agent, not its own image) |
+| brain-api | `ghcr.io/the-cloud-clockwork/agentibrain-brain-api:dev` |
+| embeddings | `ghcr.io/the-cloud-clockwork/agentibrain-embeddings:dev` |
+| tick-engine | `ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev` |
+| mcp | `ghcr.io/the-cloud-clockwork/agentibrain-mcp:dev` |
+| brain-keeper | `ghcr.io/the-cloud-clockwork/agenticore:dev` (uses agenticore base; brain-keeper is an agenticore agent, not its own image) |
 
-Branch → tag: push to `dev` → `:latest`, push to `main` → `:latest`. ArgoCD image-updater watches the tag regex per app and bumps the digest.
+Branch → tag: push to `dev` → `:dev`. Single-env collapse (2026-05-18): `main` is vestigial, ArgoCD tracks `dev`. Image-updater watches `:dev` digest.
 
 ## Smoke tests post-deploy
 
