@@ -2,12 +2,12 @@ name: docker-build
 
 on:
   push:
-    branches: [main, dev]
+    branches: [dev]
     paths:
       - "services/**"
       - ".github/workflows/docker-build.yml"
   pull_request:
-    branches: [main]
+    branches: [dev]
     paths:
       - "services/**"
       - ".github/workflows/docker-build.yml"
@@ -45,11 +45,8 @@ jobs:
       - name: Derive tag
         id: tag
         run: |
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/dev" ]; then
             echo "tag=latest" >> "$GITHUB_OUTPUT"
-            echo "push=true" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/dev" ]; then
-            echo "tag=dev" >> "$GITHUB_OUTPUT"
             echo "push=true" >> "$GITHUB_OUTPUT"
           else
             echo "tag=pr-${{ github.event.number || github.run_id }}" >> "$GITHUB_OUTPUT"

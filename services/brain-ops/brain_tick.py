@@ -51,11 +51,15 @@ INFERENCE_URL = os.getenv("INFERENCE_URL", "")
 # burning 5s on a connection-refused timeout every tick. Set this to a
 # real ClickHouse base URL in production to enable tick-health metrics.
 CLICKHOUSE_URL = os.getenv("CLICKHOUSE_URL", "")
-# REDIS_URL + EVENT_BUS_DB control where the tick announces itself on the
-# anton:events:brain stream. Empty REDIS_URL = no announce. EVENT_BUS_DB
+# REDIS_URL + EVENT_BUS_DB + EVENT_BUS_STREAM + EVENT_BUS_TOPIC control where
+# the tick announces itself. Empty REDIS_URL = no announce. EVENT_BUS_DB
 # defaults to 11 (the canonical event-bus DB shared with the amygdala).
+# EVENT_BUS_STREAM is the Redis stream key; downstream operators set their
+# own prefix. EVENT_BUS_TOPIC is the routing label embedded in the payload.
 EVENT_BUS_REDIS_URL = os.getenv("REDIS_URL", "")
 EVENT_BUS_DB = os.getenv("EVENT_BUS_DB", "11")
+EVENT_BUS_STREAM = os.getenv("EVENT_BUS_STREAM", "events:brain")
+EVENT_BUS_TOPIC = os.getenv("EVENT_BUS_TOPIC", "agentibrain-system")
 
 
 _BRAIN_SCHEMA_DDL = (
@@ -106,7 +110,11 @@ def _classify_tick_severity(report: dict) -> str:
 
 
 def _push_event_bus(report: dict) -> None:
-    """Announce a brain.tick.complete event on anton:events:brain (Redis DB 11).
+    """Announce a brain.tick.complete event on the configured event-bus stream.
+
+    Stream key = ``EVENT_BUS_STREAM`` (default ``events:brain``).
+    Redis DB   = ``EVENT_BUS_DB`` (default ``11``).
+    Topic      = ``EVENT_BUS_TOPIC`` (default ``agentibrain-system``).
 
     The amygdala consumes this stream — keeps the brain panel alive even on
     days when no markers/signals fire from sessions. Best-effort; any failure
@@ -141,7 +149,7 @@ def _push_event_bus(report: dict) -> None:
         "message": health.get("reason", "")[:500],
         "priority": "low",
         "tags": "brain",
-        "topic": "anton-system",
+        "topic": EVENT_BUS_TOPIC,
         "score": str(health.get("score", 0)),
         "arcs_scanned": str(det.get("arcs_scanned", 0)),
         "signals_collected": str(det.get("signals_collected", 0)),
@@ -151,7 +159,7 @@ def _push_event_bus(report: dict) -> None:
         "graduations": str(det.get("graduations", 0)),
         "total_ms": str(report.get("total_ms", 0)),
     }
-    r.xadd("anton:events:brain", payload, maxlen=10000, approximate=True)
+    r.xadd(EVENT_BUS_STREAM, payload, maxlen=10000, approximate=True)
 
 
 def _ch_request(base_url: str, sql: str, auth_header: str | None) -> None:
@@ -237,7 +245,7 @@ def call_llm(prompt: str, inference_url: str = INFERENCE_URL) -> str:
         headers["Authorization"] = f"Bearer {token}"
 
     req = urllib.request.Request(
-        f"{inference_url}/v1/chat/completions",
+        f"{inference_url.rstrip('/')}/chat/completions",
         data=payload,
         headers=headers,
         method="POST",
@@ -351,8 +359,9 @@ def run_tick(
             print(f"WARN: ClickHouse push failed: {e}", file=sys.stderr)
 
     # Announce on the event bus (best-effort). The amygdala consumes
-    # anton:events:brain on Redis DB 11 — without this, the brain stream
-    # stays empty even when ticks succeed and the amygdala panel reads zero.
+    # EVENT_BUS_STREAM on Redis DB EVENT_BUS_DB — without this, the brain
+    # stream stays empty even when ticks succeed and the amygdala panel
+    # reads zero.
     if not dry_run and EVENT_BUS_REDIS_URL:
         try:
             _push_event_bus(report)

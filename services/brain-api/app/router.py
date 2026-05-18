@@ -151,7 +151,7 @@ async def _call_router_llm(message: str, model: str) -> dict:
     try:
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
-                f"{INFERENCE_URL.rstrip('/')}/v1/chat/completions",
+                f"{INFERENCE_URL.rstrip('/')}/chat/completions",
                 json=body,
                 headers=headers,
             )

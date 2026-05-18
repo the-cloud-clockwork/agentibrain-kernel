@@ -13,6 +13,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Primary .env lives in the home directory so it survives re-clones.
+# The repo-root .env is a symlink to it (auto-created below).
+HOME_ENV_DIR="$HOME/.agentibrain"
+HOME_ENV_FILE="$HOME_ENV_DIR/.env"
 ENV_FILE="$ROOT/.env"
 TEMPLATE="$ROOT/local/.env.template"
 
@@ -21,12 +25,15 @@ if [[ ! -f "$TEMPLATE" ]]; then
   exit 1
 fi
 
-# 1. Generate / reuse .env
-if [[ -f "$ENV_FILE" ]]; then
-  echo "[bootstrap] .env exists — keeping current values"
+mkdir -p "$HOME_ENV_DIR"
+
+# 1. Generate / reuse .env in ~/.agentibrain/
+if [[ -f "$HOME_ENV_FILE" ]]; then
+  echo "[bootstrap] ~/.agentibrain/.env exists — keeping current values"
 else
-  echo "[bootstrap] generating .env from template"
-  cp "$TEMPLATE" "$ENV_FILE"
+  echo "[bootstrap] generating ~/.agentibrain/.env from template"
+  cp "$TEMPLATE" "$HOME_ENV_FILE"
+  chmod 600 "$HOME_ENV_FILE"
 
   if ! command -v openssl >/dev/null 2>&1; then
     echo "ERROR: openssl required to generate tokens" >&2
@@ -34,23 +41,36 @@ else
   fi
 
   # Replace each __GENERATE__ marker with a fresh random token.
-  while grep -q '__GENERATE__' "$ENV_FILE"; do
+  while grep -q '__GENERATE__' "$HOME_ENV_FILE"; do
     tok="$(openssl rand -hex 32)"
-    # sed -i differs between macOS and Linux. Use a portable form.
     if sed --version >/dev/null 2>&1; then
-      sed -i "0,/__GENERATE__/s//${tok}/" "$ENV_FILE"   # GNU sed
+      sed -i "0,/__GENERATE__/s//${tok}/" "$HOME_ENV_FILE"   # GNU sed
     else
-      sed -i '' "1,/__GENERATE__/s//${tok}/" "$ENV_FILE" # BSD sed (macOS)
+      sed -i '' "1,/__GENERATE__/s//${tok}/" "$HOME_ENV_FILE" # BSD sed (macOS)
     fi
   done
 
   echo "[bootstrap] generated random KB_ROUTER_TOKEN + VAULT_READER_TOKENS"
 fi
 
-# 1b. Ensure EMBEDDINGS_API_KEY (singular, used by consumers) matches
+# 1b. Symlink repo-root .env → ~/.agentibrain/.env so docker compose picks it up
+#     transparently. Survives re-clones — the source of truth stays in $HOME.
+if [[ -L "$ENV_FILE" ]]; then
+  echo "[bootstrap] $ENV_FILE symlink already exists"
+elif [[ -f "$ENV_FILE" && ! -L "$ENV_FILE" ]]; then
+  echo "[bootstrap] $ENV_FILE is a plain file — replacing with symlink to ~/.agentibrain/.env"
+  rm "$ENV_FILE"
+  ln -s "$HOME_ENV_FILE" "$ENV_FILE"
+else
+  echo "[bootstrap] creating $ENV_FILE → ~/.agentibrain/.env"
+  ln -s "$HOME_ENV_FILE" "$ENV_FILE"
+fi
+
+# Alias so the rest of this script keeps working
+ENV_FILE="$HOME_ENV_FILE"
+
+# 1c. Ensure EMBEDDINGS_API_KEY (singular, used by consumers) matches
 #     EMBEDDINGS_API_KEYS (plural, embeddings service inbound whitelist).
-#     Without this, brain-api / tick-cron / mcp call embeddings without a
-#     bearer and get 401 when the embeddings service has any whitelist set.
 EMB_PLURAL="$(grep -E "^EMBEDDINGS_API_KEYS=" "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d "\r" || true)"
 if [[ -n "$EMB_PLURAL" ]]; then
   if grep -qE "^EMBEDDINGS_API_KEY=" "$ENV_FILE"; then

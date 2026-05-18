@@ -9,7 +9,7 @@ for the agenti ecosystem.
 
 The brain system follows a 3-operation model: **ingest, read, update**.
 
-### Services (anton-dev namespace)
+### Services (deployed in your prod namespace)
 
 | Service | Image | Role | What it does |
 |---|---|---|---|
@@ -18,7 +18,7 @@ The brain system follows a 3-operation model: **ingest, read, update**.
 | **embeddings** | `agentibrain-embeddings` | Index | Vector store (pgvector). Embed, search, prune. |
 | **brain-keeper** | `agenticore` | Maintain | Autonomous agent for vault maintenance (different runtime). |
 
-### Ops workloads (anton-ops namespace)
+### Ops workloads (deployed in your ops namespace)
 
 | Workload | Type | Role | What it does |
 |---|---|---|---|
@@ -32,14 +32,14 @@ The brain system follows a 3-operation model: **ingest, read, update**.
 Claude Code → LiteLLM MCP proxy → mcp → embeddings (semantic) + brain-api (vault text) + LiteLLM (AI)
 brain-api POST /tick → NFS requested/ → tick-drain → brain_tick.py → vault + ClickHouse
 brain-ops (every 2h) → same tick pipeline, scheduled
-amygdala → Redis streams (anton:events:*) → fleet alerts
+amygdala → Redis streams (EVENT_BUS_STREAM, configurable) → fleet alerts
 ```
 
 ### Shared data stores
 
-- **NFS vault** (10.10.30.130): brain-api, brain-ops mount it. obsidian-reader removed (absorbed into brain-api).
+- **NFS vault**: brain-api, brain-ops mount it. obsidian-reader removed (absorbed into brain-api). Server address is deploy-time config.
 - **Postgres/pgvector**: embeddings service only
-- **LiteLLM** (anton-dev): brain-api, mcp, brain-ops for AI inference
+- **LiteLLM**: brain-api, mcp, brain-ops for AI inference (URL via `LLM_API_BASE` / `INFERENCE_URL`)
 - **Redis**: brain-ops writes events, amygdala reads them
 - **ClickHouse**: brain-ops writes tick metrics
 
@@ -66,7 +66,7 @@ This repo owns:
 - `artifact-store` / `artifact-transform` — general storage plane, lives in your downstream platform repo
 - Generic Claude Code hooks — those live in `agentihooks` (this kernel exposes HTTP, hooks talk to it)
 - `broadcast.py` / `channels.py` — fleet coordination, stays in agentihooks
-- Deployment values files, secret-store paths, operator-specific paths — stay in your downstream platform repo (antoncore)
+- Deployment values files, secret-store paths, operator-specific paths — stay in your downstream platform repo
 
 ## Core principle
 
@@ -86,12 +86,12 @@ not edit it manually. The runtime version lives in `agentibrain/__init__.py`
 Dev-first flow:
 - Work on `dev` → PR to `main` → merge.
 - `main` is the release trunk; CI publishes `:latest` images on every merge.
-- `dev` carries the in-flight changes; CI publishes `:dev` images on every push.
+- `dev` carries the in-flight changes; CI publishes `:latest` images on every push.
 - Image builds go to `ghcr.io/the-cloud-clockwork/agentibrain-*`.
 
 ## Downstream consumers
 
-- Downstream platform repos (antoncore) — use the kernel's Helm charts with environment-specific values.
+- Downstream platform repos — use the kernel's Helm charts with environment-specific values.
 - `agentihub` — clones `agents/brain-keeper/` at install time.
 - `agentihooks-bundle` — clones `profiles/brain/` and `profiles/brain-keeper/` at install time.
 - External users — `git clone` → `./local/bootstrap.sh` → `docker compose up -d` (or use the Helm charts for K8s).

@@ -67,10 +67,10 @@ command:
     fi
 
     echo "Running amygdala check..."
-    # The amygdala consumes the canonical event bus on Redis DB 11 (CLAUDE.md
-    # § "Anton Job Engine — Redis Streams DB 11"). ops-runner-secrets ships
-    # REDIS_URL ending in /0 because most consumers default to DB 0; rewrite
-    # the trailing DB segment so the amygdala lands on the bus, not the cache.
+    # The amygdala consumes the canonical event bus on Redis DB AMYGDALA_DB
+    # (default 11). Most consumers' REDIS_URL ends in /0 because they default
+    # to DB 0; rewrite the trailing DB segment so the amygdala lands on the
+    # bus, not the cache. Stream key is controlled by EVENT_BUS_STREAM.
     AMYGDALA_DB="${AMYGDALA_DB:-11}"
     python3 /app/amygdala.py \
       --redis-url "${REDIS_URL%/*}/${AMYGDALA_DB}" \
@@ -92,6 +92,12 @@ env:
   BRAIN_STALE_SIGNAL_DAYS: "1"
   BRAIN_DECAY_START_DAYS: "2"
   BRAIN_DECAY_INTERVAL_DAYS: "2"
+  # Event bus identifiers (see services/brain-ops/brain_tick.py). Override
+  # per environment to namespace the stream and topic — the amygdala consumer
+  # must read from the same stream key.
+  EVENT_BUS_STREAM: "events:brain"
+  EVENT_BUS_TOPIC: "agentibrain-system"
+  EVENT_BUS_DB: "11"
 
 # Operators override with their secrets provider (OpenBao / AWS SM / etc).
 secretRef: brain-ops-secrets

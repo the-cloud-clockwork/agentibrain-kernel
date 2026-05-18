@@ -71,7 +71,7 @@ These are your primary interface. Match by tool name suffix — your MCP proxy m
 | Tool | Use for |
 |------|---------|
 | `brain_ingest` | Write text to vault raw/inbox/. Tick drains it to a region within 2 min. |
-| `build_artifact` | Upload reports to artifact-store (S3 + Drive mirror). |
+| `build_artifact` | Upload reports to artifact-store; Drive mirror runs if your platform's drive-sync is configured. |
 
 ### Observe
 | Tool | Use for |
