@@ -9,54 +9,53 @@
 ```bash
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
-./local/bootstrap.sh      # generates .env with auth tokens, scaffolds ./vault
+./local/bootstrap.sh      # generates ~/.agentibrain/.env, symlinks to repo, scaffolds ./vault
 ```
 
-### 2. Configure your LLM provider
+### 2. Configure your LLM provider (optional)
 
-Edit `.env` — set at minimum one API key to enable the full brain:
+Edit `~/.agentibrain/.env` — set at minimum one API key to enable semantic search:
 
 ```env
 # Required for embeddings (semantic search) — OpenAI or any compatible provider
 LLM_API_KEY=<your-openai-key>
+LLM_API_BASE=https://api.openai.com/v1    # or your LiteLLM proxy
 
 # Required for AI tick + kb_brief synthesis — any OpenAI-compatible endpoint
 INFERENCE_URL=https://api.openai.com/v1
 INFERENCE_API_KEY=<your-openai-key>
-
-# Model names the brain uses (defaults work with OpenAI)
-BRAIN_CLASSIFY_MODEL=gpt-4o-mini       # classification during /ingest
-BRAIN_BRIEF_MODEL=gpt-4o-mini          # synthesis for kb_brief
 ```
 
-**Free local alternative (Ollama):** skip the `.env` edits above and use:
+**No API key at all?** The brain still works — `brain_ingest`, `kb_search` (vault text), `brain_get_arc` all function. Only semantic search and AI synthesis are disabled.
+
+**Free local alternative (Ollama):**
 ```bash
 docker compose -f compose.yml -f local/compose.ollama.yml up -d
 docker compose exec ollama ollama pull llama3.2
 ```
-Ollama covers AI tick + `kb_brief`. Embeddings still need `LLM_API_KEY` (Ollama embedding quality is poor).
-
-**No API key at all?** The brain still works — `brain_ingest`, `kb_search` (vault text), `brain_get_arc` all function. Only semantic search and AI synthesis are disabled.
 
 ### 3. Start
 
 ```bash
-docker compose up -d --build    # 7 containers: postgres, redis, brain-api,
-                                # embeddings, mcp, tick-cron, amygdala
-docker compose ps               # all healthy
+docker compose up -d    # 7 containers: postgres, redis, brain-api,
+                        # embeddings, mcp, tick-cron, amygdala
+docker compose ps       # all healthy
 curl http://localhost:8104/ping  # pong — MCP server is up
 ```
 
 ### 4. Wire Claude Code
 
-```bash
-cp .mcp.json.example .mcp.json
-```
+Add to your project or user MCP config (e.g. `~/.claude/.mcp.json`):
 
-Edit `.mcp.json` — replace `PASTE_YOUR_MCP_PROXY_API_KEY_HERE` with your actual key:
-
-```bash
-grep MCP_PROXY_API_KEY .env     # copy this value into .mcp.json
+```json
+{
+  "mcpServers": {
+    "agentibrain": {
+      "type": "sse",
+      "url": "http://localhost:8104/sse"
+    }
+  }
+}
 ```
 
 Restart Claude Code, run `/mcp` — you'll see `agentibrain` with 5 tools:
@@ -69,11 +68,20 @@ Restart Claude Code, run `/mcp` — you'll see `agentibrain` with 5 tools:
 | `brain_get_arc` | Fetch full arc by cluster_id |
 | `brain_ingest` | Write text to the brain vault |
 
-### 5. Test it
+### 5. Wire agentihooks profile (optional)
+
+If you use [agentihooks](https://github.com/The-Cloud-Clockwork/agentihooks), link the brain profile so your agents get brain tools + markers + broadcast rules:
 
 ```bash
-# Write something to the brain
+agentihooks link-profile link "$(pwd)/profiles/brain"
+```
+
+### 6. Test it
+
+```bash
 TOK=$(grep ^KB_ROUTER_TOKEN .env | cut -d= -f2)
+
+# Write something to the brain
 curl -X POST http://localhost:8103/ingest \
   -H "Authorization: Bearer $TOK" \
   -F "message=The quick brown fox jumped over the lazy dog"
@@ -315,32 +323,27 @@ Add to `~/.claude/.mcp.json` or your project-local `.mcp.json`:
 {
   "mcpServers": {
     "agentibrain": {
-      "url": "http://localhost:8104/mcp",
-      "headers": {
-        "x-api-key": "${MCP_PROXY_API_KEY}"
-      }
+      "type": "sse",
+      "url": "http://localhost:8104/sse"
     }
   }
 }
 ```
 
-Get the bearer value from `.env`:
-
-```bash
-grep ^MCP_PROXY_API_KEY .env
-```
-
 Restart Claude Code, then verify with `/mcp` — the `agentibrain` server should appear with 5 tools (`mcp__agentibrain__kb_search`, etc.).
+
+> **Note:** the local compose stack runs mcp-proxy without auth (localhost-only). For production deployments, set `MCP_PROXY_API_KEY` on the container and use `x-api-key` header.
 
 ### Kubernetes (agent-mode pod)
 
-For Claude Code running in agent mode inside a pod, point at the in-cluster Service URL of the `mcp` chart you deployed in step 3 above:
+For Claude Code running in agent mode inside a pod, point at the in-cluster Service URL of the `mcp` chart:
 
 ```json
 {
   "mcpServers": {
     "agentibrain": {
-      "url": "http://agentibrain-mcp.<your-namespace>.svc:8080/mcp",
+      "type": "sse",
+      "url": "http://agentibrain-mcp.<your-namespace>.svc:8080/sse",
       "headers": {
         "x-api-key": "${MCP_PROXY_API_KEY}"
       }
@@ -350,6 +353,14 @@ For Claude Code running in agent mode inside a pod, point at the in-cluster Serv
 ```
 
 Inject `MCP_PROXY_API_KEY` via `envFrom: secretRef:` from the K8s Secret backing the `mcp` chart (`agentibrain-mcp-secrets` by default).
+
+### agentihooks profile
+
+If your agents use [agentihooks](https://github.com/The-Cloud-Clockwork/agentihooks), link the brain profile to get brain MCP tools, marker rules, and broadcast channel config:
+
+```bash
+agentihooks link-profile link /path/to/agentibrain-kernel/profiles/brain
+```
 
 Full reference (incl. LiteLLM gateway path): [`docs/MCP.md`](docs/MCP.md).
 
