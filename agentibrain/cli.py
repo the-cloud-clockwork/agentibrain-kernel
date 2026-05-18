@@ -154,9 +154,80 @@ def status_cmd() -> None:
 
 
 @main.command("tick")
-def tick_cmd() -> None:
-    """Trigger a manual cognitive tick (Phase 7 — uses kernel /tick endpoint)."""
-    console.print("[yellow]not implemented — /tick endpoint lands in Phase 7[/yellow]")
+@click.option("--dry-run", is_flag=True, help="Run tick read-only (no writes).")
+@click.option("--no-ai", is_flag=True, help="Skip AI reasoning phase (deterministic only).")
+@click.option("--wait", is_flag=True, help="Poll until the job completes.")
+@click.option("--brain-url", envvar="BRAIN_URL", help="Override brain-api base URL.")
+@click.option(
+    "--token",
+    envvar="KB_ROUTER_TOKEN",
+    help="Bearer token (defaults to env / settings).",
+)
+def tick_cmd(
+    dry_run: bool,
+    no_ai: bool,
+    wait: bool,
+    brain_url: str | None,
+    token: str | None,
+) -> None:
+    """Trigger a manual brain tick via the /tick endpoint.
+
+    Enqueues a request file in brain-feed/ticks/requested/ which the
+    tick-cron drains within ~2 minutes. Use --wait to block until completion.
+    """
+    settings = _load_settings()
+    base = (brain_url or settings.brain_url).rstrip("/")
+
+    if not token:
+        env_path = settings.config_dir.expanduser() / ".env"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if line.startswith("KB_ROUTER_TOKEN="):
+                    token = line.split("=", 1)[1].strip()
+                    break
+    if not token:
+        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `brain init`[/red]")
+        sys.exit(2)
+
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {"dry_run": str(dry_run).lower(), "no_ai": str(no_ai).lower(), "source": "cli"}
+
+    try:
+        r = httpx.post(f"{base}/tick", headers=headers, params=params, timeout=10.0)
+        r.raise_for_status()
+    except httpx.HTTPError as e:
+        console.print(f"[red]POST /tick failed: {e}[/red]")
+        sys.exit(1)
+
+    job = r.json()
+    job_id = job.get("job_id", "?")
+    console.print(f"[green]✓[/green] tick enqueued — job_id={job_id}")
+
+    if not wait:
+        console.print(f"  poll: [cyan]curl -H 'Authorization: Bearer …' {base}/tick/{job_id}[/cyan]")
+        return
+
+    console.print("  waiting (≤5 min)…")
+    import time as _time
+
+    deadline = _time.time() + 300
+    while _time.time() < deadline:
+        try:
+            s = httpx.get(f"{base}/tick/{job_id}", headers=headers, timeout=10.0)
+            s.raise_for_status()
+            status = s.json()
+        except httpx.HTTPError:
+            _time.sleep(2)
+            continue
+
+        state = status.get("status")
+        if state in {"completed", "failed"}:
+            console.print(f"  [bold]{state}[/bold]")
+            console.print(status)
+            sys.exit(0 if state == "completed" else 1)
+        _time.sleep(3)
+
+    console.print("[yellow]timeout — job still running. Check tick-cron logs.[/yellow]")
     sys.exit(2)
 
 
