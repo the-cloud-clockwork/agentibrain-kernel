@@ -93,6 +93,6 @@ Full grammar: `architecture/MARKERS.md`.
 
 ## Environment
 
-**dev** — your dev namespace, image tag `:dev`, ArgoCD source branch `dev`, secret-store paths suffixed `-dev`.
+**dev** — the only working branch (single-env collapse 2026-05-18). Anton runs everything under `anton-prod`; image tag is `:latest`.
 
 **prod** — your prod namespace, image tag `:latest`, ArgoCD source branch `main`, no suffix.
