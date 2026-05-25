@@ -20,10 +20,10 @@ tpl:
     image:
       # The agenticore image is published by the upstream agenticore repo
       # (https://github.com/The-Cloud-Clockwork/agenticore), NOT by this kernel.
-      # CI in that repo pushes :latest on dev (single-env). brain-keeper
+      # CI in that repo pushes :dev on every push to dev. brain-keeper
       # runs the same image with AGENT_MODE=true env (set below).
       repository: ghcr.io/the-cloud-clockwork/agenticore
-      tag: latest
+      tag: dev
       pullPolicy: Always
     replicaCount: 1
     container:

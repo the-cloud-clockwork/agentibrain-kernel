@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: anton
     strategy:
       fail-fast: false
       matrix:
@@ -46,7 +46,7 @@ jobs:
         id: tag
         run: |
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/dev" ]; then
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
+            echo "tag=dev" >> "$GITHUB_OUTPUT"
             echo "push=true" >> "$GITHUB_OUTPUT"
           else
             echo "tag=pr-${{ github.event.number || github.run_id }}" >> "$GITHUB_OUTPUT"
@@ -59,7 +59,7 @@ jobs:
           context: services/${{ matrix.service }}
           push: ${{ steps.tag.outputs.push == 'true' }}
           # Only the floating tag is published (per no-hash-pins rule). Rollback
-          # is `git revert` on main, which republishes :latest.
+          # is `git revert` on dev, which republishes :dev.
           tags: |
             ghcr.io/the-cloud-clockwork/agentibrain-${{ matrix.service }}:${{ steps.tag.outputs.tag }}
           cache-from: type=gha,scope=${{ matrix.service }}
