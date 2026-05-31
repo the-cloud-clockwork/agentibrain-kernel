@@ -219,14 +219,18 @@ def find_arc_file(vault_root: Path, arc_id: str) -> Path | None:
         for f in files:
             if f.name.endswith(".merged.md"):
                 merged_stems_by_dir.setdefault(f.parent, set()).add(
-                    f.name.replace(".merged.md", "")
+                    markers.canonical_arc_id(f.name)
                 )
         for md_file in files:
             if md_file.name.startswith("_"):
                 continue
-            stem = md_file.name[:-3]
+            # Suppress the raw counterpart when an authoritative .merged.md for
+            # the same canonical id exists in this dir. canonical_arc_id folds
+            # the whole .merged.merged…md chain to one id; str.replace stripped
+            # only one level, which let chains escape suppression.
             if (not md_file.name.endswith(".merged.md")
-                and stem in merged_stems_by_dir.get(md_file.parent, set())):
+                and markers.canonical_arc_id(md_file.name)
+                    in merged_stems_by_dir.get(md_file.parent, set())):
                 continue
             try:
                 fm, _ = markers.parse_frontmatter(md_file.read_text())
@@ -329,14 +333,14 @@ def apply_signal_changes(vault_root: Path, changes: list[dict], dry_run: bool) -
             for f in files:
                 if f.name.endswith(".merged.md"):
                     merged_stems_by_dir.setdefault(f.parent, set()).add(
-                        f.name.replace(".merged.md", "")
+                        markers.canonical_arc_id(f.name)
                     )
             for md_file in files:
                 if md_file.name.startswith("_"):
                     continue
-                stem = md_file.name[:-3]
                 if (not md_file.name.endswith(".merged.md")
-                    and stem in merged_stems_by_dir.get(md_file.parent, set())):
+                    and markers.canonical_arc_id(md_file.name)
+                        in merged_stems_by_dir.get(md_file.parent, set())):
                     continue
                 yield md_file
 
@@ -417,8 +421,27 @@ def apply_signal_changes(vault_root: Path, changes: list[dict], dry_run: bool) -
     return applied
 
 
+# @edge markers are graph-level metadata, not prose. Copying them when a body
+# is appended into another arc is what let edges accumulate into the thousands
+# (the prompt re-renders every one). Strip them from the merged-in body — the
+# AI re-derives edges each tick from the arc table, so nothing is lost.
+_EDGE_MARKER_RE = re.compile(r'[ \t]*<!--\s*@edge\b[^>]*-->[ \t]*\n?')
+
+
+def _strip_edge_markers(body: str) -> str:
+    return _EDGE_MARKER_RE.sub("", body)
+
+
 def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
-    """Merge arc files."""
+    """Merge arc files.
+
+    Guards against the merge-runaway that produced ``X.merged.merged…md``
+    filename chains and unbounded marker duplication:
+      - never re-merge an already-merged tombstone (``arc_b`` ending .merged.md),
+      - skip a pair already merged into A (idempotent across ticks),
+      - rename B to a single canonical ``<id>.merged.md`` (never stack suffixes),
+      - strip @edge markers from B's appended body (they re-accumulate otherwise).
+    """
     applied = 0
     for merge in merges:
         if merge["op"] != "merge":
@@ -428,26 +451,38 @@ def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
         if not file_a or not file_b:
             print(f"  SKIP merge: {merge['arc_a']} or {merge['arc_b']} not found", file=sys.stderr)
             continue
+        if file_a == file_b:
+            print(f"  SKIP merge: {merge['arc_a']} and {merge['arc_b']} resolve to one file", file=sys.stderr)
+            continue
+        # Never re-merge an already-merged tombstone — that is the runaway loop.
+        if file_b.name.endswith(".merged.md"):
+            print(f"  SKIP merge: {merge['arc_b']} is already a merged tombstone", file=sys.stderr)
+            continue
+
+        text_a = file_a.read_text()
+        # Idempotent across ticks: if B was already folded into A, do nothing.
+        if f"## Merged from {merge['arc_b']}" in text_a:
+            print(f"  SKIP merge: {merge['arc_b']} already merged into {merge['arc_a']}", file=sys.stderr)
+            continue
 
         if not dry_run:
-            # Append B's content to A, update A's title
-            text_a = file_a.read_text()
-            text_b = file_b.read_text()
-            fm_a, body_a = markers.parse_frontmatter(text_a)
-            fm_b, body_b = markers.parse_frontmatter(text_b)
-
-            # Add merge note
-            merge_note = f"\n\n## Merged from {merge['arc_b']}\n\n{body_b.strip()}\n"
+            # Append B's content to A (minus its @edge markers), update A's title.
+            _fm_b, body_b = markers.parse_frontmatter(file_b.read_text())
+            merge_note = (
+                f"\n\n## Merged from {merge['arc_b']}\n\n"
+                f"{_strip_edge_markers(body_b).strip()}\n"
+            )
             merged = text_a.rstrip() + merge_note
 
-            # Update title in frontmatter if provided
             if merge.get("title"):
                 merged = re.sub(r'^title:.*$', f'title: {merge["title"]}', merged, count=1, flags=re.MULTILINE)
 
             file_a.write_text(merged)
 
-            # Move B to a "merged" state (don't delete — rename with .merged suffix)
-            merged_path = file_b.with_suffix(".merged.md")
+            # Tombstone B under a SINGLE canonical .merged.md — never stack
+            # suffixes. with_suffix(".merged.md") on an already-.merged file is
+            # what produced X.merged.merged…md (up to 21 deep) in the live vault.
+            merged_path = file_b.parent / (markers.canonical_arc_id(file_b.name) + ".merged.md")
             shutil.move(str(file_b), str(merged_path))
 
         applied += 1

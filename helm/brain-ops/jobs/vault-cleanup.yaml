@@ -1,0 +1,48 @@
+# One-time vault repair Job — collapse merge chains + dedupe edges.
+#
+# NOT a Helm template and NOT under templates/ — ArgoCD must not reconcile this.
+# It is a manual, run-once artifact applied with `kubectl apply -f` after the
+# brain-ops :dev image carrying scripts/vault_cleanup.py has rolled out.
+#
+# Committed in DRY-RUN form (safe to apply — reports only). For the real run,
+# remove the `--dry-run` arg (the script tars a backup to /vault/_backups first,
+# then collapses chains + dedupes edges).
+#
+#   kubectl -n anton-ops delete job brain-vault-cleanup --ignore-not-found
+#   kubectl -n anton-ops apply -f helm/brain-ops/jobs/vault-cleanup.yaml
+#   kubectl -n anton-ops logs job/brain-vault-cleanup -f
+#
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: brain-vault-cleanup
+  namespace: anton-ops
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: vault-cleanup
+          image: ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev
+          imagePullPolicy: Always
+          command: ["python3", "/app/scripts/vault_cleanup.py"]
+          args: ["--vault", "/vault", "--dry-run"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: nfs-vault
+              mountPath: /vault
+      volumes:
+        - name: nfs-vault
+          nfs:
+            server: 10.10.30.130
+            path: /mnt/user/appdata/obsidian/vault
+      imagePullSecrets:
+        - name: ghcr-pull-secret

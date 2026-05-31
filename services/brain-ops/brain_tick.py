@@ -71,9 +71,14 @@ _BRAIN_SCHEMA_DDL = (
         "arcs_scanned UInt32, signals_collected UInt32, lessons_collected UInt32, "
         "heat_changes UInt32, promotions UInt32, demotions UInt32, graduations UInt32, "
         "hot_arcs_written UInt32, total_ms UInt32, tick_type String, "
-        "signals_written UInt32, signals_tombstoned_stale UInt32, signals_tombstoned_cleared UInt32"
+        "signals_written UInt32, signals_tombstoned_stale UInt32, signals_tombstoned_cleared UInt32, "
+        "prompt_length UInt32 DEFAULT 0"
         ") ENGINE = MergeTree ORDER BY timestamp TTL timestamp + INTERVAL 90 DAY"
     ),
+    # Self-heal tables created before prompt_length existed. Trending the AI
+    # prompt size is the early-warning for the context-overflow bug that zeroed
+    # tick health — alert if it climbs back toward the model context window.
+    "ALTER TABLE brain.tick_health ADD COLUMN IF NOT EXISTS prompt_length UInt32 DEFAULT 0",
 )
 
 
@@ -87,23 +92,27 @@ def _classify_tick_severity(report: dict) -> str:
     redundant brain-cron signals over 30h.
 
     Rules:
-      * nuclear  — the tick mechanism itself failed (AI output unparseable
-                   → score=0 sentinel, or the AI phase recorded error=true).
-                   These represent the brain genuinely not working.
-      * warning  — score 1-3. Surface in amygdala-active.md status banner
-                   but DO NOT create a vault @signal arc (warning is below
-                   the incident-arc threshold in amygdala.consume()).
+      * warning  — AI reasoning degraded (call errored, or output unparseable
+                   → score=0 sentinel), OR a parseable score 1-3. The AI layer
+                   failing is NOT the brain dying: Phase 1 (deterministic) still
+                   ran and brain-feed is fresh, so this surfaces in the
+                   amygdala-active.md status banner WITHOUT firing a fleet-halt
+                   nuclear every tick. (The chronic prompt-context overflow that
+                   drove this path is fixed upstream in brain_tick_prompt.)
+      * nuclear  — a genuine, parseable 0/10 — the model explicitly judged the
+                   brain dead (rare; the model is asked to rate 1-10).
       * info     — score 4+. classify_severity returns None on the amygdala
                    side, filtered out entirely. The Redis stream entry still
                    exists for forensics but drives no amygdala behavior.
     """
     ai_phase = report.get("phases", {}).get("ai", {})
-    if ai_phase.get("error"):
-        return "nuclear"
     health = report.get("phases", {}).get("apply", {}).get("result", {}).get("health", {})
     score = health.get("score", 0)
+    reason = (health.get("reason") or "").strip().lower()
+    if ai_phase.get("error") or reason == "unparseable":
+        return "warning"  # AI degraded — deterministic layer is healthy
     if score == 0:
-        return "nuclear"  # parse-fail sentinel
+        return "nuclear"  # parseable explicit 0/10 — model judged the brain dead
     if score <= 3:
         return "warning"
     return "info"
@@ -181,6 +190,7 @@ def _push_clickhouse(report: dict) -> None:
     det = report.get("phases", {}).get("deterministic", {}).get("stats", {})
     ai = report.get("phases", {}).get("apply", {})
     health = ai.get("result", {}).get("health", {}) if isinstance(ai.get("result"), dict) else {}
+    prompt_gen = report.get("phases", {}).get("prompt_gen", {})
 
     reason = health.get("reason", "n/a")[:500].replace("'", "")
     row = (
@@ -198,14 +208,15 @@ def _push_clickhouse(report: dict) -> None:
         f"'full', "
         f"{det.get('signals_written', 0)}, "
         f"{det.get('signals_tombstoned_stale', 0)}, "
-        f"{det.get('signals_tombstoned_cleared', 0)}"
+        f"{det.get('signals_tombstoned_cleared', 0)}, "
+        f"{prompt_gen.get('prompt_length', 0)}"
     )
     sql = (
         "INSERT INTO brain.tick_health "
         "(score, reason, arcs_scanned, signals_collected, lessons_collected, "
         "heat_changes, promotions, demotions, graduations, hot_arcs_written, "
         "total_ms, tick_type, signals_written, signals_tombstoned_stale, "
-        "signals_tombstoned_cleared) "
+        "signals_tombstoned_cleared, prompt_length) "
         f"VALUES ({row})"
     )
 

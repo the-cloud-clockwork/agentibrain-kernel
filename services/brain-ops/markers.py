@@ -118,6 +118,29 @@ class DocumentMeta:
 
 # ── Parsing functions ─────────────────────────────────────────────────
 
+def canonical_arc_id(name: str) -> str:
+    """Collapse a (possibly chained) arc filename to its canonical id.
+
+    Strips a trailing ``.md`` and ALL repeated ``.merged`` segments, so every
+    member of a runaway merge chain maps to one identity::
+
+        canonical_arc_id("foo.md")               -> "foo"
+        canonical_arc_id("foo.merged.md")        -> "foo"
+        canonical_arc_id("foo.merged.merged.md") -> "foo"
+        canonical_arc_id("foo.merged.merged")    -> "foo"
+
+    This is the single source of truth for chain collapse, reused by
+    ``brain_apply``, ``brain_keeper`` and ``scripts/vault_cleanup``.
+    ``str.replace(".merged.md", "")`` only strips ONE level and must never be
+    used for this — it is what let the ``X.merged.merged…md`` runaway form.
+    """
+    if name.endswith(".md"):
+        name = name[:-3]
+    while name.endswith(".merged"):
+        name = name[: -len(".merged")]
+    return name
+
+
 def _parse_attrs(attr_str: str) -> dict:
     """Parse key=value pairs from a marker attribute string."""
     attrs = {}
