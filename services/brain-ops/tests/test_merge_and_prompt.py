@@ -1,0 +1,178 @@
+"""Tests for the brain-tick edge-accumulation + merge-runaway fixes.
+
+Covered:
+- markers.canonical_arc_id collapses .merged.merged…md chains to one id
+- brain_apply.apply_merges: skips .merged.md tombstones, idempotent per pair,
+  single canonical rename (no suffix stacking), strips @edge from merged body
+- brain_tick_prompt.build_prompt: edge_map dedup (src,tgt) + MAX_EDGE_LINES cap,
+  MAX_PROMPT_CHARS budget drops the edge map first
+- scripts/vault_cleanup: collapses a synthetic chain to one file + dedups edges
+
+Run from repo root:
+    pytest -q services/brain-ops/tests
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# Make brain-ops modules + scripts importable from any cwd.
+_HERE = Path(__file__).resolve().parent
+_BRAIN_TOOLS = _HERE.parent
+_SCRIPTS = _BRAIN_TOOLS / "scripts"
+for _p in (_BRAIN_TOOLS, _SCRIPTS):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+import brain_apply  # noqa: E402
+import brain_tick_prompt  # noqa: E402
+import markers  # noqa: E402
+import vault_cleanup  # noqa: E402
+
+
+def _write_arc(path: Path, cluster_id: str, body: str, *, heat: int = 5) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"---\ncluster_id: {cluster_id}\ntitle: {cluster_id}\n"
+        f"heat: {heat}\nregion: left\nstatus: active\n---\n\n{body}\n"
+    )
+
+
+# ---------- canonical_arc_id ----------
+
+class TestCanonicalArcId:
+    def test_collapses_chain(self):
+        assert markers.canonical_arc_id("foo.md") == "foo"
+        assert markers.canonical_arc_id("foo.merged.md") == "foo"
+        assert markers.canonical_arc_id("foo.merged.merged.merged.md") == "foo"
+        assert markers.canonical_arc_id("foo.merged.merged") == "foo"
+        assert markers.canonical_arc_id("foo") == "foo"
+
+
+# ---------- apply_merges guards ----------
+
+class TestApplyMerges:
+    def _vault(self, tmp_path: Path):
+        d = tmp_path / "clusters" / "2026-05-01"
+        return tmp_path, d
+
+    def test_single_canonical_rename_no_stack(self, tmp_path):
+        vault, d = self._vault(tmp_path)
+        _write_arc(d / "arc-a.md", "arc-a", "A body")
+        _write_arc(d / "arc-b.md", "arc-b", "B body")
+        n = brain_apply.apply_merges(
+            vault, [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}], dry_run=False
+        )
+        assert n == 1
+        assert (d / "arc-b.merged.md").exists()
+        assert not (d / "arc-b.merged.merged.md").exists()
+        assert "## Merged from arc-b" in (d / "arc-a.md").read_text()
+
+    def test_skips_merged_tombstone_as_arc_b(self, tmp_path):
+        vault, d = self._vault(tmp_path)
+        _write_arc(d / "arc-a.md", "arc-a", "A body")
+        _write_arc(d / "arc-b.merged.md", "arc-b", "already a tombstone")
+        n = brain_apply.apply_merges(
+            vault, [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}], dry_run=False
+        )
+        assert n == 0  # tombstone is never re-merged → no runaway
+        assert not (d / "arc-b.merged.merged.md").exists()
+
+    def test_idempotent_repeated_pair(self, tmp_path):
+        vault, d = self._vault(tmp_path)
+        _write_arc(d / "arc-a.md", "arc-a", "A body")
+        _write_arc(d / "arc-b.md", "arc-b", "B body")
+        merge = [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}]
+        brain_apply.apply_merges(vault, merge, dry_run=False)
+        # Re-create arc-b (as a fresh raw file) and merge the same pair again.
+        _write_arc(d / "arc-b.md", "arc-b", "B body second")
+        n2 = brain_apply.apply_merges(vault, merge, dry_run=False)
+        assert n2 == 0  # already folded into A
+        assert (d / "arc-a.md").read_text().count("## Merged from arc-b") == 1
+
+    def test_strips_edges_from_merged_body(self, tmp_path):
+        vault, d = self._vault(tmp_path)
+        _write_arc(d / "arc-a.md", "arc-a", "A body")
+        _write_arc(
+            d / "arc-b.md", "arc-b",
+            "B body\n<!-- @edge type=related target=somewhere -->\n",
+        )
+        brain_apply.apply_merges(
+            vault, [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}], dry_run=False
+        )
+        merged = (d / "arc-a.md").read_text()
+        assert "## Merged from arc-b" in merged
+        assert "@edge" not in merged  # graph markers stripped — no re-accumulation
+
+
+# ---------- build_prompt edge_map dedup + caps ----------
+
+class TestBuildPrompt:
+    def test_edge_dedup_keeps_strongest_type(self, tmp_path):
+        feed = tmp_path / "brain-feed"
+        _write_arc(
+            tmp_path / "clusters" / "2026-05-01" / "arc-e.md", "arc-e",
+            "<!-- @edge type=related target=t1 -->\n<!-- @edge type=parent target=t1 -->\n",
+        )
+        prompt, _ = brain_tick_prompt.build_prompt(tmp_path, feed)
+        assert "--parent--> t1" in prompt
+        assert "--related--> t1" not in prompt
+
+    def test_edge_map_capped(self, tmp_path):
+        feed = tmp_path / "brain-feed"
+        edges = "".join(
+            f"<!-- @edge type=related target=t{i} -->\n"
+            for i in range(brain_tick_prompt.MAX_EDGE_LINES + 25)
+        )
+        _write_arc(tmp_path / "clusters" / "2026-05-01" / "arc-many.md", "arc-many", edges)
+        prompt, _ = brain_tick_prompt.build_prompt(tmp_path, feed)
+        assert "more edges (capped)" in prompt
+
+    def test_prompt_char_budget_drops_edge_map(self, tmp_path, monkeypatch):
+        feed = tmp_path / "brain-feed"
+        edges = "".join(
+            f"<!-- @edge type=related target=t{i} -->\n" for i in range(40)
+        )
+        _write_arc(tmp_path / "clusters" / "2026-05-01" / "arc-b.md", "arc-b", edges)
+        prompt0, _ = brain_tick_prompt.build_prompt(tmp_path, feed)
+        # Force the budget just below the full size — the edge map is the first
+        # (and here largest variable) section, so it must be dropped.
+        monkeypatch.setattr(brain_tick_prompt, "MAX_PROMPT_CHARS", len(prompt0) - 50)
+        prompt1, _ = brain_tick_prompt.build_prompt(tmp_path, feed)
+        assert "[edge map omitted" in prompt1
+        assert len(prompt1) < len(prompt0)
+
+
+# ---------- vault_cleanup chain collapse ----------
+
+class TestVaultCleanup:
+    def test_collapses_chain_and_dedupes_edges(self, tmp_path):
+        d = tmp_path / "clusters" / "2026-05-01"
+        _write_arc(d / "foo.md", "foo", "short")
+        _write_arc(d / "foo.merged.md", "foo", "medium body here")
+        # Longest = survivor: duplicate edges in the base body (survive the
+        # collapse) + a duplicate "## Merged from bar" section (dropped).
+        _write_arc(
+            d / "foo.merged.merged.md", "foo",
+            "longest body with history\n"
+            "<!-- @edge type=related target=x -->\n"
+            "<!-- @edge type=parent target=x -->\n"
+            "## Merged from bar\nbar content\n"
+            "## Merged from bar\nbar content dup\n",
+        )
+
+        collapse = vault_cleanup.collapse_chains(tmp_path, dry_run=False)
+        assert collapse["chains_collapsed"] == 1
+        assert collapse["files_deleted"] == 2
+        assert collapse["merge_notes_deduped"] == 1
+        assert (d / "foo.md").exists()
+        assert not (d / "foo.merged.md").exists()
+        assert not (d / "foo.merged.merged.md").exists()
+        # One canonical merge note survives.
+        assert (d / "foo.md").read_text().count("## Merged from bar") == 1
+
+        edges = vault_cleanup.dedupe_all_edges(tmp_path, dry_run=False)
+        # related+parent → one canonical edge to x.
+        assert edges["edges_removed"] >= 1
+        assert (d / "foo.md").read_text().count("target=x") == 1
