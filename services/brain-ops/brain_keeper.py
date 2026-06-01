@@ -384,16 +384,19 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
         for f in files:
             if f.name.endswith(".merged.md"):
                 merged_stems_by_dir.setdefault(f.parent, set()).add(
-                    f.name.replace(".merged.md", "")
+                    markers.canonical_arc_id(f.name)
                 )
         for md_file in files:
             if md_file.name.startswith("_"):
                 continue
-            stem = md_file.name[:-3]
+            # canonical_arc_id folds the whole .merged.merged…md chain to one
+            # id, so the raw counterpart is suppressed and a runaway chain
+            # dedups to a single arc. str.replace stripped only one level.
             if (not md_file.name.endswith(".merged.md")
-                and stem in merged_stems_by_dir.get(md_file.parent, set())):
+                and markers.canonical_arc_id(md_file.name)
+                    in merged_stems_by_dir.get(md_file.parent, set())):
                 continue
-            arc_id = md_file.stem.replace(".merged", "")
+            arc_id = markers.canonical_arc_id(md_file.name)
             if arc_id in seen_ids:
                 continue
             seen_ids.add(arc_id)
