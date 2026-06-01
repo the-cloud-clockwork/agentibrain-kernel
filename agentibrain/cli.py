@@ -204,7 +204,9 @@ def tick_cmd(
     console.print(f"[green]✓[/green] tick enqueued — job_id={job_id}")
 
     if not wait:
-        console.print(f"  poll: [cyan]curl -H 'Authorization: Bearer …' {base}/tick/{job_id}[/cyan]")
+        console.print(
+            f"  poll: [cyan]curl -H 'Authorization: Bearer …' {base}/tick/{job_id}[/cyan]"
+        )
         return
 
     console.print("  waiting (≤5 min)…")
