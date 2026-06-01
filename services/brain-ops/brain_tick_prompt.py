@@ -36,6 +36,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import brain_keeper
 import markers
+from brain_apply import _rank
+
+# Prompt-size guards. The AI reasoning model has a finite context window
+# (claude-max-sonnet: 200K tokens ≈ ~800K chars). An unbounded edge map or arc
+# table overflows it — the model then returns an unparseable stub and the tick
+# scores 0/10 → nuclear. These caps plus the final char budget keep the prompt
+# inside the window regardless of vault size or merge/edge corruption.
+MAX_EDGE_LINES = 500        # rendered edge lines after (source, target) dedup
+MAX_ARC_ROWS = 250          # arc-table rows, highest heat first
+MAX_PROMPT_CHARS = 400_000  # ~100K tokens — hard ceiling enforced before POST
 
 
 def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
@@ -109,10 +119,14 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
     # 3. Build the compressed context
     now = datetime.now(timezone.utc)
 
-    # Arc table
+    # Arc table — capped at MAX_ARC_ROWS by heat. Rows scale with vault size;
+    # the cap keeps this section bounded (defensive; see prompt-size guards).
+    sorted_arcs = sorted(
+        arcs, key=lambda a: int(a.frontmatter.get("heat", 0) or 0), reverse=True
+    )
     arc_table = "| # | Arc ID | Heat | Region | Status | Title | Sessions | Markers |\n"
     arc_table += "|---|--------|------|--------|--------|-------|----------|--------|\n"
-    for i, arc in enumerate(sorted(arcs, key=lambda a: int(a.frontmatter.get("heat", 0)), reverse=True), 1):
+    for i, arc in enumerate(sorted_arcs[:MAX_ARC_ROWS], 1):
         fm = arc.frontmatter
         cid = fm.get("cluster_id", arc.path.stem if arc.path else "?")
         sessions = fm.get("source_sessions", [])
@@ -123,15 +137,38 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
             f"| {fm.get('status', '?')} | {fm.get('title', '?')[:50]} "
             f"| {sess_count} | {marker_count} |\n"
         )
+    if len(sorted_arcs) > MAX_ARC_ROWS:
+        arc_table += (
+            f"| … | *(+{len(sorted_arcs) - MAX_ARC_ROWS} more arcs, trimmed by heat)* "
+            f"| | | | | | |\n"
+        )
 
-    # Edge map
-    edge_lines = []
+    # Edge map — dedup per (source, target) keeping the strongest edge type,
+    # then hard-cap. This is the only prompt section that scales with the
+    # (historically runaway) on-disk edge count; without the dedup + cap a
+    # corrupt vault overflows the model context and the tick scores 0/nuclear.
+    # Dedup mirrors apply_edges pass-1 (lower _rank == stronger type).
+    chosen_edges: dict[tuple[str, str], str] = {}
+    edge_order: list[tuple[str, str]] = []
     for arc in arcs:
         cid = arc.frontmatter.get("cluster_id", arc.path.stem if arc.path else "?")
         for edge in arc.edges:
             etype = edge.attr("type", "related")
             target = edge.attr("target", "?")
-            edge_lines.append(f"  {cid} --{etype}--> {target}")
+            key = (cid, target)
+            if key not in chosen_edges:
+                chosen_edges[key] = etype
+                edge_order.append(key)
+            elif _rank(etype) < _rank(chosen_edges[key]):
+                chosen_edges[key] = etype
+    edge_lines = [
+        f"  {cid} --{chosen_edges[(cid, target)]}--> {target}"
+        for (cid, target) in edge_order
+    ]
+    total_edges = len(edge_lines)
+    if total_edges > MAX_EDGE_LINES:
+        edge_lines = edge_lines[:MAX_EDGE_LINES]
+        edge_lines.append(f"  ... and {total_edges - MAX_EDGE_LINES} more edges (capped)")
     edge_map = "\n".join(edge_lines) if edge_lines else "  (no edges found — this is a gap)"
 
     # Signals — dedup by (source, content_hash) so a signal promoted to
@@ -264,6 +301,21 @@ One line: `Brain health: N/10 — reason`
 
 Respond ONLY with the 5 sections above. No preamble. No explanation of what you're doing. Just the answers.
 """
+
+    # Final hard ceiling. The per-section caps above keep a healthy vault well
+    # under budget; this guarantees the prompt fits the context window on ANY
+    # vault state (e.g. before a cleanup has run). Drop the largest variable
+    # sections first — edge map, then arc table — before a blunt truncation.
+    if len(prompt) > MAX_PROMPT_CHARS:
+        prompt = prompt.replace(
+            edge_map, "  [edge map omitted — exceeded context budget; run vault cleanup]"
+        )
+    if len(prompt) > MAX_PROMPT_CHARS:
+        prompt = prompt.replace(
+            arc_table, "  [arc table omitted — exceeded context budget]\n"
+        )
+    if len(prompt) > MAX_PROMPT_CHARS:
+        prompt = prompt[:MAX_PROMPT_CHARS] + "\n\n[prompt hard-truncated to fit context]\n"
 
     return prompt, stats
 

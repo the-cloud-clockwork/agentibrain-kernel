@@ -43,3 +43,6 @@ jobs:
 
       - name: Pytest
         run: pytest -q tests/unit
+
+      - name: Pytest (brain-ops service)
+        run: pytest -q services/brain-ops/tests
