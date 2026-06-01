@@ -40,14 +40,18 @@ else
     exit 1
   fi
 
-  # Replace each __GENERATE__ marker with a fresh random token.
+  # Replace each __GENERATE__ marker with a fresh random token, one per loop pass.
+  # Use awk rather than `sed -i` for portability: GNU's `0,/re/s//x/` and BSD's
+  # `1,/re/` line-addressing diverge (BSD rejects the empty RE outright, and its
+  # `1,/re/` window can span two markers and assign them the same token). awk's
+  # sub() replaces only the first match on the first matching line, identically
+  # on GNU and BSD. `cat` back into the file preserves the chmod 600 / symlink.
   while grep -q '__GENERATE__' "$HOME_ENV_FILE"; do
     tok="$(openssl rand -hex 32)"
-    if sed --version >/dev/null 2>&1; then
-      sed -i "0,/__GENERATE__/s//${tok}/" "$HOME_ENV_FILE"   # GNU sed
-    else
-      sed -i '' "1,/__GENERATE__/s//${tok}/" "$HOME_ENV_FILE" # BSD sed (macOS)
-    fi
+    tok="$tok" awk '!d && sub(/__GENERATE__/, ENVIRON["tok"]) {d=1} {print}' \
+      "$HOME_ENV_FILE" > "$HOME_ENV_FILE.tmp"
+    cat "$HOME_ENV_FILE.tmp" > "$HOME_ENV_FILE"
+    rm -f "$HOME_ENV_FILE.tmp"
   done
 
   echo "[bootstrap] generated random KB_ROUTER_TOKEN + VAULT_READER_TOKENS"
