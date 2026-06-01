@@ -68,13 +68,33 @@ Restart Claude Code, run `/mcp` — you'll see `agentibrain` with 5 tools:
 | `brain_get_arc` | Fetch full arc by cluster_id |
 | `brain_ingest` | Write text to the brain vault |
 
-### 5. Wire agentihooks profile (optional)
+### 5. Wire agentihooks profile (required for full brain injection)
 
-If you use [agentihooks](https://github.com/The-Cloud-Clockwork/agentihooks), link the brain profile so your agents get brain tools + markers + broadcast rules:
+> **agentihooks is required for the full brain experience.**
+> Without it, you get the HTTP API and MCP tools — but agents won't
+> receive automatic context injection (hot arcs, signals, broadcasts),
+> won't have their `@marker` comments captured, and won't see amygdala
+> alerts. The hooks layer (`brain_adapter`, `brain_writer_hook`,
+> `amygdala_hook`) is what makes the brain *live* inside Claude Code
+> sessions. API-only usage (curl / SDK) works without agentihooks.
+
+Install [agentihooks](https://github.com/The-Cloud-Clockwork/agentihooks) ([PyPI](https://pypi.org/project/agentihooks/)):
+
+```bash
+pip install agentihooks
+```
+
+Then link the brain profile so your agents get brain MCP tools + marker rules + broadcast channel config:
 
 ```bash
 agentihooks link-profile link "$(pwd)/profiles/brain"
 ```
+
+What this gives you:
+- **SessionStart** — `brain_adapter` calls `/feed` and injects hot arcs, signals, operator intent, and tick diffs as `BROADCAST` blocks into every agent session
+- **Every turn** — `amygdala_hook` polls `/signal` for nuclear/critical alerts
+- **Every 30 turns** — `brain_adapter` re-fetches `/feed` and re-injects if content changed
+- **SessionStop** — `brain_writer_hook` scans transcripts for `@lesson`, `@milestone`, `@signal`, `@decision` markers and POSTs them to `/marker`
 
 ### 6. Test it
 
@@ -365,13 +385,21 @@ For Claude Code running in agent mode inside a pod, point at the in-cluster Serv
 
 Inject `MCP_PROXY_API_KEY` via `envFrom: secretRef:` from the K8s Secret backing the `mcp` chart (`agentibrain-mcp-secrets` by default).
 
-### agentihooks profile
+### agentihooks profile (required for Claude Code brain injection)
 
-If your agents use [agentihooks](https://github.com/The-Cloud-Clockwork/agentihooks), link the brain profile to get brain MCP tools, marker rules, and broadcast channel config:
+[agentihooks](https://github.com/The-Cloud-Clockwork/agentihooks) ([PyPI](https://pypi.org/project/agentihooks/)) is the hook framework that wires AgentiBrain into Claude Code sessions. **Without it, agents can query the brain via MCP tools but won't receive automatic context injection, marker capture, or amygdala alerts.**
 
 ```bash
+pip install agentihooks
 agentihooks link-profile link /path/to/agentibrain-kernel/profiles/brain
 ```
+
+The brain profile registers three hooks:
+| Hook | Trigger | What it does |
+|---|---|---|
+| `brain_adapter` | SessionStart + every 30 turns | Reads `/feed`, injects hot arcs, signals, intent, tick diffs as `BROADCAST` blocks |
+| `brain_writer_hook` | SessionStop | Scans transcript for `@lesson` `@milestone` `@signal` `@decision` markers, POSTs to `/marker` |
+| `amygdala_hook` | Every turn | Polls `/signal` for nuclear/critical severity, injects `BROADCAST [CRITICAL]` |
 
 > **The bundled profile ships the local SSE server only.**
 > `profiles/brain/.claude/.mcp.json` contains a single entry —
