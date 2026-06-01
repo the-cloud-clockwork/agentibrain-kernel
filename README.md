@@ -373,6 +373,21 @@ If your agents use [agentihooks](https://github.com/The-Cloud-Clockwork/agentiho
 agentihooks link-profile link /path/to/agentibrain-kernel/profiles/brain
 ```
 
+> **The bundled profile ships the local SSE server only.**
+> `profiles/brain/.claude/.mcp.json` contains a single entry —
+> `agentibrain-local` (`type: sse` → `http://localhost:8104/sse`), pointing at
+> the local Docker-Compose stack. No remote entry is bundled: the `mcp` chart's
+> Service is `ClusterIP` with no Ingress, so `agentibrain-mcp.<ns>.svc:8080`
+> resolves only inside the cluster — usable from in-cluster agent pods (see
+> [Kubernetes](#kubernetes-agent-mode-pod) above), unreachable from anywhere
+> else.
+>
+> To reach the brain MCP from outside the cluster, expose it on a routable
+> surface — an Ingress, or behind an MCP gateway — then add your own entry.
+> Whichever you choose, authenticate with the `x-api-key` header (not
+> `Authorization: Bearer`), path `/mcp` (streamable HTTP) or `/sse`, key
+> `MCP_PROXY_API_KEY`.
+
 Full reference (incl. LiteLLM gateway path): [`docs/MCP.md`](docs/MCP.md).
 
 ---
