@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 from datetime import datetime, timedelta, timezone
@@ -52,6 +53,66 @@ BRAIN_STALE_SIGNAL_DAYS = int(os.getenv("BRAIN_STALE_SIGNAL_DAYS", "3"))
 BRAIN_STALE_SIGNAL_KEEP_SEVERITIES = {"nuclear", "critical"}
 
 
+_DATE_PREFIX_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+
+def resolve_created(doc: markers.DocumentMeta) -> tuple[datetime | None, bool]:
+    """Best-effort creation date for an arc. Returns (dt, derived).
+
+    An arc with no `created` frontmatter used to be immortal: compute_heat
+    granted it no recency AND applied no decay, so a `status: active` arc
+    froze at heat 2 — above BRAIN_GRADUATE_HEAT — while graduation skipped it
+    outright for lacking a date. Graduation is the only drain (demotion just
+    moves files already inside conscious/), so the vault could only grow.
+
+    Fall back to the date prefix every cluster_id/filename carries
+    (`2026-07-10-qitp-…`), then to file mtime. `derived` is True when the
+    date did not come from frontmatter, so the caller can backfill it.
+    """
+    fm = doc.frontmatter
+
+    raw = fm.get("created", "")
+    if raw:
+        try:
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)), False
+        except (ValueError, TypeError):
+            pass  # malformed — fall through to derivation
+
+    for candidate in (str(fm.get("cluster_id", "")), doc.path.name if doc.path else ""):
+        m = _DATE_PREFIX_RE.search(candidate)
+        if m:
+            try:
+                return datetime.fromisoformat(m.group(1)).replace(tzinfo=timezone.utc), True
+            except ValueError:
+                pass
+
+    if doc.path is not None:
+        try:
+            return datetime.fromtimestamp(doc.path.stat().st_mtime, tz=timezone.utc), True
+        except OSError:
+            pass
+
+    return None, False
+
+
+def is_arc(doc: markers.DocumentMeta) -> bool:
+    """True when the document is a work arc, not a standing region document.
+
+    `bridge/vision.md`, `bridge/connections.md`, `weekly-synthesis.md` and
+    friends live in region dirs and get scanned, but they are hand-authored
+    reference docs with no `cluster_id` and no date. They were being ranked
+    as arcs — surfacing on the hot-arcs feed with `?` region and `?` status,
+    which is precisely the "unknown region/status" debt the tick's reasoner
+    penalises every cycle. They still contribute markers; they just don't
+    compete for heat.
+    """
+    fm = doc.frontmatter
+    if fm.get("cluster_id"):
+        return True
+    return bool(doc.path and _DATE_PREFIX_RE.search(doc.path.name))
+
+
 def compute_heat(
     doc: markers.DocumentMeta,
     now: datetime,
@@ -65,20 +126,15 @@ def compute_heat(
     fm = doc.frontmatter
     heat = replay_boost
 
-    # Recency from created date
-    created_str = fm.get("created", "")
-    if created_str:
-        try:
-            created = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
-            if created.tzinfo is None:
-                created = created.replace(tzinfo=timezone.utc)
-            age_h = (now - created).total_seconds() / 3600.0
-            if age_h <= 24:
-                heat += 3
-            elif age_h <= 72:
-                heat += 1
-        except (ValueError, TypeError):
-            pass
+    # Recency. Derived from cluster_id/filename/mtime when frontmatter has no
+    # `created`, so an undated arc still ages instead of freezing forever.
+    created, _ = resolve_created(doc)
+    if created is not None:
+        age_h = (now - created).total_seconds() / 3600.0
+        if age_h <= 24:
+            heat += 3
+        elif age_h <= 72:
+            heat += 1
 
     # Tool volume from signals field. If signals is missing (common on
     # merged arcs and arcs predating cluster.py's signals writer), fall back
@@ -118,19 +174,14 @@ def compute_heat(
         heat += 2
 
     # Decay penalty: after BRAIN_DECAY_START_DAYS of age, lose 1 heat per
-    # BRAIN_DECAY_INTERVAL_DAYS. Floors at 0. Only applied when the arc has
-    # real age metadata. Replay boost already counteracts this for re-used arcs.
-    if created_str:
-        try:
-            created = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
-            if created.tzinfo is None:
-                created = created.replace(tzinfo=timezone.utc)
-            age_days = (now - created).days
-            if age_days > BRAIN_DECAY_START_DAYS:
-                decay = (age_days - BRAIN_DECAY_START_DAYS) // BRAIN_DECAY_INTERVAL_DAYS
-                heat -= decay
-        except (ValueError, TypeError):
-            pass
+    # BRAIN_DECAY_INTERVAL_DAYS. Floors at 0. Replay boost already counteracts
+    # this for re-used arcs. Applies to derived dates too — an arc that cannot
+    # cool is an arc that never graduates.
+    if created is not None:
+        age_days = (now - created).days
+        if age_days > BRAIN_DECAY_START_DAYS:
+            decay = (age_days - BRAIN_DECAY_START_DAYS) // BRAIN_DECAY_INTERVAL_DAYS
+            heat -= decay
 
     return max(0, min(HEAT_MAX, heat))
 
@@ -442,8 +493,20 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
 
     # 2. Recompute heat (skipped in quick_refresh)
     heat_changes = 0
+    created_backfilled = 0
     if not quick_refresh:
         for arc in arcs:
+            # Persist a derived creation date once, so the arc carries real age
+            # metadata from here on and every consumer (decay, graduation, the
+            # reasoner's "unknown metadata" complaint) sees a dated arc.
+            derived_dt, was_derived = resolve_created(arc)
+            if was_derived and derived_dt is not None and is_arc(arc):
+                stamp = derived_dt.strftime("%Y-%m-%d")
+                arc.frontmatter["created"] = stamp
+                created_backfilled += 1
+                if not dry_run and arc.path:
+                    _update_frontmatter_field(arc.path, "created", stamp)
+
             cid = arc.frontmatter.get("cluster_id", "")
             boost = replay_boost_map.get(cid, 0)
             old_heat = arc.frontmatter.get("heat", "0")
@@ -531,16 +594,16 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
             heat = int(arc.frontmatter.get("heat", 0))
             if heat > BRAIN_GRADUATE_HEAT or arc.path is None:
                 continue
-            created = arc.frontmatter.get("created", "")
-            if not created:
+            # Only work arcs graduate. Standing region docs (bridge/vision.md &
+            # co) have no cluster_id and no region, so the region default would
+            # relocate them into left/ — they were previously shielded only by
+            # the missing-`created` skip this change removes.
+            if not is_arc(arc):
                 continue
-            try:
-                created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
-                if created_dt.tzinfo is None:
-                    created_dt = created_dt.replace(tzinfo=timezone.utc)
-                age_days = (now - created_dt).days
-            except (ValueError, TypeError):
+            created_dt, _ = resolve_created(arc)
+            if created_dt is None:
                 continue
+            age_days = (now - created_dt).days
             if age_days <= BRAIN_GRADUATE_AGE_DAYS:
                 continue
             region = arc.frontmatter.get("region", "left-hemisphere")
@@ -601,7 +664,14 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
         all_lessons.extend(arc.lessons)
 
     # 5. Generate brain-feed outputs
-    hot = sorted(arcs, key=lambda a: int(a.frontmatter.get("heat", 0)), reverse=True)[:10]
+    # Standing region docs (no cluster_id, no date) still contribute markers but
+    # must not occupy hot-arc slots — that is what put `?` region / `?` status
+    # rows on the feed and drove the reasoner's under-classification complaint.
+    hot = sorted(
+        (a for a in arcs if is_arc(a)),
+        key=lambda a: int(a.frontmatter.get("heat", 0)),
+        reverse=True,
+    )[:10]
     signal_stats = {"written": 0, "tombstoned_stale": 0, "tombstoned_cleared": 0, "tombstoned_mitigated": 0}
     # Auto-verifier: run each signal's verify= command, tag _mitigated=true on
     # signals whose underlying claim has been falsified. write_signals_feed
@@ -628,6 +698,7 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
         "inbox_drained": inbox_stats.get("drained", 0),
         "inbox_errors": inbox_stats.get("errors", 0),
         "arcs_scanned": len(arcs),
+        "created_backfilled": created_backfilled,
         "heat_changes": heat_changes,
         "promotions": promotions,
         "demotions": demotions,
