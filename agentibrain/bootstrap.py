@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import secrets
 import shutil
 import subprocess
@@ -193,7 +194,12 @@ def run_migrations(settings: BrainSettings) -> list[str]:
     Schema ownership moves to Alembic in a future release.
     """
     if not shutil.which("psql"):
-        return ["psql not found on PATH — skipped migrations. Install postgresql-client."]
+        hint = (
+            "brew install libpq && brew link --force libpq"
+            if platform.system() == "Darwin"
+            else "apt install postgresql-client"
+        )
+        return [f"psql not found on PATH — skipped migrations. Install it: {hint}."]
 
     dsn = settings.postgres_url or (
         f"postgresql://agentibrain:{os.getenv('POSTGRES_PASSWORD', DEFAULT_POSTGRES_PASSWORD)}"

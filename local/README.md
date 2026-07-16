@@ -13,6 +13,10 @@ docker compose up -d              # 7 containers come up
 docker compose ps                 # all healthy
 ```
 
+On macOS, enable VirtioFS (Docker Desktop → Settings → General → "VirtioFS")
+for fast bind mounts. If you ever see root-owned files under `./vault` from a
+prior run, `sudo chown -R $(id -u):$(id -g) ./vault`.
+
 Smoke the brain feed:
 
 ```bash
