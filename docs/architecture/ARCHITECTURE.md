@@ -190,7 +190,7 @@ BRAIN_REFRESH_INTERVAL: "30"      # turns between refresh checks
 
 **Currently wired on:**
 - K8s agents: agenticore + your fleet's agents (env vars in Helm values, all in `<your-namespace>`).
-- Local fleet (WSL2 / laptop): all repos with `.agentihooks.json` containing `"channels": ["brain", "amygdala"]`. Brain-feed synced via rsync cron (`*/5 * * * *`) from your vault NFS export to `~/.agentihooks/brain-feed/`. Env vars in `~/.claude/settings.json`.
+- Local fleet (WSL2 / macOS / laptop): all repos with `.agentihooks.json` containing `"channels": ["brain", "amygdala"]`. Brain-feed synced via rsync cron (`*/5 * * * *`) from your vault NFS export to `~/.agentihooks/brain-feed/`. Env vars in `~/.claude/settings.json`.
 
 **Channel subscription required:** Broadcast system reads `.agentihooks.json` from project CWD for `channels` array. Without `["brain", "amygdala"]`, brain messages are published but filtered out at delivery.
 

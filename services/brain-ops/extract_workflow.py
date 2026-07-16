@@ -32,7 +32,7 @@ SECRET_RE = re.compile(
     r"|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{20,}|Bearer\s+[A-Za-z0-9._-]{20,})",
 )
 
-ABS_PATH_RE = re.compile(r"/home/[a-z0-9_-]+|/mnt/[a-z0-9_-]+|/root")
+ABS_PATH_RE = re.compile(r"/home/[a-z0-9_-]+|/Users/[A-Za-z0-9_.-]+|/mnt/[a-z0-9_-]+|/root")
 HOST_RE = re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")
 
 READ_ONLY_TOOLS = frozenset({"Read", "Glob", "Grep", "LS"})
