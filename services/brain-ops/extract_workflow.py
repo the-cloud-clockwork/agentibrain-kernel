@@ -15,12 +15,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
 from typing import Any
 
-PROJECTS_DIR = Path.home() / ".claude" / "projects"
+# Same knob as the CronJob extraction step (helm env EXTRACT_PROJECTS_DIR).
+# Default preserves local/dev behavior; in-cluster the operator overlay points
+# it at the mounted transcripts share.
+PROJECTS_DIR = Path(os.environ.get("EXTRACT_PROJECTS_DIR", str(Path.home() / ".claude" / "projects")))
 
 CORRECTION_RE = re.compile(
     r"\b(no|stop|wrong|actually|revert|undo|that'?s not|don'?t)\b",

@@ -35,16 +35,22 @@ command:
     mkdir -p "$OUTDIR"
     chmod 777 "$OUTDIR"
 
-    # Extraction: only at 04:00 UTC (first tick of the day)
-    if [ "$HOUR" = "04" ]; then
-      echo "Brain extraction: since=26h min-turns=5 out=$OUTDIR"
-      python3 /app/extract.py --since 26h --min-turns 5 \
-        --projects-dir /shared/.claude/projects \
+    # Extraction: gated to one tick per day (EXTRACT_HOUR, default 04:00 UTC).
+    # All extraction knobs are env-driven (EXTRACT_*) so operators configure
+    # them in their values overlay without forking this script.
+    EXTRACT_HOUR="${EXTRACT_HOUR:-04}"
+    EXTRACT_SINCE="${EXTRACT_SINCE:-26h}"
+    EXTRACT_MIN_TURNS="${EXTRACT_MIN_TURNS:-5}"
+    EXTRACT_PROJECTS_DIR="${EXTRACT_PROJECTS_DIR:-/shared/.claude/projects}"
+    if [ "$HOUR" = "$EXTRACT_HOUR" ]; then
+      echo "Brain extraction: since=$EXTRACT_SINCE min-turns=$EXTRACT_MIN_TURNS projects-dir=$EXTRACT_PROJECTS_DIR out=$OUTDIR"
+      python3 /app/extract.py --since "$EXTRACT_SINCE" --min-turns "$EXTRACT_MIN_TURNS" \
+        --projects-dir "$EXTRACT_PROJECTS_DIR" \
         | python3 /app/cluster.py --out-dir "$OUTDIR" \
         || notify_failure "extraction phase"
       echo "Extraction done."
     else
-      echo "Skipping extraction (hour=$HOUR, runs at 04 only)."
+      echo "Skipping extraction (hour=$HOUR, runs at $EXTRACT_HOUR only)."
     fi
 
     echo "Running hybrid brain tick (with AI)..."
@@ -79,6 +85,14 @@ command:
     echo "Amygdala check complete."
 
 env:
+  # Transcript-extraction knobs (consumed by the CronJob script above AND by
+  # extract_workflow.py inside brain_keeper's workflow-template step).
+  # EXTRACT_PROJECTS_DIR must point at a dir laid out as
+  # <dir>/<project-dir>/*.jsonl (Claude Code projects layout, one level deep).
+  EXTRACT_HOUR: "04"
+  EXTRACT_SINCE: "26h"
+  EXTRACT_MIN_TURNS: "5"
+  EXTRACT_PROJECTS_DIR: "/shared/.claude/projects"
   # INFERENCE_URL is operator-specific — set empty default so the kernel can run
   # without an inference gateway (brain_tick will skip AI phase if unset).
   # Wire at any OpenAI-compatible endpoint: LiteLLM, OpenAI, Ollama, etc.
