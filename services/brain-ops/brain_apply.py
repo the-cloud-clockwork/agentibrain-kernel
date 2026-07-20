@@ -194,7 +194,12 @@ def parse_ai_output(text: str) -> dict:
     }
 
 
-_SUMMARY_RE = re.compile(r"^\s*[-*]?\s*SUMMARY:\s*(?P<cid>[^|]+?)\s*\|\s*(?P<text>.+?)\s*$")
+# Leading `-`/`*`/backtick and a trailing backtick are all tolerated: the tick
+# prompt writes its format examples in backticks (as every other section does),
+# so the model faithfully wraps each emitted line the same way.
+_SUMMARY_RE = re.compile(
+    r"^[\s\-*`]*SUMMARY:\s*(?P<cid>[^|]+?)\s*\|\s*(?P<text>.+?)\s*[`\s]*$"
+)
 
 
 def parse_summaries(section: str) -> list[dict]:
@@ -653,7 +658,8 @@ def apply(vault_root: Path, brain_feed_dir: Path, ai_output: str, dry_run: bool 
     parsed = parse_ai_output(ai_output)
 
     print(f"Parsed AI output: {len(parsed['edges'])} edges, {len(parsed['merges'])} merges, "
-          f"{len(parsed['signals'])} signal changes, health={parsed['health'].get('score', '?')}/10",
+          f"{len(parsed['signals'])} signal changes, {len(parsed['summaries'])} summaries, "
+          f"health={parsed['health'].get('score', '?')}/10",
           file=sys.stderr)
 
     actions = {}
