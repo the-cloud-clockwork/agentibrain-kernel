@@ -254,7 +254,22 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
     # the model was shown WHICH arcs needed summarizing but never WHAT they
     # contained, and no task ever asked it to summarize them. Carry enough
     # substance per arc that a one-sentence summary is actually derivable.
-    unsynth_arcs = [a for a in arcs if a.frontmatter.get("synthesized") == "false"]
+    def _needs_summary(a) -> bool:
+        fm = a.frontmatter
+        if str(fm.get("summary", "")).strip():
+            return False  # already synthesized, never re-spend on it
+        if fm.get("synthesized") == "false":
+            return True
+        # Arcs written outside cluster.py never carry a `synthesized` field at
+        # all — notably the `-writer` marker arcs, which hold the richest
+        # content in the vault (real @lesson/@decision/@milestone bodies) and
+        # were nonetheless stuck forever on the mechanical title
+        # "Session markers — <sid>". Anything with a cluster_id is a work arc
+        # and deserves a summary; standing region docs (no cluster_id) keep
+        # their hand-written titles and are left alone.
+        return bool(str(fm.get("cluster_id", "")).strip())
+
+    unsynth_arcs = [a for a in arcs if _needs_summary(a)]
     unsynth_arcs.sort(key=lambda a: int(a.frontmatter.get("heat", 0) or 0), reverse=True)
 
     unsynth_blocks: list[str] = []
@@ -366,7 +381,7 @@ Format:
 
 IMPORTANT source-name rules:
 - If the source name contains spaces, WRAP IT IN BACKTICKS:
-  `ESCALATE: \`image-updater registry auth broken\` → critical (fleet-wide CD halt)`
+  `ESCALATE:` followed by the source in backticks, e.g. image-updater registry auth broken -> critical (fleet-wide CD halt)
 - If the source name is a single token (kebab-case slug), no backticks needed:
   `ESCALATE: paper2slides-s3 → warning (all jobs fail)`
 - The apply phase uses the source name verbatim — do NOT paraphrase between ticks.
