@@ -173,6 +173,11 @@ def parse_ai_output(text: str) -> dict:
                 sections[current_key] = "\n".join(current_lines)
             current_key = "health"
             current_lines = []
+        elif line.startswith("### 6."):
+            if current_key:
+                sections[current_key] = "\n".join(current_lines)
+            current_key = "summaries"
+            current_lines = []
         else:
             current_lines.append(line)
 
@@ -185,7 +190,37 @@ def parse_ai_output(text: str) -> dict:
         "signals": parse_signals(sections.get("signals", "")),
         "intent": parse_intent(sections.get("intent", "")),
         "health": parse_health(sections.get("health", "")),
+        "summaries": parse_summaries(sections.get("summaries", "")),
     }
+
+
+_SUMMARY_RE = re.compile(r"^\s*[-*]?\s*SUMMARY:\s*(?P<cid>[^|]+?)\s*\|\s*(?P<text>.+?)\s*$")
+
+
+def parse_summaries(section: str) -> list[dict]:
+    """Parse `SUMMARY: <arc-id> | <one sentence>` lines from tick section 6.
+
+    Skips SKIP sentinels (arc had too little content) so the arc stays
+    unsynthesized and is offered again on a later tick.
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    for line in section.splitlines():
+        m = _SUMMARY_RE.match(line)
+        if not m:
+            continue
+        cid = m.group("cid").strip().strip("`").strip()
+        text = " ".join(m.group("text").split())
+        if not cid or cid in seen:
+            continue
+        if not text or text.upper() == "SKIP":
+            continue
+        # Frontmatter is written unquoted; a stray colon-space or newline would
+        # corrupt the YAML block for every downstream reader.
+        text = text.replace(":", " -").replace("|", "-").replace('"', "'")
+        seen.add(cid)
+        out.append({"arc": cid, "summary": text[:400]})
+    return out
 
 
 # ── Apply functions ───────────────────────────────────────────────────
@@ -556,6 +591,63 @@ def generate_diff_report(vault_root: Path, actions: dict) -> str:
 
 # ── Main ──────────────────────────────────────────────────────────────
 
+def apply_summaries(vault_root: Path, summaries: list[dict], dry_run: bool = False) -> int:
+    """Write `summary:` into arc frontmatter and flip `synthesized` to true.
+
+    This is the stage that was designed (cluster.py has always written
+    `synthesized: false` and a "filled by LLM pass" placeholder) but never
+    built — so every arc stayed an empty stub and the hot-arcs table showed
+    scraped first-message titles instead of what the work actually was.
+
+    Idempotent: an arc already carrying a summary is left alone, so a model
+    re-emitting an old id costs nothing.
+    """
+    applied = 0
+    for item in summaries:
+        arc_id = item["arc"]
+        summary = item["summary"]
+        arc_path = find_arc_file(vault_root, arc_id)
+        if arc_path is None:
+            print(f"  SKIP summary: arc not found — {arc_id}", file=sys.stderr)
+            continue
+
+        try:
+            text = arc_path.read_text(encoding="utf-8")
+        except OSError as e:
+            print(f"  SKIP summary: unreadable {arc_id} ({e})", file=sys.stderr)
+            continue
+
+        if not text.startswith("---"):
+            print(f"  SKIP summary: no frontmatter — {arc_id}", file=sys.stderr)
+            continue
+        parts = text.split("---", 2)
+        if len(parts) < 3:
+            print(f"  SKIP summary: malformed frontmatter — {arc_id}", file=sys.stderr)
+            continue
+
+        fm, body = parts[1], parts[2]
+        if re.search(r"^summary:\s*\S", fm, flags=re.MULTILINE):
+            continue  # already synthesized — never overwrite
+
+        # Insert summary; set synthesized true (replace in place, else append).
+        fm = fm.rstrip("\n") + f"\nsummary: {summary}\n"
+        if re.search(r"^synthesized:", fm, flags=re.MULTILINE):
+            fm = re.sub(r"^synthesized:.*$", "synthesized: true", fm, flags=re.MULTILINE)
+        else:
+            fm += "synthesized: true\n"
+
+        if not dry_run:
+            try:
+                arc_path.write_text(f"---{fm}---{body}", encoding="utf-8")
+            except OSError as e:
+                print(f"  FAIL summary: {arc_id} ({e})", file=sys.stderr)
+                continue
+        applied += 1
+        print(f"  summary: {arc_id} — {summary[:70]}", file=sys.stderr)
+
+    return applied
+
+
 def apply(vault_root: Path, brain_feed_dir: Path, ai_output: str, dry_run: bool = False) -> dict:
     """Parse AI output and apply all recommendations to the vault."""
     parsed = parse_ai_output(ai_output)
@@ -580,6 +672,11 @@ def apply(vault_root: Path, brain_feed_dir: Path, ai_output: str, dry_run: bool 
     if parsed["merges"]:
         print("\n--- Applying merges ---", file=sys.stderr)
         actions["merges_applied"] = apply_merges(vault_root, parsed["merges"], dry_run)
+
+    # Apply arc summaries
+    if parsed["summaries"]:
+        print("\n--- Applying arc summaries ---", file=sys.stderr)
+        actions["summaries_applied"] = apply_summaries(vault_root, parsed["summaries"], dry_run)
 
     # Write intent
     if parsed["intent"]:

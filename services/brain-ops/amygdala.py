@@ -78,7 +78,11 @@ def write_signal_file(brain_feed_dir: Path, events: list[dict], dry_run: bool) -
         "title: AMYGDALA ALERT",
         "priority: 100",
         "ttl: 300",
-        f"severity: {'critical' if sev in ('nuclear', 'critical') else 'alert'}",
+        # Do not inflate. Quantizing three severities into two rendered every
+        # `warning` as [ALERT] downstream — including the brain's own routine
+        # "AI phase unparseable" tick status, which fires on ~20% of ticks and
+        # is not an operational incident.
+        f"severity: {'critical' if sev in ('nuclear', 'critical') else 'warning'}",
         "---",
         "",
         f"## [{sev.upper()}] {worst['title']}",
@@ -226,7 +230,15 @@ def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: boo
         if not dry_run:
             r.set(last_event_key, str(time.time()), ex=CLEAR_WINDOW_SEC * 2)
     else:
-        # Check if we should clear — no events for CLEAR_WINDOW_SEC
+        # Check if we should clear — no events for CLEAR_WINDOW_SEC.
+        #
+        # The Redis key is the fast path but not the only one. It is written
+        # with ex=CLEAR_WINDOW_SEC*2, so the clear is only reachable during the
+        # window [CLEAR_WINDOW_SEC, 2*CLEAR_WINDOW_SEC] after the last event.
+        # Miss that window — consumer restart, crash, missed poll — and the key
+        # self-expires, the guard below refuses to clear, and the alert is
+        # stranded in the feed forever at priority 100. Fall back to the file's
+        # own mtime so age alone can retire a signal no live event supports.
         last_ts = r.get(last_event_key)
         if last_ts:
             elapsed = time.time() - float(last_ts)
@@ -235,9 +247,26 @@ def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: boo
                 stats["cleared"] = cleared
                 if not dry_run:
                     r.delete(last_event_key)
-        # If no last_event_key exists, do NOT clear — the signal file may have
-        # been written by another process (brain-cron one-shot). Only clear
-        # when we KNOW events existed and then stopped for CLEAR_WINDOW_SEC.
+        else:
+            # No key: either nothing ever fired, or the key outlived its TTL.
+            # Only the second case leaves a file behind — and if that file is
+            # older than the clear window with no events backing it, it is
+            # stale by definition.
+            signal_file = brain_feed_dir / "amygdala-active.md"
+            try:
+                if signal_file.exists():
+                    age = time.time() - signal_file.stat().st_mtime
+                    if age >= CLEAR_WINDOW_SEC:
+                        cleared = clear_signal(brain_feed_dir, dry_run)
+                        stats["cleared"] = cleared
+                        stats["cleared_by"] = "mtime-fallback"
+                        print(
+                            f"AMYGDALA: cleared orphaned signal file (age {age:.0f}s, "
+                            "no backing event) — Redis key had expired",
+                            file=sys.stderr,
+                        )
+            except OSError as e:
+                print(f"AMYGDALA: mtime fallback failed: {e}", file=sys.stderr)
 
     return stats
 
