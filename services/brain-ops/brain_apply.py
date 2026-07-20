@@ -96,8 +96,8 @@ def parse_signals(section: str) -> list[dict]:
 
     Accepts both single-token sources (`ESCALATE: foo → critical (...)`) and
     backtick-wrapped multi-word sources: ESCALATE: "foo bar baz" -> critical (...).
-    Pre-v2 regex captured only one token via `(\S+)`, which broke on any AI
-    output naming multi-word sources and silently no-oped the apply phase.
+    Pre-v2 regex captured only one whitespace-delimited token, which broke on
+    any AI output naming multi-word sources and silently no-oped the apply phase.
     """
     changes = []
     for line in section.splitlines():
