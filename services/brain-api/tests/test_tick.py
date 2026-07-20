@@ -59,3 +59,32 @@ def test_tick_status_finds_completed(vault: Path, client):
     status = client.get(f"/tick/{enqueued['job_id']}").json()
     assert status["status"] == "completed"
     assert status["path"].startswith("brain-feed/ticks/completed/")
+
+
+def test_tick_dedupes_pending_same_kind(vault: Path, client):
+    # Two identical requests: the second must coalesce onto the first's job_id,
+    # be flagged duplicate with HTTP 200, and leave exactly one file queued.
+    first = client.post("/tick")
+    assert first.status_code == 202
+    first_data = first.json()
+    assert first_data["duplicate"] is False
+
+    second = client.post("/tick")
+    assert second.status_code == 200
+    second_data = second.json()
+    assert second_data["duplicate"] is True
+    assert second_data["job_id"] == first_data["job_id"]
+
+    req_dir = vault / "brain-feed" / "ticks" / "requested"
+    assert len(list(req_dir.glob("*.json"))) == 1
+
+
+def test_tick_dedupe_keyed_on_kind(vault: Path, client):
+    # A dry_run request must NOT be satisfied by a pending real tick.
+    real = client.post("/tick").json()
+    dry = client.post("/tick?dry_run=true").json()
+    assert dry["duplicate"] is False
+    assert dry["job_id"] != real["job_id"]
+
+    req_dir = vault / "brain-feed" / "ticks" / "requested"
+    assert len(list(req_dir.glob("*.json"))) == 2
