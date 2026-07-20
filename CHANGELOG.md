@@ -6,6 +6,87 @@ Tags are issued by the release workflow, not locally. See `docs/RELEASING.md` fo
 
 ---
 
+## [0.7.0] — 2026-07-20
+
+**Brain injection quality + on-demand ticks**: the brain now injects real
+synthesized arc summaries backed by a working semantic index instead of
+empty-stub scaffolding, and agents can force a tick on demand (`brain_tick` MCP
+tool) so freshly-ingested content is retrievable immediately instead of waiting
+for the 2h cron. Restores the injected context from near-useless (identical-stub
+hot arcs, an index where every arc was equidistant) to a real, queryable memory.
+
+### Features
+
+- **Arc synthesis stage built** (`brain_tick_prompt.py` + `brain_apply.py`) — the
+  summary pass was scaffolded but never implemented, so every arc carried an
+  empty `synthesized: false` skeleton. The tick now generates a real one-sentence
+  summary per arc, written to frontmatter and led into the injected hot-arcs
+  table. Drain rate configurable via `BRAIN_MAX_SYNTH_ARCS`; backtick-wrapped
+  `SUMMARY:` lines (the model copying the prompt's own format) are parsed, and the
+  summary count is reported in the tick log.
+- **`brain_tick` MCP tool** (`services/mcp/app/tools/tick.py`) — force a tick on
+  demand: enqueues via `POST /tick` and blocks until it lands, so content written
+  via `brain_ingest` or as `@lesson`/`@milestone`/`@signal`/`@decision` markers is
+  retrievable through `kb_search` / `brain_search_arcs` immediately. `no_ai`
+  exposes the sub-5s deterministic path.
+- **On-demand tick made retrievable** — the tick-drain CronJob now runs
+  `embed_arcs.py` after draining (it previously ran only `brain_tick.py`),
+  refreshing the pgvector index so on-demand ticks surface new content. The drain
+  also renders the full env map, so a drain-triggered tick uses the same tuning
+  (decay/promote thresholds, `EMBEDDINGS_URL`) as the scheduled cron. Cadence
+  dropped to every 1 minute.
+- **Drain-time request coalescing** — redundant same-kind `POST /tick` requests
+  are coalesced by the single serialized drain (one `brain_tick` per
+  `(dry_run,no_ai)` kind) rather than at enqueue, which raced under concurrent
+  callers and could wedge on an orphaned request file.
+- **Env-configurable transcript extraction** (`EXTRACT_*`) and a `--source` label
+  on the tick's event-bus announcement (`brain-drain` for on-demand) so on-demand
+  ticks are distinguishable from the scheduled cron in the amygdala stream.
+
+### Bug Fixes
+
+- **Semantic index was noise** (`embed_arcs.py`) — `build_embed_text` never read
+  `summary` and embedded the identical empty stub scaffolding present in every
+  arc, so all arcs were roughly equidistant from every query (a uniform prior, not
+  an index). `Summary:` now leads the embed blob, stub scaffolding is stripped, and
+  `summary` is carried in embedding metadata. Requires a one-off
+  `embed_arcs.py --force-all` to rebuild the index.
+- **Summary truncation** mid-word, **unsummarized writer arcs** never offered for
+  synthesis, and **duplicate inline markers** folded into arcs (36% of the vault) —
+  all corrected.
+- **`brain_tick` poll hang** — a `GET /tick/{job_id}` returning `unknown` (stale or
+  consumed id) no longer polls the full timeout and falsely reports "queued"; it is
+  terminal after a short grace. A `job_id`-less enqueue response is an explicit
+  error rather than a silent skip of `wait`.
+- **Atomic embed state write** — `embed_arcs` writes its mtime-state file via a temp
+  file + `os.replace`, so the 1-min drain embed and the 2h cron embed colliding at
+  HH:07 cannot corrupt it.
+- **Invalid escape sequences** fixed, with a cache- and Python-version-independent
+  CI guard (`check_escapes.py`) so they surface in CI instead of only warning on a
+  fresh pod start.
+
+### Security
+
+- **Credential redaction at every persist and inject boundary** (`redact.py`) — the
+  tick echoed its own prompt input, amplifying a leaked token across dozens of vault
+  files. Every persist point (AI-output audit, intent, summaries) and inject
+  boundary now scrubs credentials (superset secret regex plus `NAME=value`
+  assignments).
+
+### Known follow-ups (not in this release)
+
+- Concurrent `brain_tick` (scheduled cron + a non-empty drain at HH:07) can still
+  race on vault file writes — pre-existing; the safe fix is atomic writes in
+  `brain_keeper`'s output layer, not an NFS lock (unreliable across pods, and a
+  blocking lock risks a stale-lock hang that would fail the drain).
+- The `brain_tick` MCP tool is callable only after the MCP gateway re-lists tools
+  (operator-managed propagation).
+- ClickHouse `tick_health.tick_type` still records `'full'` for on-demand ticks; the
+  event-bus `source` field distinguishes them, but the ClickHouse column would need
+  a schema migration.
+
+---
+
 ## [0.6.0] — 2026-05-17
 
 **Brain self-healing**: closes a class of self-reinforcing degradations that pinned the dev brain at health score 2/10 with a stacking nuclear-signal loop. After this release, the brain produces real graph mutations every tick (was 0 for 30+ hours), the amygdala stops emitting from its own output, and the AI tick prompt sees the full 144-arc vault instead of 1.
