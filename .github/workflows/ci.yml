@@ -50,6 +50,12 @@ jobs:
       - name: Pytest (brain-ops service)
         run: python -m pytest -q services/brain-ops/tests
 
+      # Invalid escapes only surface on a FRESH compile, so bytecode caching
+      # hides them locally while the container warns on every pod start. This
+      # token-stream check is cache- and Python-version-independent.
+      - name: Invalid escape sequences (brain-ops)
+        run: python services/brain-ops/check_escapes.py services/brain-ops
+
   macos-smoke:
     if: github.event_name == 'pull_request'
     runs-on: macos-latest
