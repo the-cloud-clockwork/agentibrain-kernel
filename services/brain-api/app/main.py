@@ -38,7 +38,6 @@ from fastapi import (
     HTTPException,
     Path as PathParam,
     Query,
-    Response,
     UploadFile,
 )
 
@@ -355,7 +354,6 @@ def post_marker(
 
 @app.post("/tick", status_code=202)
 def post_tick(
-    response: Response,
     dry_run: bool = Query(False),
     no_ai: bool = Query(False),
     source: str = Query("brain-api"),
@@ -365,17 +363,11 @@ def post_tick(
 
     Writes a request file to brain-feed/ticks/requested/. The tick-engine
     CronJob picks this up and moves it to completed/ or failed/ when done.
+    Redundant same-kind requests are coalesced by the drain, not here.
     Clients poll GET /tick/{job_id} for status.
-
-    If a pending request of the same kind is already queued, no new file is
-    written and the existing job's descriptor is returned with 200 (duplicate)
-    rather than 202.
     """
     try:
-        result = enqueue_tick(dry_run=dry_run, no_ai=no_ai, source=source)
-        if result.get("duplicate"):
-            response.status_code = 200
-        return result
+        return enqueue_tick(dry_run=dry_run, no_ai=no_ai, source=source)
     except OSError as exc:
         log.error("tick enqueue failed: %s", exc)
         raise HTTPException(status_code=503, detail=f"vault write failed: {exc}")

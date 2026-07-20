@@ -61,30 +61,17 @@ def test_tick_status_finds_completed(vault: Path, client):
     assert status["path"].startswith("brain-feed/ticks/completed/")
 
 
-def test_tick_dedupes_pending_same_kind(vault: Path, client):
-    # Two identical requests: the second must coalesce onto the first's job_id,
-    # be flagged duplicate with HTTP 200, and leave exactly one file queued.
+def test_tick_always_writes_no_enqueue_dedupe(vault: Path, client):
+    # Enqueue never coalesces — that is the drain's job (single serialized
+    # process). Enqueue-time dedupe raced under FastAPI's threadpool and could
+    # wedge on an orphaned request file, so every call writes a fresh request
+    # with its own job_id. Two rapid identical calls therefore leave two files.
     first = client.post("/tick")
-    assert first.status_code == 202
-    first_data = first.json()
-    assert first_data["duplicate"] is False
-
     second = client.post("/tick")
-    assert second.status_code == 200
-    second_data = second.json()
-    assert second_data["duplicate"] is True
-    assert second_data["job_id"] == first_data["job_id"]
-
-    req_dir = vault / "brain-feed" / "ticks" / "requested"
-    assert len(list(req_dir.glob("*.json"))) == 1
-
-
-def test_tick_dedupe_keyed_on_kind(vault: Path, client):
-    # A dry_run request must NOT be satisfied by a pending real tick.
-    real = client.post("/tick").json()
-    dry = client.post("/tick?dry_run=true").json()
-    assert dry["duplicate"] is False
-    assert dry["job_id"] != real["job_id"]
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert first.json()["job_id"] != second.json()["job_id"]
+    assert "duplicate" not in first.json()
 
     req_dir = vault / "brain-feed" / "ticks" / "requested"
     assert len(list(req_dir.glob("*.json"))) == 2

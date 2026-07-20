@@ -84,26 +84,32 @@ def register(mcp: FastMCP):
             return json.dumps(enq)
 
         job_id = enq.get("job_id")
-        duplicate = bool(enq.get("duplicate"))
         result: dict = {
             "job_id": job_id,
             "status": enq.get("status", "pending"),
             "no_ai": no_ai,
-            "duplicate": duplicate,
             "waited": False,
         }
 
-        if not wait or not job_id:
-            result["note"] = (
-                f"enqueued (duplicate of a pending request); poll GET /tick/{job_id}"
-                if duplicate
-                else f"enqueued; poll GET /tick/{job_id} for status"
-            )
+        if not job_id:
+            # A healthy enqueue always returns a job_id; its absence is an error,
+            # not something to poll (polling GET /tick/None never resolves).
+            result["error"] = "enqueue returned no job_id"
+            result["note"] = "brain-api /tick did not return a job_id — check the gateway"
+            return json.dumps(result, indent=2)
+
+        if not wait:
+            result["note"] = f"enqueued job {job_id}; poll GET /tick/{job_id} for status"
             return json.dumps(result, indent=2)
 
         # Poll until terminal or timeout. No shared poll helper exists — inline.
+        # "unknown" (job not found in any queue dir) is treated as terminal after
+        # a short grace: request files are never pruned, so a persistent "unknown"
+        # means the id is stale/consumed, not in-flight — polling it to the full
+        # timeout would burn `timeout` seconds and then falsely report "queued".
         elapsed = 0
         status = result["status"]
+        unknown_streak = 0
         while status not in _TERMINAL and elapsed < timeout:
             await asyncio.sleep(_POLL_INTERVAL)
             elapsed += _POLL_INTERVAL
@@ -117,6 +123,12 @@ def register(mcp: FastMCP):
                 status = json.loads(sraw).get("status", status)
             except json.JSONDecodeError:
                 continue
+            if status == "unknown":
+                unknown_streak += 1
+                if unknown_streak >= 2:  # ~6s of "not found" — stop, don't hang
+                    break
+            else:
+                unknown_streak = 0
 
         result["status"] = status
         result["waited"] = True
@@ -125,6 +137,11 @@ def register(mcp: FastMCP):
             result["note"] = "tick complete — new content is indexed and retrievable"
         elif status == "failed":
             result["note"] = "tick failed — check tick-drain CronJob logs"
+        elif status == "unknown":
+            result["note"] = (
+                "job not found on the queue — it may have already completed and been "
+                "consumed, or the id is stale; re-run your kb_search / brain_search_arcs to check"
+            )
         else:
             result["note"] = (
                 f"still pending after {elapsed}s — the tick is queued; "
