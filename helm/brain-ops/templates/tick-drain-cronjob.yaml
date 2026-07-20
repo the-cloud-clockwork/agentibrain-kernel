@@ -65,9 +65,27 @@ spec:
                     fi
                   done
                   echo "drain-summary: total=$count ok=$ok failed=$ko"
+                  # Refresh the pgvector index for whatever the tick(s) just
+                  # rewrote. Without this an on-demand tick updates the vault
+                  # but leaves kb_search / brain_search_arcs blind to the new
+                  # content until the scheduled 2h cron. embed_arcs.py is
+                  # diff-only by mtime, so one run after the batch is cheap.
+                  # Non-fatal, and skipped entirely on an empty drain.
+                  if [ "$ok" -gt 0 ] && [ -n "${EMBEDDINGS_API_KEY:-}" ]; then
+                    echo "drain: refreshing embeddings for $ok processed tick(s)"
+                    python3 /app/embed_arcs.py --vault /vault --prune \
+                      || echo "WARN: embed_arcs failed (non-fatal)"
+                  fi
+              # Full env map, matching the main brain-cron container, so a
+              # drain-triggered brain_tick.py runs with the SAME tuning
+              # (BRAIN_DECAY_*, BRAIN_PROMOTE_HEAT, EMBEDDINGS_URL, ...) as the
+              # scheduled tick — on-demand and scheduled ticks stay identical.
+              {{- if or .Values.env .Values.secretRef .Values.additionalSecretRefs }}
               env:
-                - name: INFERENCE_URL
-                  value: {{ .Values.env.INFERENCE_URL | quote }}
+                {{- range $key, $value := .Values.env }}
+                - name: {{ $key }}
+                  value: {{ $value | quote }}
+                {{- end }}
               {{- if or .Values.secretRef .Values.additionalSecretRefs }}
               envFrom:
                 {{- if .Values.secretRef }}
@@ -78,6 +96,7 @@ spec:
                 - secretRef:
                     name: {{ . }}
                 {{- end }}
+              {{- end }}
               {{- end }}
               resources:
                 {{- toYaml (.Values.tickDrain.resources | default .Values.resources) | nindent 16 }}

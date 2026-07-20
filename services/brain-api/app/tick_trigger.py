@@ -38,16 +38,54 @@ def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
 
 
+def _find_pending_duplicate(req_dir: Path, dry_run: bool, no_ai: bool) -> dict | None:
+    """Return an already-queued request of the same kind, if one exists.
+
+    Keyed on (dry_run, no_ai) only — `source` may differ. A queued dry_run must
+    never satisfy a request for a real tick, and vice versa. Without this, an
+    agent that calls brain_tick reflexively stacks N identical full ticks that
+    then serialize behind the drain's concurrencyPolicy: Forbid.
+    """
+    if not req_dir.is_dir():
+        return None
+    for child in sorted(req_dir.iterdir()):
+        if not child.is_file() or child.suffix != ".json":
+            continue
+        try:
+            data = json.loads(child.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if bool(data.get("dry_run")) == dry_run and bool(data.get("no_ai")) == no_ai:
+            return data
+    return None
+
+
 def enqueue_tick(
     dry_run: bool = False,
     no_ai: bool = False,
     source: str = "brain-api",
     vault_root: Path | None = None,
 ) -> dict:
-    """Write a tick request file. Returns {job_id, requested_at, request_path}."""
+    """Write a tick request file. Returns {job_id, requested_at, request_path}.
+
+    If a pending request of the same kind (same dry_run + no_ai) is already
+    queued, returns that request's descriptor with duplicate=True instead of
+    writing a second file — the drain would coalesce them anyway.
+    """
     root = Path(vault_root) if vault_root else VAULT_ROOT
     req_dir = root / TICK_REQUESTS_DIR
     req_dir.mkdir(parents=True, exist_ok=True)
+
+    existing = _find_pending_duplicate(req_dir, bool(dry_run), bool(no_ai))
+    if existing is not None:
+        return {
+            "job_id": existing.get("job_id"),
+            "requested_at": existing.get("requested_at"),
+            "dry_run": bool(dry_run),
+            "no_ai": bool(no_ai),
+            "status": "pending",
+            "duplicate": True,
+        }
 
     job_id = uuid4().hex[:12]
     requested_at = _now_iso()
@@ -71,6 +109,7 @@ def enqueue_tick(
         "dry_run": bool(dry_run),
         "no_ai": bool(no_ai),
         "status": "pending",
+        "duplicate": False,
     }
 
 
