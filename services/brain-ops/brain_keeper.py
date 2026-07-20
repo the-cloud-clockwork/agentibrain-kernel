@@ -192,6 +192,25 @@ def compute_heat(
 
 # ── File operations ───────────────────────────────────────────────────
 
+HOT_ARC_BLURB_CHARS = int(os.getenv("BRAIN_HOT_ARC_BLURB_CHARS", "220"))
+
+
+def _clip(text: str, limit: int) -> str:
+    """Clip to `limit` on a word boundary, with an ellipsis when truncated.
+
+    A hard slice cut summaries mid-word ("…applies to actually-traded capital
+    only, not th"), which reads as corruption rather than abbreviation.
+    """
+    flat = " ".join(str(text or "").split()).replace("|", "-")
+    if len(flat) <= limit:
+        return flat
+    cut = flat[:limit]
+    space = cut.rfind(" ")
+    if space > limit * 0.6:  # don't strand a tiny fragment on a long unbroken token
+        cut = cut[:space]
+    return cut.rstrip(" ,;:.—-") + "…"
+
+
 def write_hot_arcs_md(path: Path, arcs: list[markers.DocumentMeta]) -> None:
     """Generate brain_adapter-compatible hot-arcs.md."""
     date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -216,7 +235,7 @@ def write_hot_arcs_md(path: Path, arcs: list[markers.DocumentMeta]) -> None:
         # Titles come from the operator's first message (cluster.py) and are
         # frequently meaningless ("hey", tool boilerplate) — the summary is the
         # field that makes this table worth its tokens.
-        blurb = (fm.get("summary") or fm.get("title") or cid)[:160].replace("|", "-")
+        blurb = _clip(fm.get("summary") or fm.get("title") or cid, HOT_ARC_BLURB_CHARS)
         heat = fm.get("heat", "?")
         region = fm.get("region", "?")
         status = fm.get("status", "?")

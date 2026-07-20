@@ -55,7 +55,7 @@ def parse_edges(section: str) -> list[dict]:
 
     Backticks around the whole line (`` `arc-a --related--> arc-b` ``) get
     absorbed into the `\\S+` groups by the regex, so strip them after capture.
-    Without this, `arc-a` parses as `arc-a\\`` and find_arc_file() silently
+    Without this, `arc-a` parses as "arc-a`" and find_arc_file() silently
     fails — edges are dropped and the AI re-emits them every tick.
 
     Also drops self-loops at parse time.
@@ -94,7 +94,7 @@ def parse_signals(section: str) -> list[dict]:
     """Parse '### 3. Signal Escalation' section.
 
     Accepts both single-token sources (`ESCALATE: foo → critical (...)`) and
-    backtick-wrapped multi-word sources (`ESCALATE: \`foo bar baz\` → critical (...)`).
+    backtick-wrapped multi-word sources: ESCALATE: "foo bar baz" -> critical (...).
     Pre-v2 regex captured only one token via `(\S+)`, which broke on any AI
     output naming multi-word sources and silently no-oped the apply phase.
     """
@@ -472,6 +472,34 @@ def _strip_edge_markers(body: str) -> str:
     return _EDGE_MARKER_RE.sub("", body)
 
 
+_MARKER_BLOCK_RE = re.compile(
+    r"<!--\s*@(lesson|milestone|signal|decision|inject)\b[^>]*-->(.*?)<!--\s*@/\1\s*-->",
+    re.DOTALL,
+)
+
+
+def _drop_duplicate_markers(body_b: str, text_a: str) -> str:
+    """Remove marker blocks from B that A already carries.
+
+    apply_merges concatenated bodies wholesale, so a marker present in both
+    arcs survived twice — and every subsequent merge carried both copies
+    forward. The live vault shows single markers repeated up to 5 times this
+    way. Compare on normalised content, since the same marker can differ in
+    whitespace or (historically) shell-escaping between writers.
+    """
+    def _norm(s: str) -> str:
+        return " ".join(s.split()).lower()
+
+    existing = {_norm(m.group(2)) for m in _MARKER_BLOCK_RE.finditer(text_a)}
+    if not existing:
+        return body_b
+
+    def _maybe_drop(m: re.Match) -> str:
+        return "" if _norm(m.group(2)) in existing else m.group(0)
+
+    return _MARKER_BLOCK_RE.sub(_maybe_drop, body_b)
+
+
 def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
     """Merge arc files.
 
@@ -510,7 +538,7 @@ def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
             _fm_b, body_b = markers.parse_frontmatter(file_b.read_text())
             merge_note = (
                 f"\n\n## Merged from {merge['arc_b']}\n\n"
-                f"{_strip_edge_markers(body_b).strip()}\n"
+                f"{_drop_duplicate_markers(_strip_edge_markers(body_b), text_a).strip()}\n"
             )
             merged = text_a.rstrip() + merge_note
 
