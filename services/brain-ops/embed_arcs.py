@@ -118,7 +118,14 @@ def load_state(state_path: Path) -> dict[str, float]:
 
 
 def save_state(state_path: Path, state: dict[str, float]) -> None:
-    state_path.write_text(json.dumps(state, indent=2, sort_keys=True))
+    # Atomic: write a sibling temp then os.replace. The 1-min drain embed and
+    # the 2h cron embed both write this file and collide at HH:07; a plain
+    # truncate+write there can interleave into corrupt JSON (load_state then
+    # resets to {} and needlessly re-embeds the whole vault). replace() is
+    # atomic on the same filesystem, so a reader always sees one whole version.
+    tmp = state_path.with_name(f".{state_path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
+    os.replace(tmp, state_path)
 
 
 def post_embed(api_url: str, api_key: str, payload: dict, timeout: int = REQ_TIMEOUT) -> dict:
