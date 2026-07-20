@@ -147,3 +147,31 @@ Vault remediation (Tier 4), applied directly to vault content:
   works through the backlog at 25/tick.
 - `apply_merges` still concatenates arc bodies with no marker-level dedup, so
   historical duplicate markers survive merges.
+
+### Live verification, 2026-07-20 19:09 → 19:40 UTC
+
+First tick on the synthesis build generated 23 good summaries and applied
+**zero** — the model wrapped each emitted line in backticks, faithfully copying
+the prompt's own format example (every other section writes its examples that
+way too). The regex only tolerated a leading `-`/`*`. Fixed in `cba9f9e`; the
+missing summary count in the "Parsed AI output" line is why this read as "no
+summaries produced" rather than "none parsed", so that count was added too.
+
+Second tick: `23 summaries` parsed and applied, health 5/10 → 6/10.
+Third tick (Phase 1 only) re-rendered the feed from the new frontmatter.
+
+Before → after, same arc:
+
+| Arc | Was | Now |
+|---|---|---|
+| `2026-07-17-hablar-sobre-cron…` | Hablar sobre cron y seguimiento automático de qt hoy | QITP live cron pipeline trigger activated; 15% risk limit clarified as applying to actually-traded capital, not the full broker balance |
+| `2026-07-19-hey-ca22a3f9b394` | hey | Short session verifying brain and tooling responsiveness; no substantive work output |
+| `2026-07-18-local-command-caveat…` | \<local-command-caveat\>Caveat: The messages below were genera | antoncore local command session; **the LiteLLM bearer key was inadvertently exposed in this transcript and requires rotation** |
+
+The third row is the point: an arc that was indistinguishable boilerplate now
+surfaces a credential exposure. Note also that the model declined to invent
+substance for thin arcs ("no substantive work output", "no actionable decisions
+recorded") rather than hallucinating, which is what the tightened prompt asked
+for.
+
+`inject.md` now reads "No inject blocks." — the April block is gone.
