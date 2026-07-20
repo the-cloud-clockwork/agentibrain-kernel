@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,9 +50,13 @@ MAX_PROMPT_CHARS = 400_000  # ~100K tokens — hard ceiling enforced before POST
 # Synthesis (Task 6). Bounded per tick: an unsynthesized backlog drains over
 # successive ticks rather than blowing one prompt. Summaries persist to arc
 # frontmatter, so each arc is paid for exactly once.
-MAX_SYNTH_ARCS = 25         # arcs offered for summarization per tick
-SYNTH_IGNITION_CHARS = 240  # opening-prompt excerpt per arc
-SYNTH_MARKER_CHARS = 200    # per marker excerpt
+# Offered highest-heat-first, so the injected hot-arcs table converges within a
+# tick or two while the cold tail drains behind it. Raise to clear a backlog
+# faster (each arc costs ~500 prompt chars); the MAX_PROMPT_CHARS ceiling still
+# applies.
+MAX_SYNTH_ARCS = int(os.getenv("BRAIN_MAX_SYNTH_ARCS", "25"))
+SYNTH_IGNITION_CHARS = int(os.getenv("BRAIN_SYNTH_IGNITION_CHARS", "240"))
+SYNTH_MARKER_CHARS = int(os.getenv("BRAIN_SYNTH_MARKER_CHARS", "200"))
 
 
 def _squash(text: str, limit: int) -> str:
