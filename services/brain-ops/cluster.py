@@ -287,9 +287,66 @@ def write_stub(cluster: dict, out_dir: Path, clusters_root: Path | None = None) 
     return path
 
 
+# Opening lines that are not the operator speaking. Claude Code encodes its own
+# injected preambles as `user`-role turns, so a raw first-line title captures
+# tool boilerplate instead of intent — this is what produced arcs titled
+# "<local-command-caveat>Caveat: The messages below were genera".
+_TITLE_JUNK_PREFIXES = (
+    "<local-command",
+    "<command-name>",
+    "<command-message>",
+    "<command-args>",
+    "<system-reminder",
+    "caveat:",
+    "[request interrupted",
+    "<persisted-output>",
+)
+
+
+def _is_junk_title(line: str) -> bool:
+    """True when a candidate title carries no information about the work."""
+    s = line.strip()
+    if len(s) < 12:
+        return True  # "hey", "ok", "go" — real prompts, useless as titles
+    low = s.lower()
+    if low.startswith(_TITLE_JUNK_PREFIXES) or s.startswith("<"):
+        return True
+    if s.startswith(("/", "~/")) and " " not in s:
+        return True  # a bare filesystem path
+    if s.startswith("#"):
+        return True  # a pasted markdown heading, e.g. "# HANDOFF — 2026-07-19"
+    return len([w for w in s.split() if len(w) > 2]) < 3
+
+
+def _derive_title(group: list[dict]) -> str:
+    """Best available human-readable title for a cluster.
+
+    Falls through candidates rather than blindly taking the first line of the
+    first message. The real fix for meaning is the `summary:` field written by
+    the tick's synthesis pass; this just stops the table being actively
+    misleading when no summary exists yet.
+    """
+    candidates = [
+        (group[0].get("first_user_prompt") or "").strip(),
+        (group[-1].get("last_user_prompt") or "").strip(),
+    ]
+    for cand in candidates:
+        line = cand.split("\n")[0].strip()
+        if line and not _is_junk_title(line):
+            return line[:60]
+
+    # Nothing usable said out loud — describe the work by where it happened.
+    project = next((s.get("project") for s in group if s.get("project")), "")
+    branch = next((s.get("git_branch") for s in group if s.get("git_branch")), "")
+    if project:
+        label = Path(project).name if "/" in project else project
+        return f"{label} session ({branch})"[:60] if branch else f"{label} session"[:60]
+    return "Untitled session"
+
+
 def build_cluster(group: list[dict], now: datetime) -> dict:
     first_prompt = (group[0].get("first_user_prompt") or "").strip()
-    title_src = first_prompt.split("\n")[0][:60] or "Untitled session"
+    title_src = _derive_title(group)
     cluster_id = compute_cluster_id(group, title_src)
 
     # Status: active if latest end within 6h, stalled if > 48h, else complete
