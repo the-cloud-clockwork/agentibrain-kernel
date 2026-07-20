@@ -57,23 +57,53 @@ def extract_section(body: str, heading: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+_STUB_NOISE_RE = re.compile(
+    r"""(?mx)
+      ^\s*<!--.*?-->\s*$          # placeholder comments, incl. "synthesized: false"
+    | ^\s*\#{3}\s*(?:Completed|Errors\s*/\s*learning|Resolution)\s*$   # empty scaffolding
+    """
+)
+
+
+def _clean_section(text: str) -> str:
+    """Drop stub scaffolding so an unsynthesized arc contributes nothing.
+
+    Every arc cluster.py wrote carries the same empty Timeline/Lessons skeleton.
+    Embedding it made hundreds of arcs near-identical in vector space — three
+    unrelated documents came back with the SAME similarity score, so
+    brain_search_arcs was returning noise rather than matches.
+    """
+    return "\n".join(
+        l for l in _STUB_NOISE_RE.sub("", text).splitlines() if l.strip()
+    ).strip()
+
+
 def build_embed_text(fm: dict, body: str) -> str:
-    """Compose the embeddable blob for an arc."""
+    """Compose the embeddable blob for an arc.
+
+    `summary` leads: it is the one field that states what the arc actually was,
+    written by the tick's synthesis pass. Titles are scraped from the operator's
+    opening message and are frequently meaningless ("hey", tool boilerplate), so
+    an index built on titles alone cannot answer "what did we do about X".
+    """
     parts = []
+
+    summary = (fm.get("summary") or "").strip()
+    if summary:
+        parts.append(f"Summary: {summary}")
+
     title = fm.get("title") or fm.get("cluster_id") or "untitled"
     parts.append(f"Title: {title}")
+
     region = fm.get("region", "")
     if region:
         parts.append(f"Region: {region}")
-    lessons = extract_section(body, "Lessons")
-    if lessons:
-        parts.append(f"Lessons:\n{lessons}")
-    timeline = extract_section(body, "Timeline")
-    if timeline:
-        parts.append(f"Timeline:\n{timeline}")
-    resolution = extract_section(body, "Resolution")
-    if resolution:
-        parts.append(f"Resolution:\n{resolution}")
+
+    for heading in ("Lessons", "Timeline", "Resolution"):
+        section = _clean_section(extract_section(body, heading))
+        if section:
+            parts.append(f"{heading}:\n{section}")
+
     text = "\n\n".join(parts)
     return text[:MAX_TEXT_CHARS]
 
@@ -230,6 +260,10 @@ def main() -> int:
                 "heat": fm.get("heat", "0"),
                 "status": fm.get("status", ""),
                 "title": fm.get("title", ""),
+                # Carried so brain_get_arc/brain_search_arcs can show what the
+                # arc actually was without a vault round-trip — the title alone
+                # is often meaningless.
+                "summary": fm.get("summary", ""),
                 "path": rel,
             },
         }
