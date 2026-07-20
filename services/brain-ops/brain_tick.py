@@ -39,6 +39,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import brain_apply
+import redact
 import brain_keeper
 import brain_tick_prompt
 
@@ -342,7 +343,9 @@ def run_tick(
             ticks_dir = brain_feed_dir / "ticks"
         ticks_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
-        (ticks_dir / f"{ts}-ai-output.md").write_text(ai_output)
+        # Scrub before persisting: the tick audit trail replayed a leaked token
+        # into 60+ files because the model echoed its own prompt input.
+        (ticks_dir / f"{ts}-ai-output.md").write_text(redact.scrub(ai_output))
     else:
         report["phases"]["apply"] = {"skipped": True}
 

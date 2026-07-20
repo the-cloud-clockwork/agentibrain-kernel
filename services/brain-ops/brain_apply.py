@@ -31,6 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import markers
+import redact
 import brain_keeper  # for REGION_DIRS — keep prompt + apply scanners aligned
 
 
@@ -138,7 +139,7 @@ def parse_health(section: str) -> dict:
 def parse_intent(section: str) -> str:
     """Parse '### 4. Operator Intent' section — just the text."""
     lines = [l.strip() for l in section.splitlines() if l.strip() and not l.startswith("###")]
-    return " ".join(lines)
+    return redact.scrub(" ".join(lines))
 
 
 def parse_ai_output(text: str) -> dict:
@@ -215,7 +216,7 @@ def parse_summaries(section: str) -> list[dict]:
         if not m:
             continue
         cid = m.group("cid").strip().strip("`").strip()
-        text = " ".join(m.group("text").split())
+        text = redact.scrub(" ".join(m.group("text").split()))
         if not cid or cid in seen:
             continue
         if not text or text.upper() == "SKIP":

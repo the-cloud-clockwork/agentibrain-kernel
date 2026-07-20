@@ -24,6 +24,7 @@ from pathlib import Path
 # Import sibling module
 sys.path.insert(0, str(Path(__file__).parent))
 import markers
+import redact
 import brain_verifier
 
 
