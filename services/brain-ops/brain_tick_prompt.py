@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,6 +47,39 @@ from brain_apply import _rank
 MAX_EDGE_LINES = 500        # rendered edge lines after (source, target) dedup
 MAX_ARC_ROWS = 250          # arc-table rows, highest heat first
 MAX_PROMPT_CHARS = 400_000  # ~100K tokens — hard ceiling enforced before POST
+# Synthesis (Task 6). Bounded per tick: an unsynthesized backlog drains over
+# successive ticks rather than blowing one prompt. Summaries persist to arc
+# frontmatter, so each arc is paid for exactly once.
+# Offered highest-heat-first, so the injected hot-arcs table converges within a
+# tick or two while the cold tail drains behind it. Raise to clear a backlog
+# faster (each arc costs ~500 prompt chars); the MAX_PROMPT_CHARS ceiling still
+# applies.
+MAX_SYNTH_ARCS = int(os.getenv("BRAIN_MAX_SYNTH_ARCS", "25"))
+SYNTH_IGNITION_CHARS = int(os.getenv("BRAIN_SYNTH_IGNITION_CHARS", "240"))
+SYNTH_MARKER_CHARS = int(os.getenv("BRAIN_SYNTH_MARKER_CHARS", "200"))
+
+
+def _squash(text: str, limit: int) -> str:
+    """Collapse to a single clean line for prompt embedding."""
+    flat = " ".join((text or "").split())
+    return flat[:limit] + ("…" if len(flat) > limit else "")
+
+
+def _extract_section(arc, heading: str) -> str:
+    """Pull one `## <heading>` section body out of an arc, stripped of markup."""
+    body = getattr(arc, "body", "") or ""
+    out: list[str] = []
+    capturing = False
+    for line in body.splitlines():
+        s = line.strip()
+        if s.startswith("## "):
+            if capturing:
+                break
+            capturing = s[3:].strip().lower() == heading.lower()
+            continue
+        if capturing and s and not s.startswith("<!--"):
+            out.append(s.lstrip("> ").strip())
+    return " ".join(out)
 
 
 def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
@@ -219,12 +253,79 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
     if len(all_lessons) > 10:
         lessons_sample += f"\n  ... and {len(all_lessons) - 10} more"
 
-    # Unsynthesized arcs
-    unsynthesized = [
-        arc.frontmatter.get("cluster_id", arc.path.stem if arc.path else "?")
-        for arc in arcs
-        if arc.frontmatter.get("synthesized") == "false"
-    ]
+    # Unsynthesized arcs — the material for Task 6.
+    #
+    # This list used to be bare cluster_ids, which made the section useless:
+    # the model was shown WHICH arcs needed summarizing but never WHAT they
+    # contained, and no task ever asked it to summarize them. Carry enough
+    # substance per arc that a one-sentence summary is actually derivable.
+    def _needs_summary(a) -> bool:
+        fm = a.frontmatter
+        if str(fm.get("summary", "")).strip():
+            return False  # already synthesized, never re-spend on it
+        if fm.get("synthesized") == "false":
+            return True
+        # Arcs written outside cluster.py never carry a `synthesized` field at
+        # all — notably the `-writer` marker arcs, which hold the richest
+        # content in the vault (real @lesson/@decision/@milestone bodies) and
+        # were nonetheless stuck forever on the mechanical title
+        # "Session markers — <sid>". Anything with a cluster_id is a work arc
+        # and deserves a summary; standing region docs (no cluster_id) keep
+        # their hand-written titles and are left alone.
+        return bool(str(fm.get("cluster_id", "")).strip())
+
+    unsynth_arcs = [a for a in arcs if _needs_summary(a)]
+    unsynth_arcs.sort(key=lambda a: int(a.frontmatter.get("heat", 0) or 0), reverse=True)
+
+    unsynth_blocks: list[str] = []
+    for arc in unsynth_arcs[:MAX_SYNTH_ARCS]:
+        fm = arc.frontmatter
+        cid = fm.get("cluster_id", arc.path.stem if arc.path else "?")
+        project = str(fm.get("project", "") or "")
+        if "/" in project:
+            project = project.rstrip("/").rsplit("/", 1)[-1]
+        parts = [
+            f"- id: {cid}",
+            f"  project: {project or '?'} | created: {fm.get('created', '?')} "
+            f"| heat: {fm.get('heat', '?')} | status: {fm.get('status', '?')}",
+        ]
+        ignition = _extract_section(arc, "Ignition")
+        if ignition:
+            parts.append(f"  opened_with: {_squash(ignition, SYNTH_IGNITION_CHARS)}")
+        # Markers are the highest-signal content an arc carries — a decision or
+        # milestone states the outcome directly, which is exactly what a summary
+        # should say.
+        for label, items in (
+            ("decision", arc.decisions),
+            ("milestone", arc.milestones),
+            ("lesson", arc.lessons),
+        ):
+            for mk in items[:2]:
+                parts.append(f"  {label}: {_squash(mk.content, SYNTH_MARKER_CHARS)}")
+        unsynth_blocks.append("\n".join(parts))
+
+    # Previous intent — tick-to-tick continuity. Without this the model
+    # re-derives the operator's situation from scratch every 2h and produces a
+    # fresh narrative each time instead of tracking a thread.
+    previous_intent = "(none — first tick or intent.md absent)"
+    try:
+        intent_path = brain_feed_dir / "intent.md"
+        if intent_path.exists():
+            prev = intent_path.read_text(encoding="utf-8")
+            if "---" in prev:
+                prev = prev.split("---", 2)[-1]
+            prev = " ".join(prev.split())
+            if prev:
+                previous_intent = _squash(prev, 700)
+    except OSError:
+        pass
+
+    unsynthesized_text = "\n".join(unsynth_blocks) if unsynth_blocks else "(all synthesized)"
+    if len(unsynth_arcs) > MAX_SYNTH_ARCS:
+        unsynthesized_text += (
+            f"\n\n(+{len(unsynth_arcs) - MAX_SYNTH_ARCS} more unsynthesized arcs, "
+            "trimmed by heat — they will be offered on subsequent ticks)"
+        )
 
     prompt = f"""You are brain-keeper's AI reasoning layer. The deterministic layer already ran (47ms):
 - {stats.get('arcs_scanned', 0)} arcs scanned, {stats.get('heat_changes', 0)} heat changes
@@ -249,9 +350,9 @@ Your job: REASON about the data below. Do NOT read files — everything is pre-e
 
 {lessons_sample}
 
-## Unsynthesized Arcs (need Timeline/Lessons/Resolution)
+## Unsynthesized Arcs (need a summary — see Task 6)
 
-{json.dumps(unsynthesized) if unsynthesized else "(all synthesized)"}
+{unsynthesized_text}
 
 ## Your Tasks (respond in this exact format)
 
@@ -285,7 +386,7 @@ Format:
 
 IMPORTANT source-name rules:
 - If the source name contains spaces, WRAP IT IN BACKTICKS:
-  `ESCALATE: \`image-updater registry auth broken\` → critical (fleet-wide CD halt)`
+  `ESCALATE:` followed by the source in backticks, e.g. image-updater registry auth broken -> critical (fleet-wide CD halt)
 - If the source name is a single token (kebab-case slug), no backticks needed:
   `ESCALATE: paper2slides-s3 → warning (all jobs fail)`
 - The apply phase uses the source name verbatim — do NOT paraphrase between ticks.
@@ -293,13 +394,45 @@ IMPORTANT source-name rules:
 If none, say "No changes."
 
 ### 4. Operator Intent
-Based on the arc heat distribution and active status, what is the operator most likely working on RIGHT NOW? What will they likely do next? One paragraph max.
+What is the operator working on RIGHT NOW, and what will they likely do next?
+One paragraph max.
+
+Ground every claim in the data above and cite the arc id or signal you inferred
+it from. Prefer summaries, decisions and milestones over arc titles — titles are
+scraped from the operator's opening message and are often meaningless ("hey",
+tool boilerplate); never build a narrative on a title alone. Name the actual
+projects and systems involved rather than describing activity in the abstract.
+If the data does not support a confident read, say what is unclear instead of
+inventing connective tissue. Where the previous intent below still holds, say
+so and describe what changed rather than re-deriving from scratch.
+
+Previous intent (last tick):
+{previous_intent}
 
 ### 5. Brain Health
 Rate the brain's health 1-10. Consider: coverage (are there gaps in what's tracked?), freshness (are hot things actually hot?), connectivity (enough edges?), signal quality (are amygdala signals actionable?).
 One line: `Brain health: N/10 — reason`
 
-Respond ONLY with the 5 sections above. No preamble. No explanation of what you're doing. Just the answers.
+### 6. Arc Summaries
+For EACH arc under "Unsynthesized Arcs" above, write one sentence saying what
+that work actually was — what was being built, fixed or decided, and its
+outcome if known. This sentence is injected into every future agent session as
+the arc's identity, so it must stand alone without the reader seeing the arc.
+
+Format, one per line, id first:
+`SUMMARY: <arc-id> | <one sentence>`
+
+Rules:
+- Lead with the concrete subject (the system, service or file), not "the operator".
+- State outcomes plainly: shipped, fixed, root-caused, abandoned, still open.
+- No hedging, no meta ("this arc covers…", "a session about…").
+- 30 words max. Plain prose, no markdown, no pipe characters in the sentence.
+- If an arc genuinely has too little content to summarize, emit
+  `SUMMARY: <arc-id> | SKIP` and it will be offered again next tick.
+
+If there are no unsynthesized arcs, say "None."
+
+Respond ONLY with the 6 sections above. No preamble. No explanation of what you're doing. Just the answers.
 """
 
     # Final hard ceiling. The per-section caps above keep a healthy vault well

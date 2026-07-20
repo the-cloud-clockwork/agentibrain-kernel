@@ -44,7 +44,15 @@ def enqueue_tick(
     source: str = "brain-api",
     vault_root: Path | None = None,
 ) -> dict:
-    """Write a tick request file. Returns {job_id, requested_at, request_path}."""
+    """Write a tick request file. Returns {job_id, requested_at, request_path}.
+
+    Every call writes a fresh file. Coalescing of redundant same-kind requests
+    is the drain's job, not enqueue's: the drain is a single serialized process
+    (concurrencyPolicy: Forbid) and can dedupe race-free, whereas enqueue runs
+    in FastAPI's threadpool where a scan-then-write here races under concurrent
+    callers AND an orphaned request file would wedge every future tick of that
+    kind. Always-write keeps enqueue race-free and wedge-free.
+    """
     root = Path(vault_root) if vault_root else VAULT_ROOT
     req_dir = root / TICK_REQUESTS_DIR
     req_dir.mkdir(parents=True, exist_ok=True)

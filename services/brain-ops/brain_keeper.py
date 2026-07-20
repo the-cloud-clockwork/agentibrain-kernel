@@ -24,6 +24,7 @@ from pathlib import Path
 # Import sibling module
 sys.path.insert(0, str(Path(__file__).parent))
 import markers
+import redact
 import brain_verifier
 
 
@@ -50,6 +51,10 @@ BRAIN_DECAY_INTERVAL_DAYS = max(1, int(os.getenv("BRAIN_DECAY_INTERVAL_DAYS", "4
 # nuclear/critical get filtered out of signals.md. Prevents broadcast pollution
 # from old stress-test debris and orphan signals.
 BRAIN_STALE_SIGNAL_DAYS = int(os.getenv("BRAIN_STALE_SIGNAL_DAYS", "3"))
+# @inject blocks ride every session for their parent arc's lifetime. Without a
+# cap an April note was still being injected in July. Longer than the signal
+# window because injects are standing guidance, not incidents. 0 disables.
+BRAIN_STALE_INJECT_DAYS = int(os.getenv("BRAIN_STALE_INJECT_DAYS", "30"))
 BRAIN_STALE_SIGNAL_KEEP_SEVERITIES = {"nuclear", "critical"}
 
 
@@ -188,6 +193,25 @@ def compute_heat(
 
 # ── File operations ───────────────────────────────────────────────────
 
+HOT_ARC_BLURB_CHARS = int(os.getenv("BRAIN_HOT_ARC_BLURB_CHARS", "220"))
+
+
+def _clip(text: str, limit: int) -> str:
+    """Clip to `limit` on a word boundary, with an ellipsis when truncated.
+
+    A hard slice cut summaries mid-word ("…applies to actually-traded capital
+    only, not th"), which reads as corruption rather than abbreviation.
+    """
+    flat = " ".join(str(text or "").split()).replace("|", "-")
+    if len(flat) <= limit:
+        return flat
+    cut = flat[:limit]
+    space = cut.rfind(" ")
+    if space > limit * 0.6:  # don't strand a tiny fragment on a long unbroken token
+        cut = cut[:space]
+    return cut.rstrip(" ,;:.—-") + "…"
+
+
 def write_hot_arcs_md(path: Path, arcs: list[markers.DocumentMeta]) -> None:
     """Generate brain_adapter-compatible hot-arcs.md."""
     date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -202,18 +226,33 @@ def write_hot_arcs_md(path: Path, arcs: list[markers.DocumentMeta]) -> None:
         "",
         f"## Hot Arcs — {date_str}",
         "",
-        "| Arc | Heat | Region | Status | Title |",
+        "| Arc ID | Heat | Region | Status | What it is |",
         "|---|---|---|---|---|",
     ]
     for arc in arcs:
         fm = arc.frontmatter
         cid = fm.get("cluster_id", arc.path.stem if arc.path else "?")
-        title = fm.get("title", cid)[:80].replace("|", "-")
+        # Prefer the synthesized summary; fall back to the scraped title.
+        # Titles come from the operator's first message (cluster.py) and are
+        # frequently meaningless ("hey", tool boilerplate) — the summary is the
+        # field that makes this table worth its tokens.
+        blurb = _clip(fm.get("summary") or fm.get("title") or cid, HOT_ARC_BLURB_CHARS)
         heat = fm.get("heat", "?")
         region = fm.get("region", "?")
         status = fm.get("status", "?")
-        lines.append(f"| [[{cid}]] | {heat} | {region} | {status} | {title} |")
-    lines.append("")
+        # Bare cluster_id, NOT an [[Obsidian wikilink]] — this cell is copied
+        # verbatim into brain_get_arc(cluster_id) and brackets 404 against it.
+        lines.append(f"| {cid} | {heat} | {region} | {status} | {blurb} |")
+    lines.extend(
+        [
+            "",
+            "These are the operator's active work threads, hottest first. To go deeper:",
+            "`brain_get_arc(cluster_id)` for one arc in full · "
+            "`brain_search_arcs(query)` to find related past work · "
+            "`kb_search(query)` for the wider vault.",
+            "",
+        ]
+    )
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -292,8 +331,40 @@ def write_signals_feed(
     return stats
 
 
+_INJECT_DEAD_STATUSES = frozenset({"resolved", "graduated", "merged", "complete"})
+
+
+def _inject_is_live(inj: markers.Marker, now: datetime) -> bool:
+    """An @inject block is live while its parent arc is live.
+
+    Two independent kill switches, mirroring the staleness sweep signals get:
+    a dead parent status, or age beyond BRAIN_STALE_INJECT_DAYS. An explicit
+    `ttl_days=` attribute on the marker overrides the global age cap.
+    """
+    if inj.attr("_parent_arc_status", "") in _INJECT_DEAD_STATUSES:
+        return False
+
+    try:
+        max_age = int(inj.attr("ttl_days", "") or BRAIN_STALE_INJECT_DAYS)
+    except (TypeError, ValueError):
+        max_age = BRAIN_STALE_INJECT_DAYS
+    if max_age <= 0:
+        return True  # 0/negative disables the age cap
+
+    created = (inj.attr("_parent_arc_created", "") or "").strip()
+    if not created:
+        return True  # undated standing docs are not aged out
+    try:
+        created_dt = datetime.strptime(created[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return True
+    return (now - created_dt).days <= max_age
+
+
 def write_inject_feed(path: Path, injects: list[markers.Marker]) -> None:
     """Generate inject.md from collected @inject markers. Deduplicates by content hash."""
+    now = datetime.now(timezone.utc)
+    injects = [i for i in injects if _inject_is_live(i, now)]
     if not injects:
         path.write_text("---\nid: inject\ntitle: Brain Inject\npriority: 9\nttl: 3600\nseverity: info\n---\n\nNo inject blocks.\n")
         return
@@ -534,7 +605,12 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
                         conscious.mkdir(parents=True, exist_ok=True)
                         shutil.copy2(str(arc.path), str(dest))
                     promotions += 1
-            elif heat < BRAIN_DEMOTE_HEAT:
+            # Demote on anything that no longer qualifies for promotion, not on
+            # heat < BRAIN_DEMOTE_HEAT. With live thresholds (promote 3,
+            # demote 2) an arc at exactly heat 2 satisfied neither branch and
+            # was stranded in conscious/ permanently. DEMOTE_HEAT is retained
+            # as the floor so a lower value still widens the hysteresis band.
+            elif heat < max(BRAIN_DEMOTE_HEAT, BRAIN_PROMOTE_HEAT):
                 conscious_file = conscious / fname
                 if conscious_file.exists():
                     dest = unconscious / fname
@@ -615,6 +691,12 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
                 if not dry_run:
                     target_dir.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(arc.path), str(dest))
+                    # Stamp the status. Graduation used to only MOVE the file,
+                    # leaving `status: active` forever — so a 102-day-old arc at
+                    # heat 0 still read as live to every downstream consumer
+                    # (mitigation map, @inject filter, the tick prompt).
+                    _update_frontmatter_field(dest, "status", "graduated")
+                arc.frontmatter["status"] = "graduated"
                 graduations += 1
 
     # 4. Build mitigation map. Any arc with status in {resolved, graduated}
@@ -660,7 +742,16 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
                 continue
             seen_signals.add(dedup_key)
             all_signals.append(sig)
-        all_injects.extend(arc.inject_blocks)
+        # @inject blocks were collected unconditionally from every arc forever —
+        # no age, status or heat filter, only content-hash dedup. A April 2026
+        # block (heat 0, 102 days old) was still being injected into every
+        # session in July. Tag with the parent arc's state so write_inject_feed
+        # can apply the same staleness sweep signals already get.
+        arc_status = str(arc.frontmatter.get("status", "")).strip().lower()
+        for inj in arc.inject_blocks:
+            inj.attrs["_parent_arc_created"] = arc_created
+            inj.attrs["_parent_arc_status"] = arc_status
+            all_injects.append(inj)
         all_lessons.extend(arc.lessons)
 
     # 5. Generate brain-feed outputs

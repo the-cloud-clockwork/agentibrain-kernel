@@ -31,6 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import markers
+import redact
 import brain_keeper  # for REGION_DIRS — keep prompt + apply scanners aligned
 
 
@@ -55,7 +56,7 @@ def parse_edges(section: str) -> list[dict]:
 
     Backticks around the whole line (`` `arc-a --related--> arc-b` ``) get
     absorbed into the `\\S+` groups by the regex, so strip them after capture.
-    Without this, `arc-a` parses as `arc-a\\`` and find_arc_file() silently
+    Without this, `arc-a` parses as "arc-a`" and find_arc_file() silently
     fails — edges are dropped and the AI re-emits them every tick.
 
     Also drops self-loops at parse time.
@@ -94,9 +95,9 @@ def parse_signals(section: str) -> list[dict]:
     """Parse '### 3. Signal Escalation' section.
 
     Accepts both single-token sources (`ESCALATE: foo → critical (...)`) and
-    backtick-wrapped multi-word sources (`ESCALATE: \`foo bar baz\` → critical (...)`).
-    Pre-v2 regex captured only one token via `(\S+)`, which broke on any AI
-    output naming multi-word sources and silently no-oped the apply phase.
+    backtick-wrapped multi-word sources: ESCALATE: "foo bar baz" -> critical (...).
+    Pre-v2 regex captured only one whitespace-delimited token, which broke on
+    any AI output naming multi-word sources and silently no-oped the apply phase.
     """
     changes = []
     for line in section.splitlines():
@@ -138,7 +139,7 @@ def parse_health(section: str) -> dict:
 def parse_intent(section: str) -> str:
     """Parse '### 4. Operator Intent' section — just the text."""
     lines = [l.strip() for l in section.splitlines() if l.strip() and not l.startswith("###")]
-    return " ".join(lines)
+    return redact.scrub(" ".join(lines))
 
 
 def parse_ai_output(text: str) -> dict:
@@ -173,6 +174,11 @@ def parse_ai_output(text: str) -> dict:
                 sections[current_key] = "\n".join(current_lines)
             current_key = "health"
             current_lines = []
+        elif line.startswith("### 6."):
+            if current_key:
+                sections[current_key] = "\n".join(current_lines)
+            current_key = "summaries"
+            current_lines = []
         else:
             current_lines.append(line)
 
@@ -185,7 +191,42 @@ def parse_ai_output(text: str) -> dict:
         "signals": parse_signals(sections.get("signals", "")),
         "intent": parse_intent(sections.get("intent", "")),
         "health": parse_health(sections.get("health", "")),
+        "summaries": parse_summaries(sections.get("summaries", "")),
     }
+
+
+# Leading `-`/`*`/backtick and a trailing backtick are all tolerated: the tick
+# prompt writes its format examples in backticks (as every other section does),
+# so the model faithfully wraps each emitted line the same way.
+_SUMMARY_RE = re.compile(
+    r"^[\s\-*`]*SUMMARY:\s*(?P<cid>[^|]+?)\s*\|\s*(?P<text>.+?)\s*[`\s]*$"
+)
+
+
+def parse_summaries(section: str) -> list[dict]:
+    """Parse `SUMMARY: <arc-id> | <one sentence>` lines from tick section 6.
+
+    Skips SKIP sentinels (arc had too little content) so the arc stays
+    unsynthesized and is offered again on a later tick.
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    for line in section.splitlines():
+        m = _SUMMARY_RE.match(line)
+        if not m:
+            continue
+        cid = m.group("cid").strip().strip("`").strip()
+        text = redact.scrub(" ".join(m.group("text").split()))
+        if not cid or cid in seen:
+            continue
+        if not text or text.upper() == "SKIP":
+            continue
+        # Frontmatter is written unquoted; a stray colon-space or newline would
+        # corrupt the YAML block for every downstream reader.
+        text = text.replace(":", " -").replace("|", "-").replace('"', "'")
+        seen.add(cid)
+        out.append({"arc": cid, "summary": text[:400]})
+    return out
 
 
 # ── Apply functions ───────────────────────────────────────────────────
@@ -432,6 +473,34 @@ def _strip_edge_markers(body: str) -> str:
     return _EDGE_MARKER_RE.sub("", body)
 
 
+_MARKER_BLOCK_RE = re.compile(
+    r"<!--\s*@(lesson|milestone|signal|decision|inject)\b[^>]*-->(.*?)<!--\s*@/\1\s*-->",
+    re.DOTALL,
+)
+
+
+def _drop_duplicate_markers(body_b: str, text_a: str) -> str:
+    """Remove marker blocks from B that A already carries.
+
+    apply_merges concatenated bodies wholesale, so a marker present in both
+    arcs survived twice — and every subsequent merge carried both copies
+    forward. The live vault shows single markers repeated up to 5 times this
+    way. Compare on normalised content, since the same marker can differ in
+    whitespace or (historically) shell-escaping between writers.
+    """
+    def _norm(s: str) -> str:
+        return " ".join(s.split()).lower()
+
+    existing = {_norm(m.group(2)) for m in _MARKER_BLOCK_RE.finditer(text_a)}
+    if not existing:
+        return body_b
+
+    def _maybe_drop(m: re.Match) -> str:
+        return "" if _norm(m.group(2)) in existing else m.group(0)
+
+    return _MARKER_BLOCK_RE.sub(_maybe_drop, body_b)
+
+
 def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
     """Merge arc files.
 
@@ -470,7 +539,7 @@ def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
             _fm_b, body_b = markers.parse_frontmatter(file_b.read_text())
             merge_note = (
                 f"\n\n## Merged from {merge['arc_b']}\n\n"
-                f"{_strip_edge_markers(body_b).strip()}\n"
+                f"{_drop_duplicate_markers(_strip_edge_markers(body_b), text_a).strip()}\n"
             )
             merged = text_a.rstrip() + merge_note
 
@@ -556,12 +625,70 @@ def generate_diff_report(vault_root: Path, actions: dict) -> str:
 
 # ── Main ──────────────────────────────────────────────────────────────
 
+def apply_summaries(vault_root: Path, summaries: list[dict], dry_run: bool = False) -> int:
+    """Write `summary:` into arc frontmatter and flip `synthesized` to true.
+
+    This is the stage that was designed (cluster.py has always written
+    `synthesized: false` and a "filled by LLM pass" placeholder) but never
+    built — so every arc stayed an empty stub and the hot-arcs table showed
+    scraped first-message titles instead of what the work actually was.
+
+    Idempotent: an arc already carrying a summary is left alone, so a model
+    re-emitting an old id costs nothing.
+    """
+    applied = 0
+    for item in summaries:
+        arc_id = item["arc"]
+        summary = item["summary"]
+        arc_path = find_arc_file(vault_root, arc_id)
+        if arc_path is None:
+            print(f"  SKIP summary: arc not found — {arc_id}", file=sys.stderr)
+            continue
+
+        try:
+            text = arc_path.read_text(encoding="utf-8")
+        except OSError as e:
+            print(f"  SKIP summary: unreadable {arc_id} ({e})", file=sys.stderr)
+            continue
+
+        if not text.startswith("---"):
+            print(f"  SKIP summary: no frontmatter — {arc_id}", file=sys.stderr)
+            continue
+        parts = text.split("---", 2)
+        if len(parts) < 3:
+            print(f"  SKIP summary: malformed frontmatter — {arc_id}", file=sys.stderr)
+            continue
+
+        fm, body = parts[1], parts[2]
+        if re.search(r"^summary:\s*\S", fm, flags=re.MULTILINE):
+            continue  # already synthesized — never overwrite
+
+        # Insert summary; set synthesized true (replace in place, else append).
+        fm = fm.rstrip("\n") + f"\nsummary: {summary}\n"
+        if re.search(r"^synthesized:", fm, flags=re.MULTILINE):
+            fm = re.sub(r"^synthesized:.*$", "synthesized: true", fm, flags=re.MULTILINE)
+        else:
+            fm += "synthesized: true\n"
+
+        if not dry_run:
+            try:
+                arc_path.write_text(f"---{fm}---{body}", encoding="utf-8")
+            except OSError as e:
+                print(f"  FAIL summary: {arc_id} ({e})", file=sys.stderr)
+                continue
+        applied += 1
+        print(f"  summary: {arc_id} — {summary[:70]}", file=sys.stderr)
+
+    return applied
+
+
 def apply(vault_root: Path, brain_feed_dir: Path, ai_output: str, dry_run: bool = False) -> dict:
     """Parse AI output and apply all recommendations to the vault."""
     parsed = parse_ai_output(ai_output)
 
     print(f"Parsed AI output: {len(parsed['edges'])} edges, {len(parsed['merges'])} merges, "
-          f"{len(parsed['signals'])} signal changes, health={parsed['health'].get('score', '?')}/10",
+          f"{len(parsed['signals'])} signal changes, {len(parsed['summaries'])} summaries, "
+          f"health={parsed['health'].get('score', '?')}/10",
           file=sys.stderr)
 
     actions = {}
@@ -580,6 +707,11 @@ def apply(vault_root: Path, brain_feed_dir: Path, ai_output: str, dry_run: bool 
     if parsed["merges"]:
         print("\n--- Applying merges ---", file=sys.stderr)
         actions["merges_applied"] = apply_merges(vault_root, parsed["merges"], dry_run)
+
+    # Apply arc summaries
+    if parsed["summaries"]:
+        print("\n--- Applying arc summaries ---", file=sys.stderr)
+        actions["summaries_applied"] = apply_summaries(vault_root, parsed["summaries"], dry_run)
 
     # Write intent
     if parsed["intent"]:

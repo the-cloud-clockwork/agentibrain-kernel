@@ -39,6 +39,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import brain_apply
+import redact
 import brain_keeper
 import brain_tick_prompt
 
@@ -118,7 +119,7 @@ def _classify_tick_severity(report: dict) -> str:
     return "info"
 
 
-def _push_event_bus(report: dict) -> None:
+def _push_event_bus(report: dict, source: str = "brain-cron") -> None:
     """Announce a brain.tick.complete event on the configured event-bus stream.
 
     Stream key = ``EVENT_BUS_STREAM`` (default ``events:brain``).
@@ -150,7 +151,7 @@ def _push_event_bus(report: dict) -> None:
         "v": "1",
         "domain": "brain",
         "event": "brain.tick.complete",
-        "source": "brain-cron",
+        "source": source,
         "severity": _classify_tick_severity(report),
         "host": os.getenv("HOSTNAME", "unknown"),
         "ts": str(int(time.time())),
@@ -276,8 +277,14 @@ def run_tick(
     dry_run: bool = False,
     no_ai: bool = False,
     inference_url: str = INFERENCE_URL,
+    source: str = "brain-cron",
 ) -> dict:
-    """Execute one full hybrid tick."""
+    """Execute one full hybrid tick.
+
+    `source` labels the event-bus announcement so on-demand ticks (drained from
+    a POST /tick request) are distinguishable from the scheduled 2h cron in the
+    amygdala stream — the drain passes ``--source brain-drain``.
+    """
     t0 = time.time()
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     report = {"timestamp": now_str, "phases": {}}
@@ -342,7 +349,9 @@ def run_tick(
             ticks_dir = brain_feed_dir / "ticks"
         ticks_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
-        (ticks_dir / f"{ts}-ai-output.md").write_text(ai_output)
+        # Scrub before persisting: the tick audit trail replayed a leaked token
+        # into 60+ files because the model echoed its own prompt input.
+        (ticks_dir / f"{ts}-ai-output.md").write_text(redact.scrub(ai_output))
     else:
         report["phases"]["apply"] = {"skipped": True}
 
@@ -375,7 +384,7 @@ def run_tick(
     # reads zero.
     if not dry_run and EVENT_BUS_REDIS_URL:
         try:
-            _push_event_bus(report)
+            _push_event_bus(report, source)
         except Exception as e:
             print(f"WARN: event-bus publish failed: {e}", file=sys.stderr)
 
@@ -389,6 +398,8 @@ def main() -> int:
     p.add_argument("--dry-run", action="store_true", help="No writes, no LLM")
     p.add_argument("--no-ai", action="store_true", help="Deterministic only, skip AI")
     p.add_argument("--inference-url", default=INFERENCE_URL, help="Inference gateway URL")
+    p.add_argument("--source", default="brain-cron",
+                   help="Event-bus source label (drain passes 'brain-drain')")
     args = p.parse_args()
 
     result = run_tick(
@@ -397,6 +408,7 @@ def main() -> int:
         dry_run=args.dry_run,
         no_ai=args.no_ai,
         inference_url=args.inference_url,
+        source=args.source,
     )
 
     json.dump(result, sys.stdout, indent=2, default=str)

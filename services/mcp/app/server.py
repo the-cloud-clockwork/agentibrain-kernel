@@ -12,11 +12,13 @@ from mcp.server.fastmcp import FastMCP
 from tools.arcs import register as register_arcs
 from tools.ingest import register as register_ingest
 from tools.kb import register as register_kb
+from tools.tick import register as register_tick
 
 mcp = FastMCP("agentibrain")
 register_arcs(mcp)
 register_ingest(mcp)
 register_kb(mcp)
+register_tick(mcp)
 
 
 if __name__ == "__main__":

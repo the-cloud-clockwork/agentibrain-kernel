@@ -28,16 +28,26 @@ def test_kb_module_imports():
     assert hasattr(mod, "register"), "tools.kb must expose register(mcp)"
 
 
+def test_tick_module_imports():
+    _add_app_to_path()
+    mod = importlib.import_module("tools.tick")
+    assert hasattr(mod, "register"), "tools.tick must expose register(mcp)"
+
+
 def test_server_constructs_and_registers():
     _add_app_to_path()
     from mcp.server.fastmcp import FastMCP
 
     from tools.arcs import register as register_arcs
+    from tools.ingest import register as register_ingest
     from tools.kb import register as register_kb
+    from tools.tick import register as register_tick
 
     mcp = FastMCP("agentibrain-test")
     register_arcs(mcp)
+    register_ingest(mcp)
     register_kb(mcp)
+    register_tick(mcp)
 
 
 def test_kb_search_handles_no_backends():

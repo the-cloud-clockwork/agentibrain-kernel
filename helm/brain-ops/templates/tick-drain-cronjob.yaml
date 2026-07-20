@@ -42,32 +42,74 @@ spec:
                   # Force NFS attribute cache refresh — freshly mounted NFS caches stale dir listings
                   sleep 5
                   ls "$REQ"/ > /dev/null 2>&1 || true
-                  count=0; ok=0; ko=0
+                  # Classify each queued request into one of 4 (dry_run,no_ai)
+                  # buckets, then run brain_tick ONCE per non-empty bucket and
+                  # move all of that bucket's files together. Coalescing lives
+                  # HERE — in the single serialized drain (concurrencyPolicy:
+                  # Forbid) — not at enqueue, which races under FastAPI's
+                  # threadpool and could wedge on an orphaned request file.
+                  # brain_tick scans the whole vault regardless of which request
+                  # triggered it, so N same-kind requests need exactly one tick.
+                  b00=""; b01=""; b10=""; b11=""; total=0
                   for f in "$REQ"/*.json; do
                     [ -e "$f" ] || break
-                    count=$((count+1))
-                    name=$(basename "$f")
-                    dry=$(python3 -c "import json,sys;d=json.load(open('$f'));print('1' if d.get('dry_run') else '0')" 2>/dev/null || echo 0)
-                    noai=$(python3 -c "import json,sys;d=json.load(open('$f'));print('1' if d.get('no_ai') else '0')" 2>/dev/null || echo 0)
-                    flags=""
-                    [ "$dry" = "1" ] && flags="$flags --dry-run"
-                    [ "$noai" = "1" ] && flags="$flags --no-ai"
-                    echo "drain: $name flags='$flags'"
+                    total=$((total+1))
+                    dry=$(python3 -c "import json;print('1' if json.load(open('$f')).get('dry_run') else '0')" 2>/dev/null || echo 0)
+                    noai=$(python3 -c "import json;print('1' if json.load(open('$f')).get('no_ai') else '0')" 2>/dev/null || echo 0)
+                    case "${dry}${noai}" in
+                      00) b00="$b00 $f" ;;
+                      01) b01="$b01 $f" ;;
+                      10) b10="$b10 $f" ;;
+                      11) b11="$b11 $f" ;;
+                    esac
+                  done
+
+                  ok=0; ko=0; ticks=0
+                  run_kind() {
+                    kind_flags="$1"; kind_files="$2"
+                    if [ -z "$kind_files" ]; then return 0; fi
+                    n=$(echo $kind_files | wc -w)
+                    ticks=$((ticks+1))
+                    echo "drain: coalescing $n request(s) into one tick [flags='$kind_flags']"
                     if python3 /app/brain_tick.py \
                         --vault /vault --brain-feed /vault/brain-feed \
                         --inference-url "${INFERENCE_URL:-}" \
-                        $flags; then
-                      mv "$f" "$DONE/$name"
-                      ok=$((ok+1))
+                        --source brain-drain \
+                        $kind_flags; then
+                      dest="$DONE"; ok=$((ok+n))
                     else
-                      mv "$f" "$FAIL/$name"
-                      ko=$((ko+1))
+                      dest="$FAIL"; ko=$((ko+n))
                     fi
-                  done
-                  echo "drain-summary: total=$count ok=$ok failed=$ko"
+                    for f in $kind_files; do mv "$f" "$dest/$(basename "$f")"; done
+                  }
+
+                  run_kind "" "$b00"
+                  run_kind "--no-ai" "$b01"
+                  run_kind "--dry-run" "$b10"
+                  run_kind "--dry-run --no-ai" "$b11"
+
+                  echo "drain-summary: total=$total ticks=$ticks ok=$ok failed=$ko"
+                  # Refresh the pgvector index for whatever the tick(s) just
+                  # rewrote. Without this an on-demand tick updates the vault
+                  # but leaves kb_search / brain_search_arcs blind to the new
+                  # content until the scheduled 2h cron. embed_arcs.py is
+                  # diff-only by mtime, so one run after the batch is cheap.
+                  # Non-fatal, and skipped when nothing was processed.
+                  if [ "$ok" -gt 0 ] && [ -n "${EMBEDDINGS_API_KEY:-}" ]; then
+                    echo "drain: refreshing embeddings after $ok processed request(s)"
+                    python3 /app/embed_arcs.py --vault /vault --prune \
+                      || echo "WARN: embed_arcs failed (non-fatal)"
+                  fi
+              # Full env map, matching the main brain-cron container, so a
+              # drain-triggered brain_tick.py runs with the SAME tuning
+              # (BRAIN_DECAY_*, BRAIN_PROMOTE_HEAT, EMBEDDINGS_URL, ...) as the
+              # scheduled tick — on-demand and scheduled ticks stay identical.
+              {{- if or .Values.env .Values.secretRef .Values.additionalSecretRefs }}
               env:
-                - name: INFERENCE_URL
-                  value: {{ .Values.env.INFERENCE_URL | quote }}
+                {{- range $key, $value := .Values.env }}
+                - name: {{ $key }}
+                  value: {{ $value | quote }}
+                {{- end }}
               {{- if or .Values.secretRef .Values.additionalSecretRefs }}
               envFrom:
                 {{- if .Values.secretRef }}
@@ -78,6 +120,7 @@ spec:
                 - secretRef:
                     name: {{ . }}
                 {{- end }}
+              {{- end }}
               {{- end }}
               resources:
                 {{- toYaml (.Values.tickDrain.resources | default .Values.resources) | nindent 16 }}

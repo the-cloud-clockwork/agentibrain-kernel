@@ -59,3 +59,19 @@ def test_tick_status_finds_completed(vault: Path, client):
     status = client.get(f"/tick/{enqueued['job_id']}").json()
     assert status["status"] == "completed"
     assert status["path"].startswith("brain-feed/ticks/completed/")
+
+
+def test_tick_always_writes_no_enqueue_dedupe(vault: Path, client):
+    # Enqueue never coalesces — that is the drain's job (single serialized
+    # process). Enqueue-time dedupe raced under FastAPI's threadpool and could
+    # wedge on an orphaned request file, so every call writes a fresh request
+    # with its own job_id. Two rapid identical calls therefore leave two files.
+    first = client.post("/tick")
+    second = client.post("/tick")
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert first.json()["job_id"] != second.json()["job_id"]
+    assert "duplicate" not in first.json()
+
+    req_dir = vault / "brain-feed" / "ticks" / "requested"
+    assert len(list(req_dir.glob("*.json"))) == 2

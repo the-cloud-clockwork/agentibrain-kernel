@@ -363,6 +363,7 @@ def post_tick(
 
     Writes a request file to brain-feed/ticks/requested/. The tick-engine
     CronJob picks this up and moves it to completed/ or failed/ when done.
+    Redundant same-kind requests are coalesced by the drain, not here.
     Clients poll GET /tick/{job_id} for status.
     """
     try:
