@@ -1,35 +1,19 @@
-# Broadcast Protocol — Fleet Communication (Priority 3)
+# Broadcasts
 
-## Reading Broadcasts
+## Reading
 
-You receive broadcasts as `BROADCAST` blocks in your context injection. Sources:
-- **brain-adapter** — hot arcs, signals, inject blocks, operator intent, tick diffs
-- **amygdala** — emergency signals (nuclear/critical severity)
+`BROADCAST` blocks arrive in your context from two channels: `brain` (hot arcs,
+signals, operator intent, what changed last pass) and `amygdala` (emergencies
+only). Read them — they are what the fleet knows right now, not preamble.
 
-Always read broadcast content. It tells you what the fleet knows right now.
+If you see no `BROADCAST` blocks at all, your session is not subscribed.
 
-## Writing Broadcasts
-
-Use `channel_publish` (hooks-utils MCP) to send messages to the fleet:
+## Writing
 
 ```
-channel_publish(
-  channel="brain",       # or "ops-alerts", "deploy-status"
-  message="I'm about to restart litellm-0, hold off on MCP calls",
-  severity="info"        # "info", "alert", "critical"
-)
+channel_publish(channel="brain", message="restarting litellm-0, hold off on MCP calls", severity="info")
 ```
 
-- Use sparingly — every broadcast costs attention across all agents
-- Milestones and signals auto-broadcast via markers (preferred path)
-- Direct broadcast is for coordination: "I'm about to restart X, hold off on Y"
-
-## Channel Subscriptions
-
-Your session receives broadcasts from channels listed in `.agentihooks.json` at your CWD:
-
-```json
-{"channels": ["brain", "amygdala"]}
-```
-
-Without this file, brain/amygdala broadcasts are published but filtered out at delivery. If you don't see `BROADCAST` blocks in your context injection, the subscription is missing.
+Coordination only, and rarely — every broadcast spends attention across every
+agent. Knowledge goes to markers and `brain_ingest`; milestones and signals
+already broadcast themselves.
