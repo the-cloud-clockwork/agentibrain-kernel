@@ -17,6 +17,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 # Make brain-ops modules + scripts importable from any cwd.
 _HERE = Path(__file__).resolve().parent
 _BRAIN_TOOLS = _HERE.parent
@@ -176,3 +178,46 @@ class TestVaultCleanup:
         # related+parent → one canonical edge to x.
         assert edges["edges_removed"] >= 1
         assert (d / "foo.md").read_text().count("target=x") == 1
+
+
+def test_merge_title_drops_the_models_rationale():
+    """A MERGE line's title must reduce to the arc name, not carry the why.
+
+    The model writes ``→ `new-id` — why they are the same thing``. The capture
+    is anchored at end-of-line, so it used to swallow the whole justification
+    and write it into the arc's `title:` frontmatter.
+    """
+    section = (
+        "MERGE: a-arc + b-arc → `unified-id` — identical session ID, "
+        "continuous work across two calendar days.\n"
+        "MERGE: c-arc + d-arc → plain-id\n"
+        "MERGE: e-arc + f-arc → `quoted-id`\n"
+        "MERGE: g-arc + h-arc → dashed-id -- rationale after a double dash\n"
+    )
+    titles = [m["title"] for m in brain_apply.parse_merges(section)]
+    assert titles == ["unified-id", "plain-id", "quoted-id", "dashed-id"]
+    for t in titles:
+        assert "`" not in t and "—" not in t
+
+
+def test_merged_title_keeps_frontmatter_parseable(tmp_path):
+    """A title containing a colon must not corrupt the arc's frontmatter.
+
+    An arc whose frontmatter will not parse is skipped by the feed entirely,
+    so this is a retrieval failure rather than a cosmetic one.
+    """
+    yaml = pytest.importorskip("yaml")
+    d = tmp_path / "clusters" / "2026-07-21"
+    d.mkdir(parents=True)
+    (d / "a.md").write_text("---\ntitle: old\ncluster_id: a\nheat: 3\n---\n\nbody A\n")
+    (d / "b.md").write_text("---\ntitle: other\ncluster_id: b\nheat: 1\n---\n\nbody B\n")
+
+    brain_apply.apply_merges(
+        tmp_path,
+        [{"op": "merge", "arc_a": "a", "arc_b": "b", "title": "scope: a colon in the title"}],
+        dry_run=False,
+    )
+
+    text = (d / "a.md").read_text()
+    front = text.split("---")[1]
+    assert yaml.safe_load(front)["title"] == "scope: a colon in the title"
