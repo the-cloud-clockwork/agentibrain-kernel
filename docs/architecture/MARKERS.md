@@ -162,8 +162,8 @@ region: left-hemisphere
 status: complete
 heat: 9
 source_sessions:
-  - 7d031027
-  - a69e27d7
+  - 00000000
+  - 00000000-5555
 synthesized: true
 created: 2026-04-09
 ---
