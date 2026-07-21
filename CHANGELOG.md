@@ -159,6 +159,27 @@ the update/redeploy procedure is documented for both.
   does not exist in this repo. It now names the actual mechanism: dispatch
   `.github/workflows/release.yml` with a `bump` input.
 
+### Brain profile
+
+- **Rewritten to say what the brain is, not how it is built** — the profile spent
+  most of its budget teaching agents the brain's mechanics: service topology, vault
+  schema, the five tick phases and their cadence, which hook fires on which event.
+  None of it changes how an agent uses the brain, and all of it loaded on every
+  session of every chained profile. `CLAUDE.md` now carries what an agent needs —
+  what the brain is, that context arrives already injected, what an arc and heat
+  are, the six tools with when to reach for each, the regions, marker syntax and
+  severities, channels, and the few real constraints.
+- **`rules/04-vault-layout.md` and `rules/05-tick-cadence.md` removed** — tick
+  internals and a vault schema agents cannot write to and never reason about. The
+  three remaining rules keep only what `CLAUDE.md` does not: when to search and when
+  not to, the editorial bar per marker type, and broadcast etiquette.
+- **`brain_tick` added to the profile's tool inventory** — it shipped in this release
+  but appeared nowhere in the profile, so an agent reading it had no idea it could
+  force its own writes to become searchable. A feature that exists and is
+  undiscoverable is not shipped.
+- Net effect: **31.5 KB → 6.7 KB**, a 79% cut, roughly 6,200 tokens returned to every
+  session that chains this profile.
+
 ### CI
 
 - **`deploy-assets` workflow added** — nothing in CI has ever looked at the Helm charts
