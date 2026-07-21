@@ -16,6 +16,20 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: brain
+          POSTGRES_PASSWORD: brain
+          POSTGRES_DB: brain
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U brain -d brain"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -49,6 +63,15 @@ jobs:
 
       - name: Pytest (brain-ops service)
         run: python -m pytest -q services/brain-ops/tests
+
+      - name: Pytest (embeddings service)
+        env:
+          # Pure target_dim + /health/deep tests always run; the DB-backed
+          # reconcile tests use this DSN and skip if it is unreachable.
+          EMBED_TEST_POSTGRES_URL: postgresql://brain:brain@localhost:5432/brain
+        run: |
+          pip install -r services/embeddings/requirements.txt
+          python -m pytest -q services/embeddings/tests
 
       # Invalid escapes only surface on a FRESH compile, so bytecode caching
       # hides them locally while the container warns on every pod start. This

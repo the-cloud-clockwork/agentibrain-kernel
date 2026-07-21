@@ -4,6 +4,23 @@ tpl:
   podAnnotations:
     reloader.stakater.com/auto: "true"
   env:
+    # Optional non-secret tuning. The schema's vector dimension is derived
+    # from the embedding model (text-embedding-3-large → 3072,
+    # -3-small/ada-002 → 1536). Two overrides exist for the cases that bite:
+    #
+    #   EMBED_DIM: "3072"
+    #     Pin the dimension explicitly. REQUIRED when LLM_EMBED_MODEL is a
+    #     model the service does not recognise (a new Azure deployment name,
+    #     an Ollama model, etc.) — without it the service refuses to start the
+    #     schema rather than guess a dimension that would fail every insert.
+    #
+    #   EMBED_DIM_FORCE_MIGRATE: "true"
+    #     Opt in to DESTRUCTIVE re-dimensioning. If the table already holds
+    #     embeddings at a different dimension, startup refuses to touch them
+    #     by default (it logs an error and /health/deep reports degraded).
+    #     Set this ONLY when you have accepted that changing the model drops
+    #     every existing embedding to be re-embedded from the vault. Leave
+    #     unset in steady state.
     variables: null
   global:
     environment: dev

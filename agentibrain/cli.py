@@ -192,14 +192,34 @@ def check_cmd(brain_url: str | None, token: str | None) -> None:
         )
         r.raise_for_status()
     except httpx.HTTPError as e:
+        # A degraded endpoint returns 500-with-JSON in some deployments; try to
+        # render its body before giving up so the operator sees the reason.
+        body = None
+        resp = getattr(e, "response", None)
+        if resp is not None:
+            try:
+                body = resp.json()
+            except ValueError:
+                body = None
         console.print(f"[red]GET {base}/health/deep failed: {e}[/red]")
+        if isinstance(body, dict) and body.get("detail"):
+            console.print(f"[red]  {body['detail']}[/red]")
         sys.exit(1)
 
-    payload = r.json()
+    try:
+        payload = r.json()
+    except ValueError:
+        console.print(f"[red]non-JSON response from {base}/health/deep:[/red]")
+        console.print(r.text[:500])
+        sys.exit(1)
+
     overall = payload.get("status", "unknown")
     checks = payload.get("checks", {})
 
     for name, detail in checks.items():
+        if not isinstance(detail, dict):
+            console.print(f"[red]✗[/red] [bold]{name}[/bold]: {detail}")
+            continue
         mark = "[green]✓[/green]" if detail.get("ok") else "[red]✗[/red]"
         console.print(f"{mark} [bold]{name}[/bold]")
         for key, value in detail.items():
@@ -207,6 +227,9 @@ def check_cmd(brain_url: str | None, token: str | None) -> None:
                 continue
             if key == "checks" and isinstance(value, dict):
                 for sub_name, sub in value.items():
+                    if not isinstance(sub, dict):
+                        console.print(f"    {sub_name}: {sub}")
+                        continue
                     sub_mark = "[green]✓[/green]" if sub.get("ok") else "[red]✗[/red]"
                     sub_detail = " ".join(
                         f"{k}={v}" for k, v in sub.items() if k != "ok"

@@ -2,14 +2,12 @@
 
 import logging
 import os
-from typing import Optional
-
-from fastapi import FastAPI, Depends, HTTPException
-from pydantic import BaseModel
 
 import auth
 import db
 import embed
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 log = logging.getLogger("agentibrain-embeddings")
@@ -27,7 +25,7 @@ class EmbedRequest(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str
-    producer: Optional[str] = None
+    producer: str | None = None
     limit: int = 10
     min_score: float = 0.0
 
@@ -71,6 +69,12 @@ def health_deep(_token: str = Depends(auth.require_api_key)):
 
     Proves the credentials work and the model's output dimension matches the
     schema — the exact failure mode a liveness /health cannot see.
+
+    ON-DEMAND ONLY. Each call spends a real (billed, ~1-2s) embedding request
+    against LiteLLM. Do NOT wire this to a Kubernetes liveness/readiness probe
+    or a high-frequency scrape — a tight poll would burn quota and can trip the
+    very rate limit it is meant to detect. Use plain /health for probes; call
+    this from `brain check`, CI, or an operator on suspicion of breakage.
     """
     import time
 
@@ -100,7 +104,9 @@ def health_deep(_token: str = Depends(auth.require_api_key)):
             t0 = time.monotonic()
             vec = embed.embed_text("healthcheck ping")
             model_dim = len(vec)
-            dim_match = schema_dim is None or model_dim == schema_dim
+            # A dimension we could not read is a FAILURE to verify, not a pass:
+            # only call it a match when the schema dim is known and equal.
+            dim_match = schema_dim is not None and model_dim == schema_dim
             if not dim_match:
                 ok = False
             checks["embedding_api"] = {
@@ -108,6 +114,7 @@ def health_deep(_token: str = Depends(auth.require_api_key)):
                 "model": embed.LLM_EMBED_MODEL,
                 "api_base": embed.LLM_API_BASE,
                 "model_dim": model_dim,
+                "schema_dim": schema_dim,
                 "dim_match": dim_match,
                 "latency_ms": round((time.monotonic() - t0) * 1000),
             }
