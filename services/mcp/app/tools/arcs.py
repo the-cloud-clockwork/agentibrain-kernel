@@ -30,7 +30,7 @@ def register(mcp: FastMCP):
     async def brain_search_arcs(
         query: str,
         top_k: int = 5,
-        min_heat: int = 2,
+        min_heat: int = 0,
         min_score: float = 0.0,
     ) -> str:
         """Semantic search over brain arcs using pgvector.
@@ -42,8 +42,14 @@ def register(mcp: FastMCP):
         Args:
             query: Natural language description of the arc you want to find.
             top_k: Max number of arcs to return. Default 5.
-            min_heat: Filter out arcs below this heat score. Default 2 (drops
-                      noise). Pass 0 to search all arcs including graduated.
+            min_heat: Filter out arcs whose INDEXED heat is below this. Default 0
+                      (no filtering) — results are ranked by similarity instead.
+                      The heat carried in the index is a snapshot taken when the
+                      arc was last embedded, while heat is recomputed every tick,
+                      so the indexed value goes stale and cannot be trusted as a
+                      filter: a freshly-ticked arc is still 0, and a promoted arc
+                      sitting in frontal-lobe/conscious can read 0 here. Raise it
+                      only when you deliberately want the stale-heat cut.
             min_score: Minimum cosine similarity (0.0-1.0). Default 0.0.
         """
         if not EMBED_KEY:

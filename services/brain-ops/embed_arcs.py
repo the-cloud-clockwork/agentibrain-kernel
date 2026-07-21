@@ -78,6 +78,22 @@ def _clean_section(text: str) -> str:
     ).strip()
 
 
+def _body_excerpt(body: str, limit: int = 800) -> str:
+    """Readable prose from the arc body, for arcs with no summary or sections.
+
+    Strips HTML-comment markers, headings and blank lines. Used only as a
+    fallback so an un-synthesized arc still embeds something about its own
+    content instead of just its title.
+    """
+    text = re.sub(r"<!--.*?-->", " ", body, flags=re.DOTALL)
+    lines = [
+        ln.strip()
+        for ln in text.splitlines()
+        if ln.strip() and not ln.lstrip().startswith("#")
+    ]
+    return " ".join(lines)[:limit].strip()
+
+
 def build_embed_text(fm: dict, body: str) -> str:
     """Compose the embeddable blob for an arc.
 
@@ -99,10 +115,22 @@ def build_embed_text(fm: dict, body: str) -> str:
     if region:
         parts.append(f"Region: {region}")
 
+    sections_found = False
     for heading in ("Lessons", "Timeline", "Resolution"):
         section = _clean_section(extract_section(body, heading))
         if section:
+            sections_found = True
             parts.append(f"{heading}:\n{section}")
+
+    # Fallback: an arc that has not been synthesized yet has no summary AND no
+    # populated sections, so the blob would collapse to "Title: ... Region: ...".
+    # That is near-content-free — it only matches queries that restate the title,
+    # which is exactly the case a deterministic (--no-ai) tick produces. Embed a
+    # body excerpt instead so the arc is findable by what it actually says.
+    if not summary and not sections_found:
+        excerpt = _body_excerpt(body)
+        if excerpt:
+            parts.append(f"Content:\n{excerpt}")
 
     text = "\n\n".join(parts)
     return text[:MAX_TEXT_CHARS]
