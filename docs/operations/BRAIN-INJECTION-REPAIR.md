@@ -164,9 +164,9 @@ Before → after, same arc:
 
 | Arc | Was | Now |
 |---|---|---|
-| `2026-07-17-hablar-sobre-cron…` | Hablar sobre cron y seguimiento automático de qt hoy | QITP live cron pipeline trigger activated; 15% risk limit clarified as applying to actually-traded capital, not the full broker balance |
-| `2026-07-19-hey-ca22a3f9b394` | hey | Short session verifying brain and tooling responsiveness; no substantive work output |
-| `2026-07-18-local-command-caveat…` | \<local-command-caveat\>Caveat: The messages below were genera | antoncore local command session; **the LiteLLM bearer key was inadvertently exposed in this transcript and requires rotation** |
+| `<date>-hablar-sobre-cron…` | Hablar sobre cron y seguimiento automático hoy | Scheduled pipeline trigger activated; a threshold clarified as applying to the active subset rather than the whole pool |
+| `<date>-hey-ca22a3f9b394` | hey | Short session verifying brain and tooling responsiveness; no substantive work output |
+| `<date>-local-command-caveat…` | \<local-command-caveat\>Caveat: The messages below were genera | Local command session; **a bearer token was inadvertently exposed in this transcript and requires rotation** |
 
 The third row is the point: an arc that was indistinguishable boilerplate now
 surfaces a credential exposure. Note also that the model declined to invent

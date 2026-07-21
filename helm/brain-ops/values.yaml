@@ -100,8 +100,8 @@ env:
   INFERENCE_URL: ""
   # Embeddings service base URL — consumed by embed_arcs.py after each tick
   # (main cron AND tick-drain) to refresh the pgvector index. In-cluster
-  # default; override per environment (the Anton overlay points it at the
-  # anton-prod service). EMBEDDINGS_API_KEY arrives via a secretRef.
+  # default; override per environment to point at your embeddings Service.
+  # EMBEDDINGS_API_KEY arrives via a secretRef.
   EMBEDDINGS_URL: "http://agentibrain-embeddings:8080"
   # Brain LLM model name (standard OpenAI `model` field). The kernel ships
   # `brain-brief` as the canonical name — wire your gateway to alias it at
