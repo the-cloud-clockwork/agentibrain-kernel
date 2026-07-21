@@ -98,7 +98,19 @@ def clean_merge_title(raw: str) -> str:
     loads such a title verbatim and the arc stays fully visible. The damage is
     legibility, not retrieval.
     """
-    title = _MERGE_RATIONALE_RE.sub('', raw.strip())
+    title = raw.strip()
+    if '`' in title:
+        # The model quotes the new id, so a backtick marks the true end of the
+        # name. Cut there rather than at the first separator: real titles carry
+        # em-dashes of their own ("Session corpus — Apr 28 unified (a + b)"),
+        # and cutting at the first one throws away the half that distinguishes
+        # one arc from another.
+        if title.startswith('`'):
+            title = title[1:].split('`', 1)[0]      # `new-id` — rationale
+        else:
+            title = title.split('`', 1)[0]          # Real Name (x)` — rationale
+    else:
+        title = _MERGE_RATIONALE_RE.sub('', title)
     return title.strip().strip('`').strip()
 
 

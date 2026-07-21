@@ -291,3 +291,26 @@ def test_title_repair_dry_run_writes_nothing(tmp_path):
     stats = r.repair(tmp_path, dry_run=True)
     assert stats["repaired"] == 1
     assert arc.read_text() == original
+
+
+def test_backtick_marks_the_title_boundary_not_the_first_dash():
+    """A real title may carry its own em-dash before the rationale starts.
+
+    "Session corpus — Apr 28 unified (a + b)` — 9705e5e1 holds only 1 marker"
+    must keep everything up to the backtick. Cutting at the first separator
+    reduces three distinct arcs to an identical, useless "Session corpus".
+    Caught by a dry-run against the live vault, not by reasoning.
+    """
+    cases = {
+        "Session corpus — unified Apr 19–May 3 (consolidated)` — Both arcs are active at heat 3":
+            "Session corpus — unified Apr 19–May 3 (consolidated)",
+        "Session corpus — Apr 28 unified (7242ddf3 + 9705e5e1)` — 9705e5e1 holds only 1 marker":
+            "Session corpus — Apr 28 unified (7242ddf3 + 9705e5e1)",
+        # leading-backtick shape, straight off a MERGE line
+        "`unified-id` — identical session ID, continuous work": "unified-id",
+        # no backtick at all — fall back to the separator heuristic
+        "writer-corpus-unified — both are writer arcs sharing parents, with overlapping clusters":
+            "writer-corpus-unified",
+    }
+    for raw, expected in cases.items():
+        assert brain_apply.clean_merge_title(raw) == expected, raw
