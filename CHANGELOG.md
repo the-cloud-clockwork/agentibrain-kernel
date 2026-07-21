@@ -147,6 +147,20 @@ the update/redeploy procedure is documented for both.
   does not exist in this repo. It now names the actual mechanism: dispatch
   `.github/workflows/release.yml` with a `bump` input.
 
+### CI
+
+- **`deploy-assets` workflow added** — nothing in CI has ever looked at the Helm charts
+  or the Compose stack on any branch: `docker-build` is path-filtered to `services/**`
+  and `ci` only runs on `main`. That blind spot is why four charts could pin an
+  unpublishable tag indefinitely. The new job renders every chart, asserts that no
+  first-party image reference resolves to anything but `:dev` (checked both in values
+  and in the rendered manifests, since a values-level grep misses a tag baked into a
+  template), validates `docker compose config`, and syntax-checks the `tick-drain` and
+  `tick-cron` entrypoints under **dash** rather than bash — the container runs
+  `/bin/sh`, and bash hides POSIX violations. The tag assertion was verified to fail on
+  an injected `tag: latest` before being committed, so it is a real gate rather than a
+  green rubber stamp.
+
 ### Security
 
 - **Deployment-specific detail removed from the public repo** — a private LAN NFS
