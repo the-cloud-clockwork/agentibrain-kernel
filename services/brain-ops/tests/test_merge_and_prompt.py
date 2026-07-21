@@ -314,3 +314,43 @@ def test_backtick_marks_the_title_boundary_not_the_first_dash():
     }
     for raw, expected in cases.items():
         assert brain_apply.clean_merge_title(raw) == expected, raw
+
+
+def test_title_repair_handles_non_ascii_titles(tmp_path):
+    """A title keeping an em-dash must survive the rewrite.
+
+    json.dumps escapes non-ASCII to \\u2014 by default, and re.sub then reads
+    the backslash in its REPLACEMENT string as an escape sequence — raising
+    "bad escape \\u". The first live run died on exactly this, on a line the
+    dry run never executed.
+    """
+    r = _repair_mod()
+    d = tmp_path / "clusters" / "2026-07-21"
+    d.mkdir(parents=True)
+    arc = d / "a.md"
+    arc.write_text(
+        "---\ntitle: Session corpus — Apr 28 unified (a + b)` — b holds only 1 marker, already named\n"
+        "cluster_id: a\nheat: 3\n---\n\nbody\n",
+        encoding="utf-8",
+    )
+    stats = r.repair(tmp_path, dry_run=False)
+    assert stats["repaired"] == 1
+    text = arc.read_text(encoding="utf-8")
+    # The distinguishing half survives, the em-dash stays a real character.
+    assert '"Session corpus — Apr 28 unified (a + b)"' in text
+    assert "\\u2014" not in text
+    assert r.repair(tmp_path, dry_run=False)["repaired"] == 0
+
+
+def test_title_repair_dry_run_exercises_the_write_path(tmp_path):
+    """Dry run must build the replacement too, or it previews nothing."""
+    r = _repair_mod()
+    d = tmp_path / "clusters" / "2026-07-21"
+    d.mkdir(parents=True)
+    (d / "a.md").write_text(
+        "---\ntitle: Corpus — unified (x)` — both are the same thing, merged here\n"
+        "cluster_id: a\n---\n\nb\n",
+        encoding="utf-8",
+    )
+    # Would raise re.error if the replacement were only built when writing.
+    assert r.repair(tmp_path, dry_run=True)["repaired"] == 1
