@@ -89,10 +89,14 @@ def clean_merge_title(raw: str) -> str:
 
     The capture is anchored at end-of-line, so it swallows whatever the model
     wrote after the name. Left in, that prose is written verbatim into the
-    arc's ``title:`` frontmatter — where an em-dash clause containing a colon
-    makes the whole block unparseable YAML, and an arc whose frontmatter will
-    not parse is skipped entirely by the feed. So this is a retrieval bug, not
-    a cosmetic one.
+    arc's ``title:`` frontmatter and surfaces as the arc's display name in
+    ``/feed``, hot-arc tables, and every search result — a paragraph of merge
+    justification where a name belongs.
+
+    Scope note: this does NOT make the arc unreadable.
+    ``markers.parse_frontmatter`` is a line-splitter, not a YAML parser, so it
+    loads such a title verbatim and the arc stays fully visible. The damage is
+    legibility, not retrieval.
     """
     title = _MERGE_RATIONALE_RE.sub('', raw.strip())
     return title.strip().strip('`').strip()
@@ -569,10 +573,11 @@ def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
             merged = text_a.rstrip() + merge_note
 
             if merge.get("title"):
-                # Quote the value. Even a cleaned title can carry a colon or a
-                # leading character YAML treats specially, and a title that
-                # breaks frontmatter makes the arc invisible to the feed.
-                # json.dumps emits a double-quoted scalar YAML accepts as-is.
+                # Quote the value so a title carrying a colon, a bracket, or a
+                # leading indicator stays one intact scalar. The kernel's own
+                # reader tolerates these, but the vault is also opened in
+                # Obsidian and by other tooling that does use a real YAML
+                # parser. json.dumps emits a double-quoted scalar YAML accepts.
                 safe_title = json.dumps(merge["title"])
                 merged = re.sub(
                     r'^title:.*$', f'title: {safe_title}', merged, count=1, flags=re.MULTILINE
