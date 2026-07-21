@@ -9,9 +9,14 @@ deploy for laptops. This directory holds the compose entry point.
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
 ./local/bootstrap.sh              # writes .env + scaffolds ./vault
-docker compose up -d              # 7 containers come up
-docker compose ps                 # all healthy
+docker compose up -d              # 8 containers come up
+docker compose ps                 # see the health note below
 ```
+
+`postgres`, `redis`, `brain-api`, `embeddings`, and `mcp` report `(healthy)`.
+`tick-cron`, `tick-drain`, and `amygdala` show a bare `Up` — they are batch
+workers with no healthcheck, so the absence of `(healthy)` on those three is
+expected, not a fault. Judge them by their logs instead.
 
 On macOS, enable VirtioFS (Docker Desktop → Settings → General → "VirtioFS")
 for fast bind mounts. If you ever see root-owned files under `./vault` from a
@@ -35,6 +40,88 @@ docker compose down            # keep volumes (preserve vault, postgres, redis)
 docker compose down -v         # nuke volumes too (full reset)
 ```
 
+## Updating to a newer version
+
+Compose **builds from the source tree in this repo** — every service declares a
+`build:` context, so the running containers are whatever your working copy said
+at build time. Pulling new code does not change a running container, and
+`docker compose up -d` alone will not rebuild it: compose sees an image with the
+expected tag already present and reuses it.
+
+The update is therefore three steps, and the middle one is the one people skip:
+
+```bash
+git pull
+docker compose up -d --build      # rebuild changed services, recreate them
+docker compose ps                 # the five healthchecked services report (healthy)
+```
+
+`--build` is what makes the new code take effect. If you prefer the explicit
+form:
+
+```bash
+git pull
+docker compose build              # rebuild images from the new source
+docker compose down               # stop old containers (volumes survive)
+docker compose up -d              # start on the new images
+```
+
+Both are equivalent. `--build` is shorter and only recreates services whose
+image actually changed.
+
+### Which branch to pull
+
+| Branch | What it is | Use it when |
+|---|---|---|
+| `dev` | Working branch. Every push publishes `:dev` images. Newest fixes land here first. | You want current behaviour, and can tolerate the occasional rough edge. |
+| `main` | Snapshot branch. Updated only by a reviewed `dev` → `main` PR; nothing deploys from it. | You want a checkpoint that someone deliberately stamped as known-good. |
+
+```bash
+git checkout dev && git pull      # newest
+git checkout main && git pull     # last stamped snapshot
+```
+
+### Updating only one service
+
+Six services declare a build, but they share only **four** images —
+`tick-cron`, `tick-drain`, and `amygdala` are all the same `brain-ops` image
+with different entrypoints. Rebuilding all four takes a few minutes. If you
+know what changed:
+
+```bash
+docker compose up -d --build mcp          # e.g. only services/mcp/ changed
+docker compose up -d --build brain-api embeddings
+```
+
+Map of source directory → compose service:
+
+| You changed | Rebuild |
+|---|---|
+| `services/brain-api/` | `brain-api` |
+| `services/embeddings/` | `embeddings` |
+| `services/mcp/` | `mcp` |
+| `services/brain-ops/` | `tick-cron` `tick-drain` `amygdala` (all three share the image) |
+
+### Verify the update actually landed
+
+Rebuilding silently reusing a cached layer is the failure mode worth checking
+for. Confirm the container is younger than your `git pull`:
+
+```bash
+docker compose ps --format 'table {{.Service}}\t{{.Image}}\t{{.RunningFor}}'
+docker compose logs --since 2m brain-api | head
+```
+
+If a service still reports an old age, it was not recreated — re-run with
+`--force-recreate`.
+
+### What survives an update
+
+Named volumes and the vault bind-mount are untouched by `down` / `up --build`:
+your arcs, embeddings, and Redis state all persist. Only `docker compose down -v`
+destroys them. A schema change that needs a fresh database says so in
+[`CHANGELOG.md`](../CHANGELOG.md); there is no automatic migration step.
+
 ## Architecture (local mode)
 
 ```
@@ -56,14 +143,16 @@ docker compose down -v         # nuke volumes too (full reset)
      │     │         └──────────────┘ └──────────────┘
      │     │                ▲
      │  tick-cron ──────────┤  (every TICK_INTERVAL_SECONDS — default 2h)
+     │  tick-drain ─────────┤  (every TICK_DRAIN_INTERVAL_SECONDS — default 30s)
      │  amygdala  ──────────┤  (continuous, polls Redis stream)
      │                      │
      ▼                      │
   redis (DB 11) ────────────┘
 ```
 
-7 containers: 3 service-layer (brain-api, embeddings, mcp)
-+ 2 brain-ops workers (cron + amygdala) + postgres + redis.
+8 containers: 3 service-layer (brain-api, embeddings, mcp)
++ 3 brain-ops workers (tick-cron, tick-drain, amygdala) + postgres + redis.
+All three brain-ops workers run the same image with different entrypoints.
 
 ## Inference modes
 
@@ -123,8 +212,14 @@ Path can be absolute or relative.
 docker compose logs -f brain-api
 
 # Run an immediate tick (don't wait the 2 hours)
-docker compose exec tick-cron python3 /app/brain_tick.py \
-  --vault /vault --brain-feed /vault/brain-feed
+# Queues a request; tick-drain picks it up within TICK_DRAIN_INTERVAL_SECONDS
+# and ALSO refreshes the semantic index, so the content becomes searchable.
+TOK=$(grep ^KB_ROUTER_TOKEN .env | cut -d= -f2)
+curl -X POST -H "Authorization: Bearer $TOK" \
+  "http://localhost:8103/tick?no_ai=false&source=manual"
+
+# Watch it land
+docker compose logs -f tick-drain
 
 # Write a marker by hand
 TOK=$(grep ^KB_ROUTER_TOKEN .env | cut -d= -f2)
@@ -185,15 +280,19 @@ docker compose down -v
 
 ## Pre-built images
 
-The compose builds images locally (`:local` tag). To use the published GHCR
-images instead, edit `compose.yml`:
+The compose builds images locally (`:local` tag). To skip building and pull
+published images instead, replace each `build:` block in `compose.yml` with:
 
 ```yaml
-# Replace each `build:` block with:
-image: ghcr.io/the-cloud-clockwork/agentibrain-<service>:latest
+image: ghcr.io/the-cloud-clockwork/agentibrain-<service>:dev
 ```
 
-Available services: `brain-api`, `embeddings`, `brain-ops`, `mcp`. Tags `:latest` track main; `:dev` tracks dev branch.
+Available services: `brain-api`, `embeddings`, `brain-ops`, `mcp`.
+
+**`:dev` is the only published tag.** CI builds on every push to `dev`; nothing
+publishes `:latest` or a `main`-tracking tag, so a config naming one will fail
+to pull. Updating a pulled deployment is `docker compose pull && docker compose
+up -d` — no `--build`, because there is nothing local to build.
 
 ## What's NOT in local mode
 

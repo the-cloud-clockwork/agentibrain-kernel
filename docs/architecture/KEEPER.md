@@ -46,7 +46,7 @@ brain-keeper is reachable three ways, all through the same agenticore HTTP serve
 
 ### 1. LiteLLM model (`model: brain-keeper`)
 
-Registered in LiteLLM prod (unit `brain-keeper`, model_id `82bdc994-ee97-444c-bc2f-29b5cf57f6cb`) via `add_agent_as_model` with `force=true`. Any consumer of the LiteLLM gateway can invoke it:
+Registered in LiteLLM prod (unit `brain-keeper`, model_id `<model-id>`) via `add_agent_as_model` with `force=true`. Any consumer of the LiteLLM gateway can invoke it:
 
 ```bash
 curl -X POST "$LLM_API_BASE/v1/chat/completions" \
@@ -86,7 +86,7 @@ brain-report-YYYY-MM-DD-HHMM.{md,csv}
 
 UTC timestamp with minute granularity. Chronologically sortable in Drive, human-scannable, no opaque hashes. Runs within the same minute overwrite (acceptable — one per minute is fine).
 
-Example: `brain-report-2026-04-13-2320.md` / `brain-report-2026-04-13-2320.csv`.
+Example: `brain-report-<timestamp>.md` / `brain-report-<timestamp>.csv`.
 
 The internal 8-char hex run_id is still embedded in the report content and marker emissions for ClickHouse tracing — it just doesn't go in the filename.
 
@@ -157,7 +157,7 @@ A curated **`brain-keeper-tools-prod`** LiteLLM unit exists with 93 tools (adds 
 
 ## Validated end-to-end (2026-04-13)
 
-Run `brain-report-2026-04-13-2320`:
+Run `brain-report-<timestamp>`:
 
 1. Operator dispatched via AgentiBridge `run_agent(brain-keeper-0, "full brain test", wait=False)` from an external session
 2. brain-keeper picked up the job, executed 3 curls against ClickHouse (`${CLICKHOUSE_URL}` with basic auth)
@@ -192,7 +192,7 @@ Findings from the run: brain self-diagnosed **DEGRADED** status — throttle sup
 1. **Sonnet, not Opus** — agent.yml says `model: opus` but `values.yaml` env `AGENT_MODE_MODEL=sonnet` at line 64 overrides. Needs value change + pod restart.
 2. **Reports only in `/tmp`** — pod restart wipes them. Fix: upload to artifact-store is already the persistence path, but brain-keeper should also write to `/shared/brain-reports/` as an on-pod archive.
 3. **Storage MCP fix not in image** — `hooks/mcp/storage.py` `storage_url` field fix shipped to agentihooks git but agenticore image still has the broken copy baked in. Live-patched, image rebuild pending (`gh run list` shows dev build queued).
-4. **AgentiBridge wait timeout fix not in image** — live-patched on both prod + dev agentibridge pods, PR #36 merged to dev, image rebuild pending dev→main promotion.
+4. **A session-index wait-timeout fix was not yet in the published image** — the fix landed in code; the image rebuild was pending.
 5. **Vault access via brain-api or NFS** — brain-keeper accesses the vault through the NFS mount or the brain-api API (`/vault/search`, `/feed`, etc.). obsidian-reader has been removed; all vault read/write is owned by brain-api.
 6. **Custom `brain-keeper-tools` unit not consumed** — 93-tool curated unit exists in LiteLLM (grafana + agentibridge + artifact_store + ...) but needs an entry in `agentihooks-bundle/.claude/.mcp.json` + a key env var injection to be usable. Would unlock native Grafana queries instead of raw curl.
 

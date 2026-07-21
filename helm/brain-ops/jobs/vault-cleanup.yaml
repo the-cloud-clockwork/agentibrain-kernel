@@ -8,15 +8,18 @@
 # remove the `--dry-run` arg (the script tars a backup to /vault/_backups first,
 # then collapses chains + dedupes edges).
 #
-#   kubectl -n anton-ops delete job brain-vault-cleanup --ignore-not-found
-#   kubectl -n anton-ops apply -f helm/brain-ops/jobs/vault-cleanup.yaml
-#   kubectl -n anton-ops logs job/brain-vault-cleanup -f
+# Replace <your-ops-namespace> and the volume definition at the bottom with
+# whatever backs your vault, then:
+#
+#   kubectl -n <your-ops-namespace> delete job brain-vault-cleanup --ignore-not-found
+#   kubectl -n <your-ops-namespace> apply -f helm/brain-ops/jobs/vault-cleanup.yaml
+#   kubectl -n <your-ops-namespace> logs job/brain-vault-cleanup -f
 #
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: brain-vault-cleanup
-  namespace: anton-ops
+  namespace: <your-ops-namespace>
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 3600
@@ -40,9 +43,15 @@ spec:
             - name: nfs-vault
               mountPath: /vault
       volumes:
+        # Mount your vault however the rest of your brain-ops workloads do —
+        # this must resolve to the SAME storage the tick writes to. Swap in a
+        # PVC if that is your pattern:
+        #   - name: nfs-vault
+        #     persistentVolumeClaim:
+        #       claimName: <your-vault-pvc>
         - name: nfs-vault
           nfs:
-            server: 10.10.30.130
-            path: /mnt/user/appdata/obsidian/vault
+            server: <your-nfs-server>
+            path: <your-vault-export-path>
       imagePullSecrets:
         - name: ghcr-pull-secret

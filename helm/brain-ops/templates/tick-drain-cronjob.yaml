@@ -38,7 +38,7 @@ spec:
                   REQ=/vault/brain-feed/ticks/requested
                   DONE=/vault/brain-feed/ticks/completed
                   FAIL=/vault/brain-feed/ticks/failed
-                  mkdir -p "$DONE" "$FAIL"
+                  mkdir -p "$REQ" "$DONE" "$FAIL"
                   # Force NFS attribute cache refresh — freshly mounted NFS caches stale dir listings
                   sleep 5
                   ls "$REQ"/ > /dev/null 2>&1 || true
@@ -64,7 +64,7 @@ spec:
                     esac
                   done
 
-                  ok=0; ko=0; ticks=0
+                  ok=0; ko=0; ticks=0; stuck=0
                   run_kind() {
                     kind_flags="$1"; kind_files="$2"
                     if [ -z "$kind_files" ]; then return 0; fi
@@ -80,7 +80,21 @@ spec:
                     else
                       dest="$FAIL"; ko=$((ko+n))
                     fi
-                    for f in $kind_files; do mv "$f" "$dest/$(basename "$f")"; done
+                    # A failed mv must NOT abort the batch. By this point the
+                    # tick has already run and mutated the vault, and other
+                    # buckets are still queued; dying here under `set -e` would
+                    # discard completed work, skip every remaining bucket, and
+                    # emit no summary. Warn, count, keep going — the file stays
+                    # in requested/ and is retried on the next pass.
+                    for f in $kind_files; do
+                      if ! mv "$f" "$dest/$(basename "$f")"; then
+                        stuck=$((stuck+1))
+                        echo "WARN: could not move $(basename "$f") to $dest — retrying next pass"
+                      fi
+                    done
+                    # Never let the loop's last exit status become the
+                    # function's, or `set -e` kills the script at the call site.
+                    return 0
                   }
 
                   run_kind "" "$b00"
@@ -88,7 +102,7 @@ spec:
                   run_kind "--dry-run" "$b10"
                   run_kind "--dry-run --no-ai" "$b11"
 
-                  echo "drain-summary: total=$total ticks=$ticks ok=$ok failed=$ko"
+                  echo "drain-summary: total=$total ticks=$ticks ok=$ok failed=$ko stuck=$stuck"
                   # Refresh the pgvector index for whatever the tick(s) just
                   # rewrote. Without this an on-demand tick updates the vault
                   # but leaves kb_search / brain_search_arcs blind to the new

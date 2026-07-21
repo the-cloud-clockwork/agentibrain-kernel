@@ -39,7 +39,7 @@ def register(mcp: FastMCP):
     async def brain_tick(
         no_ai: bool = False,
         wait: bool = True,
-        timeout: int = 180,
+        timeout: int = 45,
         source: str = "mcp-agent",
     ) -> str:
         """Force a brain tick now so new content becomes retrievable.
@@ -60,8 +60,13 @@ def register(mcp: FastMCP):
                 brand-new content also gets a real summary.
             wait: Poll until the tick reaches completed/failed. Default True.
                 False returns the job_id immediately (fire-and-forget).
-            timeout: Max seconds to wait when wait=True. On timeout, returns the
-                job_id with status="pending" so you can proceed or poll later.
+            timeout: Max seconds to wait when wait=True. Default 45, deliberately
+                under the 60s ceiling most MCP clients put on a single tool call —
+                a longer wait gets the CALL killed client-side even though the tick
+                keeps running server-side, which reads as a failure when it isn't.
+                On timeout this returns the job_id with status="pending"; the tick
+                still completes, so just re-query or poll GET /tick/{job_id}.
+                Raise it only if you know your client's cap is higher.
             source: Label recorded on the request for audit.
         """
         if not BRAIN_API_URL:

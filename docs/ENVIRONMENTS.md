@@ -6,7 +6,7 @@ nav_order: 3
 
 # Environments
 
-The kernel supports single-namespace and multi-namespace deployments. On the Anton platform, a single namespace (`anton-prod`) is used: `dev` is the working and deploy branch, `main` is vestigial, and ArgoCD tracks `dev` directly. If you are running a multi-env setup the patterns below still apply — substitute your own namespaces. None of these names are baked into the kernel charts.
+The kernel supports single-namespace and multi-namespace deployments. The simplest shape is a single namespace: `dev` is the working and deploy branch, `main` is the snapshot branch that deploys nothing, and your GitOps controller tracks `dev` directly. If you are running a multi-env setup the patterns below still apply — substitute your own namespaces. None of these names are baked into the kernel charts.
 
 The reference multi-env setup deploys the kernel twice: `<your-dev-ns>` and `<your-prod-ns>`. This doc lays out what differs and how the values overlay achieves it.
 
@@ -89,7 +89,7 @@ The kernel does not require namespace separation; the reference setup splits the
 
 ## Local laptop install
 
-Use `./local/bootstrap.sh && docker compose up -d` from the repo root (see [`../local/README.md`](../local/README.md)). The compose stack ships its own Postgres, Redis, MinIO. No K8s, no namespaces. The kernel runs in a single-environment mode.
+Use `./local/bootstrap.sh && docker compose up -d` from the repo root (see [`../local/README.md`](../local/README.md)). The compose stack ships its own Postgres and Redis. No K8s, no namespaces. The kernel runs in a single-environment mode.
 
 ## Multi-tenant brain
 

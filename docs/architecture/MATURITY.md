@@ -50,8 +50,8 @@ That closed loop — dispatch → audit → artifact → operator read → apply
 
 ### Validated runs on 2026-04-13
 
-- `brain-report-2026-04-13-2207` — first run, 4268 bytes markdown, 12 PASS / 1 WARN / 2 FAIL, uploaded S3
-- `brain-report-2026-04-13-2320` — second run, 5069 bytes md + 2835 bytes csv, new naming convention, both formats uploaded to `miscellaneous/brain-keeper/`, drive-sync confirmed within ~60s
+- `brain-report-<timestamp>` — first run, 4268 bytes markdown, 12 PASS / 1 WARN / 2 FAIL, uploaded S3
+- `brain-report-<timestamp>` — second run, 5069 bytes md + 2835 bytes csv, new naming convention, both formats uploaded to `miscellaneous/brain-keeper/`, drive-sync confirmed within ~60s
 
 ### Known self-diagnosed issues (fragility)
 
@@ -83,7 +83,7 @@ Brain-keeper audits its own environment and reports issues. **Single source of t
 - **Vault backup** — operator decides destination (restic to second disk? rclone to S3? Drive as tertiary?)
 - Chaos testing: NFS outage, Redis outage, concurrent write race conditions
 - Arc count scaling beyond 200 arcs (measure quick-refresh + full tick latency)
-- Ship `atomic-drifting-catmull.md` profile activation broadcast plan
+- Ship the profile-activation broadcast plan
 
 ---
 

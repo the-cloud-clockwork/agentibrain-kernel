@@ -93,6 +93,6 @@ Full grammar: `architecture/MARKERS.md`.
 
 ## Environment
 
-**dev** — the active development branch; CI publishes `:latest` images on every push.
+**dev** — the active development branch; CI publishes `:dev` images on every push.
 
-**prod** — your prod namespace; consumes the `:latest` image tag.
+**prod** — your prod namespace; consumes the `:dev` image tag.

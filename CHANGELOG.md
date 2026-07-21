@@ -2,7 +2,245 @@
 
 All notable changes to **agentibrain-kernel**. Follows [Keep a Changelog](https://keepachangelog.com) + [Semantic Versioning](https://semver.org). Pre-1.0: minor bumps may carry breaking changes; patch bumps are non-breaking.
 
-Tags are issued by the release workflow, not locally. See `docs/RELEASING.md` for the dispatch flow.
+Tags are issued by the release workflow, not locally. Cut one by dispatching `.github/workflows/release.yml` with a `bump` of `patch`/`minor`/`major`.
+
+---
+
+## [0.7.0] — 2026-07-21
+
+**Brain injection quality + on-demand ticks**: the brain now injects real
+synthesized arc summaries backed by a working semantic index instead of
+empty-stub scaffolding, and agents can force a tick on demand (`brain_tick` MCP
+tool) so freshly-ingested content is retrievable immediately instead of waiting
+for the 2h cron. Restores the injected context from near-useless (identical-stub
+hot arcs, an index where every arc was equidistant) to a real, queryable memory.
+The Compose deployment reaches parity with the Helm one on the same path, and
+the update/redeploy procedure is documented for both.
+
+### Features
+
+- **Arc synthesis stage built** (`brain_tick_prompt.py` + `brain_apply.py`) — the
+  summary pass was scaffolded but never implemented, so every arc carried an
+  empty `synthesized: false` skeleton. The tick now generates a real one-sentence
+  summary per arc, written to frontmatter and led into the injected hot-arcs
+  table. Drain rate configurable via `BRAIN_MAX_SYNTH_ARCS`; backtick-wrapped
+  `SUMMARY:` lines (the model copying the prompt's own format) are parsed, and the
+  summary count is reported in the tick log.
+- **`brain_tick` MCP tool** (`services/mcp/app/tools/tick.py`) — force a tick on
+  demand: enqueues via `POST /tick` and blocks until it lands, so content written
+  via `brain_ingest` or as `@lesson`/`@milestone`/`@signal`/`@decision` markers is
+  retrievable through `kb_search` / `brain_search_arcs` immediately. `no_ai`
+  exposes the sub-5s deterministic path.
+- **On-demand tick made retrievable** — the tick-drain CronJob now runs
+  `embed_arcs.py` after draining (it previously ran only `brain_tick.py`),
+  refreshing the pgvector index so on-demand ticks surface new content. The drain
+  also renders the full env map, so a drain-triggered tick uses the same tuning
+  (decay/promote thresholds, `EMBEDDINGS_URL`) as the scheduled cron. Cadence
+  dropped to every 1 minute.
+- **Drain-time request coalescing** — redundant same-kind `POST /tick` requests
+  are coalesced by the single serialized drain (one `brain_tick` per
+  `(dry_run,no_ai)` kind) rather than at enqueue, which raced under concurrent
+  callers and could wedge on an orphaned request file.
+- **Env-configurable transcript extraction** (`EXTRACT_*`) and a `--source` label
+  on the tick's event-bus announcement (`brain-drain` for on-demand) so on-demand
+  ticks are distinguishable from the scheduled cron in the amygdala stream.
+
+### Bug Fixes
+
+- **Semantic index was noise** (`embed_arcs.py`) — `build_embed_text` never read
+  `summary` and embedded the identical empty stub scaffolding present in every
+  arc, so all arcs were roughly equidistant from every query (a uniform prior, not
+  an index). `Summary:` now leads the embed blob, stub scaffolding is stripped, and
+  `summary` is carried in embedding metadata. Requires a one-off
+  `embed_arcs.py --force-all` to rebuild the index.
+- **Summary truncation** mid-word, **unsummarized writer arcs** never offered for
+  synthesis, and **duplicate inline markers** folded into arcs (36% of the vault) —
+  all corrected.
+- **`brain_tick` poll hang** — a `GET /tick/{job_id}` returning `unknown` (stale or
+  consumed id) no longer polls the full timeout and falsely reports "queued"; it is
+  terminal after a short grace. A `job_id`-less enqueue response is an explicit
+  error rather than a silent skip of `wait`.
+- **Atomic embed state write** — `embed_arcs` writes its mtime-state file via a temp
+  file + `os.replace`, so the 1-min drain embed and the 2h cron embed colliding at
+  HH:07 cannot corrupt it.
+- **Invalid escape sequences** fixed, with a cache- and Python-version-independent
+  CI guard (`check_escapes.py`) so they surface in CI instead of only warning on a
+  fresh pod start.
+- **Fresh arcs were hidden behind stale indexed heat** (`brain_search_arcs`) — the
+  `min_heat` default of 2 filtered against the heat *snapshot taken when the arc was
+  last embedded*, while heat is recomputed every tick. A just-ticked arc still reads
+  0 there, as does a promoted arc sitting in `frontal-lobe/conscious`, so the default
+  discarded exactly the newest content the caller was looking for. Default is now 0
+  (rank by similarity); the parameter is documented as the stale-heat cut it is.
+- **Un-summarized arcs were unfindable by their own content** (`embed_arcs.py`) —
+  with no `summary` and no recognized sections, `build_embed_text` emitted only
+  title and region, so an arc's body never reached the index. A body excerpt is now
+  embedded as a `Content:` block in that case, making content-bearing arcs
+  retrievable before the AI synthesis pass ever runs.
+- **Compose `tick-drain` diverged from the Helm one** (`compose.yml`) — the Compose
+  drain never ran `embed_arcs.py`, so on the Compose path a forced tick rewrote the
+  vault while pgvector stayed stale and `brain_tick` reported success on content
+  that stayed unsearchable. It also ran one tick per queued request instead of
+  coalescing by kind, and omitted the `BRAIN_DECAY_*` / `BRAIN_STALE_SIGNAL_DAYS`
+  tuning that `tick-cron` carries, so drain ticks and scheduled ticks could
+  promote/demote the same arc differently. All three corrected.
+- **A single failed `mv` aborted the whole drain** (both `compose.yml` and
+  `helm/brain-ops/templates/tick-drain-cronjob.yaml`) — `run_kind`'s last statement was
+  the file-move loop, so a `for` loop's exit status became the function's, and under
+  `set -eu` a bare call site killed the script outright. By that point `brain_tick.py`
+  had already run and mutated the vault, so a permission error, stale NFS handle, or
+  ENOSPC discarded completed work, skipped every remaining bucket, and emitted no
+  `drain-summary` at all — the failure was invisible. On Compose, `restart:
+  unless-stopped` then respawned the container into a tight loop re-running the tick.
+  Failed moves are now warned, counted in a new `stuck=` summary field, and retried on
+  the next pass; `run_kind` returns 0 explicitly so the call site can never inherit a
+  move's status. Reproduced against the real extracted script under `dash` before and
+  after the fix.
+- **Helm and Compose disagreed on signal ageing** — `helm/brain-ops/values.yaml` shipped
+  `BRAIN_STALE_SIGNAL_DAYS: "1"` while Compose and the code default in
+  `brain_keeper.py` both use `3`, so stock Helm aged signals out three times faster
+  than stock Compose for no stated reason. Helm now matches the code default. **This
+  changes behaviour for anyone running stock chart values**; pin it back in your
+  overlay if you relied on 1-day ageing.
+- **Four of five charts pinned a tag that does not exist** — `brain-api`, `brain-ops`,
+  `embeddings`, and `mcp` all defaulted to `image.tag: latest`, which CI has never
+  published, so a stock `helm install` produced `ImagePullBackOff` on every one of
+  them. All now default to `:dev`, verified by rendering each chart. This is the
+  functional counterpart to the `:latest` documentation error below — the docs
+  described a tag that did not exist and the charts tried to pull it.
+
+### Documentation
+
+- **Compose update/redeploy procedure documented** (`local/README.md`, `README.md`).
+  Compose builds from the source tree, so `docker compose up -d` after a `git pull`
+  silently keeps running the old image — `--build` is the step that makes a change
+  take effect, and that was written down nowhere. Adds branch guidance (`dev` =
+  newest, `main` = stamped snapshot), a source-directory → service rebuild map, how
+  to verify the new code is actually live, and what survives an update.
+- **`CLAUDE.md` gained a "Redeploying after a code change" section** so an agent
+  working in a fresh clone detects which path the checkout is running (Compose vs
+  Kubernetes) and follows the correct one, rather than defaulting to editing a live
+  container.
+- **`:latest` corrected** — `local/README.md` told readers to pull
+  `agentibrain-<service>:latest`, which CI has never published; only `:dev` exists,
+  so that instruction produced a pull failure. `main` is also described accurately
+  as the snapshot branch (it publishes no image and deploys nothing) in place of the
+  stale "vestigial" wording in `README.md`, `CLAUDE.md`, `docs/DEPLOYMENT.md`, and
+  `docs/ENVIRONMENTS.md`.
+- **Compose topology corrected** — the local guide described 7 containers and omitted
+  `tick-drain` from its diagram; the stack is 8, and the on-demand tick path is now
+  documented via `POST /tick` (which also refreshes the index) rather than a
+  `docker compose exec` into `tick-cron` (which does not).
+- **`:latest` purged repo-wide** — the tag was referenced as a real, pullable image in
+  `docs/GLOSSARY.md`, `docs/MCP.md`, `docs/TROUBLESHOOTING.md`, `docs/architecture/
+  ARCHITECTURE.md`, `docs/architecture/CLUSTERS.md`, `helm/README.md`, `index.md`, and
+  `README.md`. CI has only ever published `:dev`, so every one of those instructions
+  fails. `docs/TROUBLESHOOTING.md` was the sharpest case: its remedy told the reader to
+  "force docker-build to rebuild `:latest`", a build that structurally cannot happen.
+- **MCP tool count corrected** — `README.md` advertised 5 tools and `docs/MCP.md` 4;
+  `services/mcp/app/server.py` registers 6. `brain_tick` was missing from the tool table
+  a reader checks `/mcp` against.
+- **Image count corrected** — six Compose services declare a build but share only four
+  images (`tick-cron`, `tick-drain`, and `amygdala` are one `brain-ops` image with
+  different entrypoints), so "rebuilding all six images" overstated the work by 50%.
+- **Healthcheck expectation corrected** — the docs told the reader to run
+  `docker compose ps` and expect "all healthy", which three of eight services can never
+  report: `services/brain-ops/Dockerfile` declares no `HEALTHCHECK`, so `tick-cron`,
+  `tick-drain`, and `amygdala` show a bare `Up` by design. The docs now say so, rather
+  than priming a first-run user to read correct behaviour as a fault.
+- **Non-existent MinIO removed** — `docs/ENVIRONMENTS.md` claimed the root Compose stack
+  ships an object store; it ships Postgres and Redis. (MinIO exists only in the `brain`
+  CLI's rendered template, a different path.) The stale `services/tick-engine/` build
+  path in `docs/architecture/ARCHITECTURE.md` was also corrected to `services/brain-ops/`.
+- **`docs/operations/BRAIN-INJECTION-REPAIR.md` added** — the work order and outcome for
+  this release's headline repair (arc synthesis + the embedding index), previously
+  shipped without a changelog entry.
+- **Broken self-reference fixed** — `CHANGELOG.md` pointed at `docs/RELEASING.md`, which
+  does not exist in this repo. It now names the actual mechanism: dispatch
+  `.github/workflows/release.yml` with a `bump` input.
+
+### Brain profile
+
+- **Rewritten to say what the brain is, not how it is built** — the profile spent
+  most of its budget teaching agents the brain's mechanics: service topology, vault
+  schema, the five tick phases and their cadence, which hook fires on which event.
+  None of it changes how an agent uses the brain, and all of it loaded on every
+  session of every chained profile. `CLAUDE.md` now carries what an agent needs —
+  what the brain is, that context arrives already injected, what an arc and heat
+  are, the six tools with when to reach for each, the regions, marker syntax and
+  severities, channels, and the few real constraints.
+- **`rules/04-vault-layout.md` and `rules/05-tick-cadence.md` removed** — tick
+  internals and a vault schema agents cannot write to and never reason about. The
+  three remaining rules keep only what `CLAUDE.md` does not: when to search and when
+  not to, the editorial bar per marker type, and broadcast etiquette.
+- **`brain_tick` added to the profile's tool inventory** — it shipped in this release
+  but appeared nowhere in the profile, so an agent reading it had no idea it could
+  force its own writes to become searchable. A feature that exists and is
+  undiscoverable is not shipped.
+- Net effect: **31.5 KB → 6.7 KB**, a 79% cut, roughly 6,200 tokens returned to every
+  session that chains this profile.
+
+### CI
+
+- **`deploy-assets` workflow added** — nothing in CI has ever looked at the Helm charts
+  or the Compose stack on any branch: `docker-build` is path-filtered to `services/**`
+  and `ci` only runs on `main`. That blind spot is why four charts could pin an
+  unpublishable tag indefinitely. The new job renders every chart, asserts that no
+  first-party image reference resolves to anything but `:dev` (checked both in values
+  and in the rendered manifests, since a values-level grep misses a tag baked into a
+  template), validates `docker compose config`, and syntax-checks the `tick-drain` and
+  `tick-cron` entrypoints under **dash** rather than bash — the container runs
+  `/bin/sh`, and bash hides POSIX violations. The tag assertion was verified to fail on
+  an injected `tag: latest` before being committed, so it is a real gate rather than a
+  green rubber stamp.
+
+### Security
+
+- **Deployment-specific detail removed from the public repo** — a private LAN NFS
+  server address and namespace were hardcoded in
+  `helm/brain-ops/jobs/vault-cleanup.yaml`; these are now `<your-*>` placeholders
+  with a PVC alternative shown. Operator-specific platform names were also removed
+  from `docs/ENVIRONMENTS.md`, `helm/brain-ops/values.yaml`, an operations write-up
+  that quoted real vault arc content, and sample cluster IDs in source comments and
+  tests. No credential values were present at any point.
+- **Real private session data removed from the architecture docs** — the "Cluster
+  Primitive — Schema" example in `docs/architecture/CLUSTERS.md` was not synthetic: it
+  carried two real session UUIDs with their turn counts, nine real PR numbers from a
+  private repo, a real secret-store variable rename, and a private service scheme.
+  `docs/architecture/KEEPER.md` carried a real internal gateway `model_id` UUID, a real
+  cross-repo PR reference, and real dated run identifiers; `docs/architecture/
+  MATURITY.md` carried the same run identifiers plus an internal planning codename.
+  All replaced with synthetic values that preserve the schema shape and the reusable
+  lessons.
+- **The de-branding changelog entry was itself the leak** — the historical 0.6.x entries
+  named the exact strings the scrub had removed, republishing the operator's account
+  name, private domain, and deployment names in a public repo. Those entries now
+  describe the change without naming what was scrubbed.
+- **`docs/operations/BRAIN-INJECTION-REPAIR.md` generalized** — a real incident
+  postmortem quoting live transcript content. The credential-echo lesson that motivated
+  `redact.py` is kept; the estate-identifying specifics are gone. No credential value
+  was ever committed — only a path to a file on private storage.
+- **Dead `operator/` links removed from `README.md`** — the directory is gitignored, so
+  five links 404'd for every reader while confirming the structure of a private planning
+  directory. Points at the published `docs/architecture/MATURITY.md` instead.
+
+- **Credential redaction at every persist and inject boundary** (`redact.py`) — the
+  tick echoed its own prompt input, amplifying a leaked token across dozens of vault
+  files. Every persist point (AI-output audit, intent, summaries) and inject
+  boundary now scrubs credentials (superset secret regex plus `NAME=value`
+  assignments).
+
+### Known follow-ups (not in this release)
+
+- Concurrent `brain_tick` (scheduled cron + a non-empty drain at HH:07) can still
+  race on vault file writes — pre-existing; the safe fix is atomic writes in
+  `brain_keeper`'s output layer, not an NFS lock (unreliable across pods, and a
+  blocking lock risks a stale-lock hang that would fail the drain).
+- The `brain_tick` MCP tool is callable only after the MCP gateway re-lists tools
+  (operator-managed propagation).
+- ClickHouse `tick_health.tick_type` still records `'full'` for on-demand ticks; the
+  event-bus `source` field distinguishes them, but the ClickHouse column would need
+  a schema migration.
 
 ---
 
@@ -143,8 +381,8 @@ hot arcs, an index where every arc was equidistant) to a real, queryable memory.
 ### Breaking Changes
 
 - **`obsidian-reader` service retired.** Image `ghcr.io/the-cloud-clockwork/agentibrain-obsidian-reader:*` is no longer published. Downstream consumers must remove references to it.
-- **`kb-router` renamed to `brain-api`** — image `ghcr.io/the-cloud-clockwork/agentibrain-brain-api:latest`. The `agentibrain-kb-router` image is no longer published.
-- **`brain-cron` and `tick-engine` consolidated into `brain-ops`** — image `ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:latest`.
+- **`kb-router` renamed to `brain-api`** — image `ghcr.io/the-cloud-clockwork/agentibrain-brain-api:dev`. The `agentibrain-kb-router` image is no longer published.
+- **`brain-cron` and `tick-engine` consolidated into `brain-ops`** — image `ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev`.
 - **HTTP `/ingest` no longer requires the `artifact-store` external dependency** — body writes go straight to the vault filesystem via `vault_reader.write`.
 
 ### Features
@@ -186,7 +424,7 @@ Downstream Helm charts (your platform repo) must:
 
 ## [0.4.0] — 2026-05-04
 
-**Documentation, observability, and naming consistency**: complete `anton/antoncore/friends/iamroot/homeofanton` scrub across user-facing docs + source, GitHub org rename (`the-cloud-clock-work` → `the-cloud-clockwork`), ecosystem prefix change (`tccw-` → `tcc-`), and self-contained Grafana enablement.
+**Documentation, observability, and naming consistency**: complete scrub of operator-specific names across user-facing docs + source, GitHub org rename (`the-cloud-clock-work` → `the-cloud-clockwork`), ecosystem prefix change (`tccw-` → `tcc-`), and self-contained Grafana enablement.
 
 ### Breaking Changes
 
@@ -211,7 +449,7 @@ Downstream Helm charts (your platform repo) must:
 
 ### Docs scrub
 
-- All references to `anton`, `antoncore`, `friends`, `iamroot`, `homeofanton` removed from user-facing docs + Python sources + tests + CLAUDE.md.
+- All operator-specific deployment, host, and account names removed from user-facing docs + Python sources + tests + CLAUDE.md.
 - Vault layout templates reframed from "operator" voice to "user/your" voice.
 - README rewrite: six charts story, image publish flow, Claude Code wiring three-step.
 
@@ -267,7 +505,7 @@ Downstream Helm charts (your platform repo) must:
 
 **Phase 8 Block 1+2 — kernel owns all 5 brain charts.**
 
-Migration of `kb-router`, `obsidian-reader`, `embeddings` charts from `antoncore` into this kernel. `brain-keeper` and `brain-cron` bumped to `0.1.1` with amygdala template using `{{ .Chart.Name }}-amygdala`. All 5 render cleanly via `helm template`. 4 of 5 wrap `tccw-k8s-service-template v0.3.4` from `oci://ghcr.io/the-cloud-clock-work`. `brain-cron` keeps custom templates.
+Migration of the `kb-router`, `obsidian-reader`, and `embeddings` charts from the downstream platform repo into this kernel. `brain-keeper` and `brain-cron` bumped to `0.1.1` with amygdala template using `{{ .Chart.Name }}-amygdala`. All 5 render cleanly via `helm template`. 4 of 5 wrap `tccw-k8s-service-template v0.3.4` from `oci://ghcr.io/the-cloud-clock-work`. `brain-cron` keeps custom templates.
 
 See [release notes for v0.1.1](https://github.com/the-cloud-clockwork/agentibrain-kernel/releases/tag/v0.1.1) for full chart inventory + ArgoCD multi-source consumption pattern.
 

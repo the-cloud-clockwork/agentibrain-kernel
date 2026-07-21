@@ -23,9 +23,9 @@ Tool source: `services/mcp/app/tools/{arcs.py,kb.py}`.
 
 ## Image
 
-`ghcr.io/the-cloud-clockwork/agentibrain-mcp:latest`
+`ghcr.io/the-cloud-clockwork/agentibrain-mcp:dev`
 
-Built from `services/mcp/Dockerfile` by the kernel `docker-build` workflow on every push to `dev` (→`:latest`).
+Built from `services/mcp/Dockerfile` by the kernel `docker-build` workflow on every push to `dev` (→ `:dev`).
 
 ## Runtime
 
@@ -124,7 +124,7 @@ Restart Claude Code, then verify the tools are wired:
 
 ```
 /mcp                                # lists registered MCP servers
-                                    # expect "agentibrain" with 4 tools
+                                    # expect "agentibrain" with 6 tools
 ```
 
 The 4 tools (`brain_search_arcs`, `brain_get_arc`, `kb_search`, `kb_brief`)

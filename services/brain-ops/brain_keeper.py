@@ -71,7 +71,7 @@ def resolve_created(doc: markers.DocumentMeta) -> tuple[datetime | None, bool]:
     moves files already inside conscious/), so the vault could only grow.
 
     Fall back to the date prefix every cluster_id/filename carries
-    (`2026-07-10-qitp-…`), then to file mtime. `derived` is True when the
+    (`2026-07-10-vector-index-…`), then to file mtime. `derived` is True when the
     date did not come from frontmatter, so the caller can backfill it.
     """
     fm = doc.frontmatter

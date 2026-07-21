@@ -84,7 +84,7 @@ tpl:
     environment: prod
   app:
     image:
-      tag: latest
+      tag: dev
   externalSecret:                        # nosecret
     awsSecretPath: <your-prefix>/embeddings  # nosecret  (path in your secret store)
   service:
@@ -124,7 +124,7 @@ Each kernel service has its own image, tagged per branch:
 | mcp | `ghcr.io/the-cloud-clockwork/agentibrain-mcp:dev` |
 | brain-keeper | `ghcr.io/the-cloud-clockwork/agenticore:dev` (uses agenticore base; brain-keeper is an agenticore agent, not its own image) |
 
-Branch → tag: push to `dev` → `:dev`. ArgoCD tracks `dev`; image-updater watches the `:dev` digest. `main` is vestigial.
+Branch → tag: push to `dev` → `:dev`. ArgoCD tracks `dev`; image-updater watches the `:dev` digest. `main` is the snapshot branch — it publishes no image and nothing deploys from it.
 
 ## Smoke tests post-deploy
 

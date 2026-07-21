@@ -189,26 +189,83 @@ services:
         DONE=/vault/brain-feed/ticks/completed
         FAIL=/vault/brain-feed/ticks/failed
         mkdir -p "$$REQ" "$$DONE" "$$FAIL"
+        # Deliberate divergences from the Kubernetes tick-drain CronJob, which
+        # runs this same body. Everything else is intentionally identical:
+        #   * This is a long-lived daemon polling every TICK_DRAIN_INTERVAL_SECONDS;
+        #     the CronJob runs the body once per schedule fire.
+        #   * The CronJob does `sleep 5; ls "$$REQ"` first to defeat a stale NFS
+        #     attribute cache on a freshly-mounted pod. Not needed here — this
+        #     process mounts once and re-lists on every pass.
+        #   * Log lines are prefixed "[tick-drain]" here, bare "drain:" there.
         echo "[tick-drain] starting; interval=$${INTERVAL}s"
         while true; do
+          # Bucket pending requests by (dry_run, no_ai). Requests of the same
+          # kind are interchangeable, so N of them collapse into ONE tick —
+          # an agent calling brain_tick repeatedly must not queue N full ticks.
+          # Coalescing lives here, not at enqueue time: this loop is the only
+          # serialized consumer, so it can scan-then-decide without racing.
+          b00=""; b01=""; b10=""; b11=""; total=0
           for f in "$$REQ"/*.json; do
             [ -e "$$f" ] || break
-            name=$$(basename "$$f")
             dry=$$(python3 -c "import json;print('1' if json.load(open('$$f')).get('dry_run') else '0')" 2>/dev/null || echo 0)
             noai=$$(python3 -c "import json;print('1' if json.load(open('$$f')).get('no_ai') else '0')" 2>/dev/null || echo 0)
-            flags=""
-            [ "$$dry" = "1" ] && flags="$$flags --dry-run"
-            [ "$$noai" = "1" ] && flags="$$flags --no-ai"
-            echo "[tick-drain] draining $$name flags='$$flags'"
-            if python3 /app/brain_tick.py \
-                --vault /vault --brain-feed /vault/brain-feed \
-                --inference-url "$${INFERENCE_URL:-}" \
-                $$flags; then
-              mv "$$f" "$$DONE/$$name"
-            else
-              mv "$$f" "$$FAIL/$$name"
-            fi
+            total=$$((total+1))
+            case "$${dry}$${noai}" in
+              00) b00="$$b00 $$f" ;;
+              01) b01="$$b01 $$f" ;;
+              10) b10="$$b10 $$f" ;;
+              11) b11="$$b11 $$f" ;;
+            esac
           done
+
+          if [ "$$total" -gt 0 ]; then
+            ok=0; ko=0; ticks=0; stuck=0
+            run_kind() {
+              kind_flags="$$1"; kind_files="$$2"
+              [ -n "$$kind_files" ] || return 0
+              n=$$(echo $$kind_files | wc -w)
+              ticks=$$((ticks+1))
+              echo "[tick-drain] coalescing $$n request(s) into one tick [flags='$$kind_flags']"
+              if python3 /app/brain_tick.py \
+                  --vault /vault --brain-feed /vault/brain-feed \
+                  --inference-url "$${INFERENCE_URL:-}" \
+                  --source brain-drain $$kind_flags; then
+                dest="$$DONE"; ok=$$((ok+n))
+              else
+                dest="$$FAIL"; ko=$$((ko+n))
+              fi
+              # A failed mv must NOT abort the batch. By this point the tick has
+              # already run and mutated the vault, and other buckets are still
+              # queued; dying here under `set -e` would discard completed work,
+              # skip every remaining bucket, emit no summary, and — because this
+              # container restarts unless-stopped — respawn into a tight loop
+              # that re-runs the tick every time. Warn, count, keep going.
+              for f in $$kind_files; do
+                if ! mv "$$f" "$$dest/$$(basename "$$f")"; then
+                  stuck=$$((stuck+1))
+                  echo "[tick-drain] WARN: could not move $$(basename "$$f") to $$dest — retrying next pass"
+                fi
+              done
+              # Never let the loop's last exit status become the function's, or
+              # `set -e` kills the script at the call site.
+              return 0
+            }
+            run_kind "" "$$b00"
+            run_kind "--no-ai" "$$b01"
+            run_kind "--dry-run" "$$b10"
+            run_kind "--dry-run --no-ai" "$$b11"
+            echo "[tick-drain] drain-summary: total=$$total ticks=$$ticks ok=$$ok failed=$$ko stuck=$$stuck"
+
+            # Refresh the semantic index. Without this the tick rewrites the
+            # vault but pgvector stays stale, so kb_search / brain_search_arcs
+            # cannot see the new content — the whole point of an on-demand
+            # tick. Non-fatal: the request's verdict belongs to brain_tick.py.
+            if [ "$$ok" -gt 0 ] && [ -n "$${EMBEDDINGS_API_KEY:-}" ]; then
+              echo "[tick-drain] refreshing embeddings after $$ok processed request(s)"
+              python3 /app/embed_arcs.py --vault /vault --prune \
+                || echo "[tick-drain] embed_arcs failed (non-fatal)"
+            fi
+          fi
           sleep "$$INTERVAL"
         done
     environment:
@@ -217,6 +274,11 @@ services:
       BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}
       EMBEDDINGS_URL: http://embeddings:8080
       EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
+      # Must mirror tick-cron: a drain-triggered tick and a scheduled tick have
+      # to promote/demote arcs identically, or heat oscillates between them.
+      BRAIN_DECAY_START_DAYS: ${BRAIN_DECAY_START_DAYS:-2}
+      BRAIN_DECAY_INTERVAL_DAYS: ${BRAIN_DECAY_INTERVAL_DAYS:-2}
+      BRAIN_STALE_SIGNAL_DAYS: ${BRAIN_STALE_SIGNAL_DAYS:-3}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - ${VAULT_ROOT_HOST:-./vault}:/vault

@@ -138,10 +138,11 @@ Vault remediation (Tier 4), applied directly to vault content:
 
 ### Follow-ups raised, not actioned
 
-- `brain-feed/ticks/2026-04-27T16-08-43Z-ai-output.md` contains a GitHub
-  installation token in plaintext (1h TTL, issued 2026-04-27 — expired). The
-  concern is the pattern: tick AI output echoes whatever it was fed, so a
-  credential appearing in a signal is persisted to the vault and re-injected.
+- A tick AI-output file under `brain-feed/ticks/` was found to contain a
+  short-lived credential in plaintext (since expired). The value is unimportant;
+  the pattern is: tick AI output echoes whatever it was fed, so a credential
+  appearing in a signal is persisted to the vault and re-injected on every
+  subsequent session. This is what `redact.py` was built to close.
 - Existing arcs keep their scraped titles; the title fix only affects arcs
   created from here on. Existing arcs get meaning from `summary:` as the tick
   works through the backlog at 25/tick.
@@ -164,9 +165,9 @@ Before → after, same arc:
 
 | Arc | Was | Now |
 |---|---|---|
-| `2026-07-17-hablar-sobre-cron…` | Hablar sobre cron y seguimiento automático de qt hoy | QITP live cron pipeline trigger activated; 15% risk limit clarified as applying to actually-traded capital, not the full broker balance |
-| `2026-07-19-hey-ca22a3f9b394` | hey | Short session verifying brain and tooling responsiveness; no substantive work output |
-| `2026-07-18-local-command-caveat…` | \<local-command-caveat\>Caveat: The messages below were genera | antoncore local command session; **the LiteLLM bearer key was inadvertently exposed in this transcript and requires rotation** |
+| `<date>-hablar-sobre-cron…` | Hablar sobre cron y seguimiento automático hoy | Scheduled pipeline trigger activated; a threshold clarified as applying to the active subset rather than the whole pool |
+| `<date>-hey-ca22a3f9b394` | hey | Short session verifying brain and tooling responsiveness; no substantive work output |
+| `<date>-local-command-caveat…` | \<local-command-caveat\>Caveat: The messages below were genera | Local command session; **a bearer token was inadvertently exposed in this transcript and requires rotation** |
 
 The third row is the point: an arc that was indistinguishable boilerplate now
 surfaces a credential exposure. Note also that the model declined to invent
