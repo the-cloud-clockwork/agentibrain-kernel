@@ -6,7 +6,7 @@ Tags are issued by the release workflow, not locally. See `docs/RELEASING.md` fo
 
 ---
 
-## [0.7.0] — 2026-07-20
+## [0.7.0] — 2026-07-21
 
 **Brain injection quality + on-demand ticks**: the brain now injects real
 synthesized arc summaries backed by a working semantic index instead of
@@ -14,6 +14,8 @@ empty-stub scaffolding, and agents can force a tick on demand (`brain_tick` MCP
 tool) so freshly-ingested content is retrievable immediately instead of waiting
 for the 2h cron. Restores the injected context from near-useless (identical-stub
 hot arcs, an index where every arc was equidistant) to a real, queryable memory.
+The Compose deployment reaches parity with the Helm one on the same path, and
+the update/redeploy procedure is documented for both.
 
 ### Features
 
@@ -64,8 +66,58 @@ hot arcs, an index where every arc was equidistant) to a real, queryable memory.
 - **Invalid escape sequences** fixed, with a cache- and Python-version-independent
   CI guard (`check_escapes.py`) so they surface in CI instead of only warning on a
   fresh pod start.
+- **Fresh arcs were hidden behind stale indexed heat** (`brain_search_arcs`) — the
+  `min_heat` default of 2 filtered against the heat *snapshot taken when the arc was
+  last embedded*, while heat is recomputed every tick. A just-ticked arc still reads
+  0 there, as does a promoted arc sitting in `frontal-lobe/conscious`, so the default
+  discarded exactly the newest content the caller was looking for. Default is now 0
+  (rank by similarity); the parameter is documented as the stale-heat cut it is.
+- **Un-summarized arcs were unfindable by their own content** (`embed_arcs.py`) —
+  with no `summary` and no recognized sections, `build_embed_text` emitted only
+  title and region, so an arc's body never reached the index. A body excerpt is now
+  embedded as a `Content:` block in that case, making content-bearing arcs
+  retrievable before the AI synthesis pass ever runs.
+- **Compose `tick-drain` diverged from the Helm one** (`compose.yml`) — the Compose
+  drain never ran `embed_arcs.py`, so on the Compose path a forced tick rewrote the
+  vault while pgvector stayed stale and `brain_tick` reported success on content
+  that stayed unsearchable. It also ran one tick per queued request instead of
+  coalescing by kind, and omitted the `BRAIN_DECAY_*` / `BRAIN_STALE_SIGNAL_DAYS`
+  tuning that `tick-cron` carries, so drain ticks and scheduled ticks could
+  promote/demote the same arc differently. All three corrected; the two deployment
+  paths now behave identically.
+
+### Documentation
+
+- **Compose update/redeploy procedure documented** (`local/README.md`, `README.md`).
+  Compose builds from the source tree, so `docker compose up -d` after a `git pull`
+  silently keeps running the old image — `--build` is the step that makes a change
+  take effect, and that was written down nowhere. Adds branch guidance (`dev` =
+  newest, `main` = stamped snapshot), a source-directory → service rebuild map, how
+  to verify the new code is actually live, and what survives an update.
+- **`CLAUDE.md` gained a "Redeploying after a code change" section** so an agent
+  working in a fresh clone detects which path the checkout is running (Compose vs
+  Kubernetes) and follows the correct one, rather than defaulting to editing a live
+  container.
+- **`:latest` corrected** — `local/README.md` told readers to pull
+  `agentibrain-<service>:latest`, which CI has never published; only `:dev` exists,
+  so that instruction produced a pull failure. `main` is also described accurately
+  as the snapshot branch (it publishes no image and deploys nothing) in place of the
+  stale "vestigial" wording in `README.md`, `CLAUDE.md`, `docs/DEPLOYMENT.md`, and
+  `docs/ENVIRONMENTS.md`.
+- **Compose topology corrected** — the local guide described 7 containers and omitted
+  `tick-drain` from its diagram; the stack is 8, and the on-demand tick path is now
+  documented via `POST /tick` (which also refreshes the index) rather than a
+  `docker compose exec` into `tick-cron` (which does not).
 
 ### Security
+
+- **Deployment-specific detail removed from the public repo** — a private LAN NFS
+  server address and namespace were hardcoded in
+  `helm/brain-ops/jobs/vault-cleanup.yaml`; these are now `<your-*>` placeholders
+  with a PVC alternative shown. Operator-specific platform names were also removed
+  from `docs/ENVIRONMENTS.md`, `helm/brain-ops/values.yaml`, an operations write-up
+  that quoted real vault arc content, and sample cluster IDs in source comments and
+  tests. No credential values were present at any point.
 
 - **Credential redaction at every persist and inject boundary** (`redact.py`) — the
   tick echoed its own prompt input, amplifying a leaked token across dozens of vault

@@ -278,6 +278,22 @@ docker compose exec ollama ollama pull llama3.2
 
 Three more inference overlays in [`examples/compose/`](examples/compose/) — Ollama, OpenAI direct, LiteLLM gateway. Full local guide: [`local/README.md`](local/README.md).
 
+#### Updating a Compose deployment
+
+Because Compose builds from this source tree, new code reaches your containers
+only when you rebuild. `docker compose up -d` on its own reuses the existing
+image and silently keeps running the old code:
+
+```bash
+git pull
+docker compose up -d --build     # --build is the step that matters
+docker compose ps
+```
+
+Volumes and the vault survive; only `down -v` destroys them. Per-service
+rebuilds, branch choice (`dev` vs `main`), and how to verify the new code is
+actually live: [`local/README.md`](local/README.md#updating-to-a-newer-version).
+
 ### 2. Server (Docker Compose, headless)
 
 Same `compose.yml` works on any Linux box with Docker. Bind the vault to a real path, expose `8103` behind your reverse proxy of choice (Traefik, Caddy, nginx), point your fleet at it via `BRAIN_URL`. No Kubernetes required.
@@ -431,7 +447,7 @@ The kernel publishes 4 service images via GitHub Actions. **Standard consumers d
 | `ghcr.io/the-cloud-clockwork/agentibrain-mcp` | `services/mcp/` | `:dev` |
 | `ghcr.io/the-cloud-clockwork/agentibrain-brain-ops` | `services/brain-ops/` | `:dev` |
 
-CI: [`.github/workflows/docker-build.yml`](.github/workflows/docker-build.yml) runs on every push to `dev` (→ `:dev`). `main` is vestigial; `:latest` is not published.
+CI: [`.github/workflows/docker-build.yml`](.github/workflows/docker-build.yml) runs on every push to `dev` (→ `:dev`). `main` is the snapshot branch — reached only by a reviewed `dev` → `main` PR, it publishes no image and deploys nothing. `:latest` does not exist; a config naming it will fail to pull.
 
 | Path | Builds locally? | Pulls from GHCR? |
 |---|:---:|:---:|

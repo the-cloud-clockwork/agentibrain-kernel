@@ -23,7 +23,7 @@ The brain system follows a 3-operation model: **ingest, read, update**.
 | Workload | Type | Role | What it does |
 |---|---|---|---|
 | **brain-ops** | CronJob (2h) | Update | Full 5-phase brain tick: scan, reason, signal, edge, write. |
-| **tick-drain** | CronJob (2m) | Update | On-demand tick queue drain (polls NFS requested/ dir). |
+| **tick-drain** | CronJob (1m) | Update | On-demand tick queue drain: coalesces pending requests by kind, runs the tick, then refreshes the semantic index. |
 | **amygdala** | Deployment | Alert | Redis Streams consumer, broadcasts severity alerts. |
 
 ### Data flow
@@ -85,9 +85,81 @@ not edit it manually. The runtime version lives in `agentibrain/__init__.py`
 
 Dev-first flow:
 - Work on `dev` → PR to `main` → merge.
-- `main` is vestigial; CI does not promote to it.
 - `dev` is the working branch; CI publishes `:dev` images on every push to dev.
-- Image builds go to `ghcr.io/the-cloud-clockwork/agentibrain-*`.
+- `main` is the **snapshot branch**: reached only by a reviewed `dev` → `main`
+  PR, it publishes no image and deploys nothing. Treat it as a checkpoint log.
+- Image builds go to `ghcr.io/the-cloud-clockwork/agentibrain-*`. `:dev` is the
+  only tag CI publishes — there is no `:latest`.
+
+## Redeploying after a code change
+
+**Code is the source of truth.** A change reaches a running brain only by
+rebuilding or redeploying from source. Editing a file inside a running
+container leaves the deployment out of sync with the repo and is undone by the
+next restart — do not do it, on either path below.
+
+Which path applies is decided by how this checkout is running, so check before
+acting:
+
+```bash
+docker compose ps 2>/dev/null | grep -q agentibrain && echo "COMPOSE" || echo "not compose"
+kubectl get statefulset -l app.kubernetes.io/part-of=agentibrain -A 2>/dev/null
+```
+
+### Path A — Docker Compose (laptop / single server)
+
+Compose builds from this source tree. `docker compose up -d` alone reuses the
+existing image and keeps running the old code — `--build` is the step that
+makes a change take effect.
+
+```bash
+git pull
+docker compose up -d --build            # rebuild + recreate changed services
+docker compose ps                       # confirm healthy
+```
+
+Rebuild only what changed when you know the blast radius:
+
+| Changed | Rebuild |
+|---|---|
+| `services/brain-api/` | `brain-api` |
+| `services/embeddings/` | `embeddings` |
+| `services/mcp/` | `mcp` |
+| `services/brain-ops/` | `tick-cron` `tick-drain` `amygdala` (one shared image) |
+
+Verify the container is younger than the pull — a cached layer that silently
+survived is the failure mode worth checking for:
+
+```bash
+docker compose ps --format 'table {{.Service}}\t{{.RunningFor}}'
+```
+
+Volumes and the vault bind-mount survive `down` / `up --build`. Only
+`docker compose down -v` destroys them.
+
+### Path B — Kubernetes
+
+Do not `helm upgrade` from a laptop and do not edit live resources. Push to
+`dev`; CI builds `:dev` and the cluster's image updater rolls the pods.
+
+```bash
+git add -A && git commit -m "..." && git push origin dev
+gh run watch                            # CI build
+kubectl -n <your-namespace> rollout status statefulset/<name>
+```
+
+Chart or values changes follow the same route — commit them, let GitOps
+reconcile.
+
+### Verifying either path
+
+A redeploy is done when the new behaviour is observed against the running
+service, not when the push succeeded. Name the check and run it:
+
+```bash
+curl -H "Authorization: Bearer $KB_ROUTER_TOKEN" $BRAIN_URL/health
+docker compose logs --since 2m <service>     # or: kubectl logs
+```
 
 ## Downstream consumers
 

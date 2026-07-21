@@ -48,7 +48,7 @@ def test_resolve_created_prefers_frontmatter():
 
 def test_resolve_created_falls_back_to_cluster_id_then_filename():
     dt, derived = brain_keeper.resolve_created(
-        _doc("whatever.md", {"cluster_id": "2026-06-10-qitp-ml"})
+        _doc("whatever.md", {"cluster_id": "2026-06-10-sample-ml"})
     )
     assert dt == datetime(2026, 6, 10, tzinfo=timezone.utc)
     assert derived is True
@@ -93,7 +93,7 @@ def test_fresh_undated_arc_still_runs_hot():
 def test_standing_region_docs_are_not_arcs():
     for name in ("vision.md", "connections.md", "weekly-synthesis.md"):
         assert brain_keeper.is_arc(_doc(name, {})) is False
-    assert brain_keeper.is_arc(_doc("2026-07-10-qitp.md", {})) is True
+    assert brain_keeper.is_arc(_doc("2026-07-10-sample.md", {})) is True
     assert brain_keeper.is_arc(_doc("odd-name.md", {"cluster_id": "c1"})) is True
 
 
