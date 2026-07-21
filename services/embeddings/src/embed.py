@@ -14,6 +14,27 @@ LLM_EMBED_MODEL = os.environ.get("LLM_EMBED_MODEL", "text-embedding-3-small")
 
 MAX_CHUNK_CHARS = 4000
 
+# Known output dimensions per model family. The schema column must match the
+# model or every insert fails with "expected N dimensions".
+_MODEL_DIMS = {
+    "text-embedding-3-large": 3072,
+    "text-embedding-3-small": 1536,
+    "text-embedding-ada-002": 1536,
+}
+
+
+def target_dim() -> int:
+    """Vector dimension the schema must hold. EMBED_DIM env wins; otherwise
+    inferred from LLM_EMBED_MODEL (provider prefixes like `azure/` ignored)."""
+    explicit = os.environ.get("EMBED_DIM", "")
+    if explicit:
+        return int(explicit)
+    model = LLM_EMBED_MODEL.rsplit("/", 1)[-1]
+    for name, dim in _MODEL_DIMS.items():
+        if name in model:
+            return dim
+    return 1536
+
 
 def is_configured() -> bool:
     return bool(LLM_API_BASE) and bool(LLM_API_KEY)

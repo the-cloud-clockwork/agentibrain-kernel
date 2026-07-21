@@ -6,7 +6,11 @@ import logging
 from psycopg_pool import ConnectionPool
 from psycopg.types.json import Jsonb
 
+import embed
+
 log = logging.getLogger("agentibrain-embeddings.db")
+
+HNSW_MAX_DIM = 2000  # pgvector HNSW indexes reject vectors wider than this
 
 POSTGRES_URL = os.environ.get("POSTGRES_URL", "")
 
@@ -25,13 +29,63 @@ def get_pool() -> ConnectionPool:
 
 
 def _ensure_schema(pool: ConnectionPool):
+    dim = embed.target_dim()
     init_sql = os.path.join(os.path.dirname(__file__), "init.sql")
     if os.path.exists(init_sql):
         with pool.connection() as conn:
             with open(init_sql) as f:
-                conn.execute(f.read())
+                conn.execute(f.read().replace("{{EMBED_DIM}}", str(dim)))
             conn.commit()
-        log.info("schema_initialized")
+        log.info(f"schema_initialized dim={dim}")
+    _reconcile_dim(pool, dim)
+
+
+def get_schema_dim(pool: ConnectionPool | None = None) -> int | None:
+    """Dimension of the embedding column as it exists in the database."""
+    pool = pool or get_pool()
+    with pool.connection() as conn:
+        cur = conn.execute(
+            """SELECT atttypmod FROM pg_attribute
+               WHERE attrelid = 'content_embeddings'::regclass
+                 AND attname = 'embedding'"""
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
+def _reconcile_dim(pool: ConnectionPool, dim: int):
+    """Align the embedding column with the configured model dimension.
+
+    A pre-existing table created for a different model (e.g. vector(1536) vs
+    text-embedding-3-large's 3072) makes every insert fail. When the table is
+    empty the column is altered in place; when it holds rows they belong to
+    the old model and are useless against new-model query vectors, so they
+    are dropped and re-embedded by the next embed_arcs pass.
+    """
+    current = get_schema_dim(pool)
+    with pool.connection() as conn:
+        if current is not None and current != dim:
+            cur = conn.execute("SELECT COUNT(*) FROM content_embeddings")
+            rows = cur.fetchone()[0]
+            if rows:
+                log.warning(
+                    f"dim_migration_dropping_rows old_dim={current} new_dim={dim} rows={rows}"
+                )
+                conn.execute("DELETE FROM content_embeddings")
+            conn.execute("DROP INDEX IF EXISTS idx_ce_embedding_hnsw")
+            conn.execute(
+                f"ALTER TABLE content_embeddings ALTER COLUMN embedding TYPE vector({dim})"
+            )
+            log.info(f"dim_migrated old={current} new={dim}")
+        if dim <= HNSW_MAX_DIM:
+            conn.execute(
+                """CREATE INDEX IF NOT EXISTS idx_ce_embedding_hnsw
+                   ON content_embeddings USING hnsw (embedding vector_cosine_ops)
+                   WITH (m = 16, ef_construction = 64)"""
+            )
+        else:
+            log.info(f"hnsw_skipped dim={dim} exceeds pgvector HNSW limit ({HNSW_MAX_DIM})")
+        conn.commit()
 
 
 def upsert_chunks(

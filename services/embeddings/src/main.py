@@ -58,10 +58,64 @@ def health():
     result = {"status": "ok", "embedding_model": embed.LLM_EMBED_MODEL}
     try:
         result["vector_count"] = db.get_vector_count()
+        result["schema_dim"] = db.get_schema_dim()
     except Exception:
         result["vector_count"] = -1
     result["embedding_configured"] = embed.is_configured()
     return result
+
+
+@app.get("/health/deep")
+def health_deep(_token: str = Depends(auth.require_api_key)):
+    """End-to-end readiness: real DB round-trip + real embedding call.
+
+    Proves the credentials work and the model's output dimension matches the
+    schema — the exact failure mode a liveness /health cannot see.
+    """
+    import time
+
+    checks: dict = {}
+    ok = True
+
+    try:
+        t0 = time.monotonic()
+        count = db.get_vector_count()
+        schema_dim = db.get_schema_dim()
+        checks["database"] = {
+            "ok": True,
+            "vector_count": count,
+            "schema_dim": schema_dim,
+            "latency_ms": round((time.monotonic() - t0) * 1000),
+        }
+    except Exception as e:
+        ok = False
+        schema_dim = None
+        checks["database"] = {"ok": False, "error": str(e)[:300]}
+
+    if not embed.is_configured():
+        ok = False
+        checks["embedding_api"] = {"ok": False, "error": "LLM_API_BASE or LLM_API_KEY not set"}
+    else:
+        try:
+            t0 = time.monotonic()
+            vec = embed.embed_text("healthcheck ping")
+            model_dim = len(vec)
+            dim_match = schema_dim is None or model_dim == schema_dim
+            if not dim_match:
+                ok = False
+            checks["embedding_api"] = {
+                "ok": dim_match,
+                "model": embed.LLM_EMBED_MODEL,
+                "api_base": embed.LLM_API_BASE,
+                "model_dim": model_dim,
+                "dim_match": dim_match,
+                "latency_ms": round((time.monotonic() - t0) * 1000),
+            }
+        except Exception as e:
+            ok = False
+            checks["embedding_api"] = {"ok": False, "error": str(e)[:300]}
+
+    return {"status": "ok" if ok else "degraded", "checks": checks}
 
 
 @app.post("/embed")
