@@ -183,7 +183,7 @@ ssh <your-vault-host> "rm <your-vault-path>/amygdala/<filename>.md"
 
 **Root cause:** tick-engine image stale — a Python module was added in source but the Dockerfile `COPY` line missed it.
 
-**Fix:** kernel PR with `COPY *.py ./` (or explicit add). Force docker-build to rebuild `:latest`. ArgoCD image-updater picks up new digest.
+**Fix:** kernel PR with `COPY *.py ./` (or explicit add). Merge to `dev` — that republishes `:dev`, the only tag CI produces. ArgoCD image-updater picks up the new digest.
 
 ---
 

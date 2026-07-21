@@ -131,6 +131,6 @@ The sidebar groups every page into four sections — pick the one that matches y
 
 ## Status
 
-**v0.1.1 — first stable.** Five Helm charts, four service images on GHCR (`:dev` from dev branch, `:latest` from main), HTTP contract frozen at v1, brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds; every embed flows through `POST /index_artifact`).
+**v0.1.1 — first stable.** Five Helm charts, four service images on GHCR (`:dev` only — nothing publishes `:latest`), HTTP contract frozen at v1, brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds; every embed flows through `POST /index_artifact`).
 
 The kernel is self-contained and the canonical source of truth for everything brain-related — services, Helm charts, brain-keeper agent definition, brain profile overlays, and the vault layout schema. All deployment-specific plumbing (cluster namespaces, model name aliases, secret-store paths, NFS hosts) lives in your own platform repo, not here.

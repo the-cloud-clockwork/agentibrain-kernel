@@ -9,9 +9,14 @@ deploy for laptops. This directory holds the compose entry point.
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
 ./local/bootstrap.sh              # writes .env + scaffolds ./vault
-docker compose up -d              # 7 containers come up
-docker compose ps                 # all healthy
+docker compose up -d              # 8 containers come up
+docker compose ps                 # see the health note below
 ```
+
+`postgres`, `redis`, `brain-api`, `embeddings`, and `mcp` report `(healthy)`.
+`tick-cron`, `tick-drain`, and `amygdala` show a bare `Up` — they are batch
+workers with no healthcheck, so the absence of `(healthy)` on those three is
+expected, not a fault. Judge them by their logs instead.
 
 On macOS, enable VirtioFS (Docker Desktop → Settings → General → "VirtioFS")
 for fast bind mounts. If you ever see root-owned files under `./vault` from a
@@ -48,7 +53,7 @@ The update is therefore three steps, and the middle one is the one people skip:
 ```bash
 git pull
 docker compose up -d --build      # rebuild changed services, recreate them
-docker compose ps                 # all healthy
+docker compose ps                 # the five healthchecked services report (healthy)
 ```
 
 `--build` is what makes the new code take effect. If you prefer the explicit
@@ -78,7 +83,10 @@ git checkout main && git pull     # last stamped snapshot
 
 ### Updating only one service
 
-Rebuilding all six images takes a few minutes. If you know what changed:
+Six services declare a build, but they share only **four** images —
+`tick-cron`, `tick-drain`, and `amygdala` are all the same `brain-ops` image
+with different entrypoints. Rebuilding all four takes a few minutes. If you
+know what changed:
 
 ```bash
 docker compose up -d --build mcp          # e.g. only services/mcp/ changed

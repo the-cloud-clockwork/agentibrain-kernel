@@ -58,8 +58,8 @@ edges:
   - 2026-04-09-provider-rename-cleanup
   - 2026-04-09-traefik-middleware-cleanup
 source_sessions:
-  - 7d031027-5bdc-478b-a558-442ac37ec5a0
-  - a69e27d7-cc96-4831-b570-15bb3a8798ad
+  - 00000000-1111-4222-8333-444444444444
+  - 00000000-5555-4666-8777-888888888888
 heat: 9                          # 0–10, decides frontal-lobe promotion
 ---
 
@@ -68,29 +68,29 @@ heat: 9                          # 0–10, decides frontal-lobe promotion
 ## Ignition
 - router agent onboarding surfaced 5 gaps: capability flags, provider secrets, playground, inference logs, routing/fallbacks
 - Pre-existing 18 raw LiteLLM tools were too granular — agents shouldn't call `create_key` / `set_mcp_tool_permissions` directly
-- Mother thread: `7d031027` on 2026-04-06 → workflow-tool philosophy established
+- Mother thread: `00000000` on 2026-04-06 → workflow-tool philosophy established
 
 ## Timeline
 ### ✅ Completed
-1. Unit system + litellm-state repo (PR #270, mother session)
-2. Provider-aware onboarding — 5 tools (PR #274)
-3. Model invocation — 2 tools (PR #276)
-4. Inference logs — 1 tool (PR #277)
-5. Model health & routing — 4 tools, built by Opus sub-agent A in worktree (PR #278)
-6. Rate limits & guardrails — 5 tools, built by Opus sub-agent B in worktree (PR #278)
-7. Secret-store rename: `OPENAI_DIRECT_API_KEY` → `OPENAI_API_KEY` (convention enforcement)
+1. Unit system + gateway-state repo (PR #1, mother session)
+2. Provider-aware onboarding — 5 tools (PR #2)
+3. Model invocation — 2 tools (PR #3)
+4. Inference logs — 1 tool (PR #4)
+5. Model health & routing — 4 tools, built by Opus sub-agent A in worktree (PR #5)
+6. Rate limits & guardrails — 5 tools, built by Opus sub-agent B in worktree (PR #5)
+7. Secret-store rename to the `{PROVIDER_UPPER}_API_KEY` convention
 8. Traefik middleware cleanup: dropped `mcp-wellknown-rewrite`
 
 ### ❌ Errors / learning
-- PR #275 merge conflict: post-squash divergence from PR #274. **Lesson**: after squash-merge to main, NEVER cherry-pick onto old dev tip — always fresh branch from main. Used this pattern for PRs #276, #277, #278 successfully.
-- Dev image tag `:latest` only builds from dev branch pushes. **Lesson**: ship to main → cherry-pick onto dev to trigger `:latest` image rebuild.
+- A merge conflict from post-squash divergence. **Lesson**: after squash-merge to main, NEVER cherry-pick onto old dev tip — always fresh branch from main. Used this pattern for the remaining PRs successfully.
+- Image tag `:dev` only builds from dev-branch pushes. **Lesson**: land the change on `dev` — that is what republishes `:dev`.
 - In-session MCP tool catalog frozen at start. **Lesson**: after adding a new tool, operator must `/mcp` reload for this session to see it.
 
 ### 🏁 Resolution
-- 26 → 35 MCP tools on both dev + prod
+- 26 → 35 MCP tools exposed
 - 10 categories, full self-service surface for the router agent
 - Zero raw LiteLLM API calls required from any agent
-- 8 PRs merged cleanly (#270, #271, #272, #273, #274, #276, #277, #278)
+- 8 PRs merged cleanly
 
 ## Lessons to reproduce
 - Fresh branch from main → cherry-pick → PR workflow avoids squash divergence
@@ -104,8 +104,8 @@ heat: 9                          # 0–10, decides frontal-lobe promotion
 - [[2026-04-09-traefik-middleware-cleanup]] — hardening side-quest during a compact break.
 
 ## Source sessions
-- home-bridge://sessions/7d031027-5bdc-478b-a558-442ac37ec5a0 (mother thread, 3367 turns)
-- home-bridge://sessions/a69e27d7-cc96-4831-b570-15bb3a8798ad (execution thread, 2216 turns)
+- session://00000000-1111-4222-8333-444444444444 (mother thread, 3367 turns)
+- session://00000000-5555-4666-8777-888888888888 (execution thread, 2216 turns)
 ```
 
 ### Mandatory fields
@@ -124,7 +124,7 @@ heat: 9                          # 0–10, decides frontal-lobe promotion
 
 ## 3. New Brain Regions
 
-The existing vision (`operator/references/OBSIDIAN-BRAIN.md`) defines `left/`, `right/`, `bridge/`, `raw/`, `daily/`. This document **adds three endocrine-inspired regions** for emotional gating and executive focus.
+The vault vision doc defines `left/`, `right/`, `bridge/`, `raw/`, `daily/`. This document **adds three endocrine-inspired regions** for emotional gating and executive focus.
 
 ### 3.1 Amygdala — `amygdala/` + fleet broadcast
 
@@ -294,7 +294,7 @@ The cluster primitive is **orthogonal** to MUBS (Minimal Unit of Brain Storage, 
 
 **Extraction sources**:
 - Primary: `~/.claude/projects/*/<session>.jsonl` (Claude Code transcripts)
-- Secondary: `home-bridge` MCP sessions index
+- Secondary: a session-index MCP server
 - Future: Codex/Cursor session logs via an adapter
 
 **Target vault paths** (once operator green-lights the layout):
@@ -339,4 +339,4 @@ If the AI can't compute these three for a candidate cluster, the candidate stays
 
 ## 10. First Exemplar
 
-The first real cluster is **this conversation itself**: `2026-04-09-litellm-mcp-self-service.md` (see Section 2 for the full example). It was extracted by hand in the current session via home-bridge MCP tool calls. The `/brain-clusters` skill automates exactly that pattern.
+The first real cluster is **this conversation itself**: `2026-04-09-litellm-mcp-self-service.md` (see Section 2 for the full example). It was extracted by hand via session-index MCP tool calls. The `/brain-clusters` skill automates exactly that pattern.

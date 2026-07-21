@@ -138,10 +138,11 @@ Vault remediation (Tier 4), applied directly to vault content:
 
 ### Follow-ups raised, not actioned
 
-- `brain-feed/ticks/2026-04-27T16-08-43Z-ai-output.md` contains a GitHub
-  installation token in plaintext (1h TTL, issued 2026-04-27 — expired). The
-  concern is the pattern: tick AI output echoes whatever it was fed, so a
-  credential appearing in a signal is persisted to the vault and re-injected.
+- A tick AI-output file under `brain-feed/ticks/` was found to contain a
+  short-lived credential in plaintext (since expired). The value is unimportant;
+  the pattern is: tick AI output echoes whatever it was fed, so a credential
+  appearing in a signal is persisted to the vault and re-injected on every
+  subsequent session. This is what `redact.py` was built to close.
 - Existing arcs keep their scraped titles; the title fix only affects arcs
   created from here on. Existing arcs get meaning from `summary:` as the tick
   works through the backlog at 25/tick.

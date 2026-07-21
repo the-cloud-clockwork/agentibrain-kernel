@@ -39,7 +39,7 @@ docker compose exec ollama ollama pull llama3.2
 ```bash
 docker compose up -d    # 8 containers: postgres, redis, brain-api,
                         # embeddings, mcp, tick-cron, tick-drain, amygdala
-docker compose ps       # all healthy
+docker compose ps       # 5 report (healthy); the 3 batch workers show a bare Up
 curl http://localhost:8104/ping  # pong — MCP server is up
 ```
 
@@ -58,7 +58,7 @@ Add to your project or user MCP config (e.g. `~/.claude/.mcp.json`):
 }
 ```
 
-Restart Claude Code, run `/mcp` — you'll see `agentibrain` with 5 tools:
+Restart Claude Code, run `/mcp` — you'll see `agentibrain` with 6 tools:
 
 | Tool | Purpose |
 |------|---------|
@@ -67,6 +67,7 @@ Restart Claude Code, run `/mcp` — you'll see `agentibrain` with 5 tools:
 | `brain_search_arcs` | Semantic search over brain arcs |
 | `brain_get_arc` | Fetch full arc by cluster_id |
 | `brain_ingest` | Write text to the brain vault |
+| `brain_tick` | Force a tick now so new content becomes retrievable |
 
 ### 5. Wire agentihooks profile (required for full brain injection)
 
@@ -124,7 +125,7 @@ brain tick --wait                         # full AI tick
 brain tick --dry-run --wait               # read-only verify, no writes
 ```
 
-The `tick-drain` service polls `brain-feed/ticks/requested/` every 30s and runs `brain_tick.py` per request — same UX as the K8s `tick-drain` CronJob. Scheduled ticks still run every `TICK_INTERVAL_SECONDS` (default 2h) via `tick-cron`.
+The `tick-drain` service polls `brain-feed/ticks/requested/` every 30s, coalesces pending requests by kind into one `brain_tick.py` run each, then refreshes the semantic index — same behaviour as the K8s `tick-drain` CronJob. Scheduled ticks still run every `TICK_INTERVAL_SECONDS` (default 2h) via `tick-cron`.
 
 See [`local/README.md`](local/README.md) for full local docs, troubleshooting, port overrides, and inference modes.
 
@@ -360,7 +361,7 @@ Architecture reference: [`docs/architecture/ARCHITECTURE.md`](docs/architecture/
 
 ## Connect Claude Code
 
-After install, register the kernel's MCP server with Claude Code so the agent can reach the brain via five tools (`kb_search`, `kb_brief`, `brain_search_arcs`, `brain_get_arc`, `brain_ingest`).
+After install, register the kernel's MCP server with Claude Code so the agent can reach the brain via six tools (`kb_search`, `kb_brief`, `brain_search_arcs`, `brain_get_arc`, `brain_ingest`, `brain_tick`).
 
 ### Laptop (Docker Compose)
 
@@ -377,7 +378,7 @@ Add to `~/.claude/.mcp.json` or your project-local `.mcp.json`:
 }
 ```
 
-Restart Claude Code, then verify with `/mcp` — the `agentibrain` server should appear with 5 tools (`mcp__agentibrain__kb_search`, etc.).
+Restart Claude Code, then verify with `/mcp` — the `agentibrain` server should appear with 6 tools (`mcp__agentibrain__kb_search`, etc.).
 
 > **Note:** the local compose stack runs mcp-proxy without auth (localhost-only). For production deployments, set `MCP_PROXY_API_KEY` on the container and use `x-api-key` header.
 
@@ -631,16 +632,12 @@ Workflow: `dev` is the working branch and the deploy branch. CI on `dev` ships `
 
 ## Status
 
-**v0.1.x — stable.** Six Helm charts. Four service images auto-published to GHCR (`:dev` from dev branch; `:latest` from main is not published). HTTP contract frozen at v1. Generic OpenAI gateway — kernel speaks chat-completions to any compatible upstream (LiteLLM, OpenAI, Ollama, vLLM, …). Brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds; every embed flows through `POST /index_artifact`). Vault read/write absorbed into brain-api directly via `vault_reader` module — no separate reader service.
+**v0.1.x — stable.** Six Helm charts. Four service images auto-published to GHCR (`:dev` only — nothing publishes `:latest`). HTTP contract frozen at v1. Generic OpenAI gateway — kernel speaks chat-completions to any compatible upstream (LiteLLM, OpenAI, Ollama, vLLM, …). Brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds; every embed flows through `POST /index_artifact`). Vault read/write absorbed into brain-api directly via `vault_reader` module — no separate reader service.
 
 The kernel is self-contained and the canonical source of truth for everything brain-related — services, Helm charts, brain-keeper agent definition (`agents/brain-keeper/`), brain profile overlays (`profiles/brain/`, `profiles/brain-keeper/`), and the vault layout schema. All deployment-specific plumbing (cluster namespaces, model name aliases, secret-store paths, NFS hosts) lives in your own platform repo, not here.
 
-Maturity tracking lives in [`operator/`](operator/):
-- [`operator/VISION.md`](operator/VISION.md) — what 100% means
-- [`operator/STATE.md`](operator/STATE.md) — current snapshot
-- [`operator/BLOCKS.md`](operator/BLOCKS.md) — in-flight work
-- [`operator/ENHANCEMENTS.md`](operator/ENHANCEMENTS.md) — backlog
-- [`operator/TODO.md`](operator/TODO.md) — next actions
+Maturity tracking is published in
+[`docs/architecture/MATURITY.md`](docs/architecture/MATURITY.md).
 
 ---
 

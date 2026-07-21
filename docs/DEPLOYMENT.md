@@ -84,7 +84,7 @@ tpl:
     environment: prod
   app:
     image:
-      tag: latest
+      tag: dev
   externalSecret:                        # nosecret
     awsSecretPath: <your-prefix>/embeddings  # nosecret  (path in your secret store)
   service:

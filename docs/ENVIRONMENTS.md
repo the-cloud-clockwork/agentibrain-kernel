@@ -89,7 +89,7 @@ The kernel does not require namespace separation; the reference setup splits the
 
 ## Local laptop install
 
-Use `./local/bootstrap.sh && docker compose up -d` from the repo root (see [`../local/README.md`](../local/README.md)). The compose stack ships its own Postgres, Redis, MinIO. No K8s, no namespaces. The kernel runs in a single-environment mode.
+Use `./local/bootstrap.sh && docker compose up -d` from the repo root (see [`../local/README.md`](../local/README.md)). The compose stack ships its own Postgres and Redis. No K8s, no namespaces. The kernel runs in a single-environment mode.
 
 ## Multi-tenant brain
 

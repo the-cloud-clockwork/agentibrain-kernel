@@ -57,14 +57,14 @@ helm upgrade --install <release> ./helm/<chart> \
 
 ## ArgoCD image-updater
 
-The kernel publishes `agentibrain-*` images via `.github/workflows/docker-build.yml` on every push to `dev` (`:latest`). Consumers add an Application label + annotations to track them:
+The kernel publishes `agentibrain-*` images via `.github/workflows/docker-build.yml` on every push to `dev` (`:dev`). Consumers add an Application label + annotations to track them:
 
 ```yaml
 metadata:
   labels:
     image-updater/image: agentibrain-brain-api
   annotations:
-    argocd-image-updater.argoproj.io/image-list: router=ghcr.io/the-cloud-clockwork/agentibrain-brain-api:latest
+    argocd-image-updater.argoproj.io/image-list: router=ghcr.io/the-cloud-clockwork/agentibrain-brain-api:dev
     argocd-image-updater.argoproj.io/router.update-strategy: digest
     argocd-image-updater.argoproj.io/router.helm.image-name: tpl.app.image.repository
     argocd-image-updater.argoproj.io/router.helm.image-tag: tpl.app.image.tag
