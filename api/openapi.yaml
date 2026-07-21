@@ -121,6 +121,32 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/HealthResponse" }
 
+  /health/deep:
+    get:
+      summary: >-
+        Deep readiness probe. Round-trips a vault write, delegates to the
+        embeddings service's own deep check (DB + live embedding call + schema
+        dimension match), and verifies the inference gateway accepts the
+        configured key. Returns status "ok" or "degraded" with a per-dependency
+        checks map.
+      responses:
+        "200":
+          description: Aggregated readiness with per-dependency detail.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, checks]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded]
+                  service:
+                    type: string
+                  checks:
+                    type: object
+                    additionalProperties: true
+
   /ingest:
     post:
       summary: Classify + fan-out an ingest payload.

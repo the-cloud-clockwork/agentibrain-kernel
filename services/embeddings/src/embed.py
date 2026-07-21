@@ -1,8 +1,7 @@
 """Chunking + embedding via OpenAI-compatible API (LiteLLM)."""
 
-import os
 import logging
-from typing import Optional
+import os
 
 import httpx
 
@@ -14,12 +13,51 @@ LLM_EMBED_MODEL = os.environ.get("LLM_EMBED_MODEL", "text-embedding-3-small")
 
 MAX_CHUNK_CHARS = 4000
 
+# Known output dimensions per model family. The schema column must match the
+# model or every insert fails with "expected N dimensions".
+_MODEL_DIMS = {
+    "text-embedding-3-large": 3072,
+    "text-embedding-3-small": 1536,
+    "text-embedding-ada-002": 1536,
+}
+
+
+class UnknownEmbedDimError(RuntimeError):
+    """LLM_EMBED_MODEL is not a known family and EMBED_DIM is unset.
+
+    Guessing a dimension here is unsafe: a wrong guess sizes the pgvector
+    column wrong, which either fails every insert or (on a populated table)
+    invites a destructive migration. The operator must pin EMBED_DIM.
+    """
+
+
+def target_dim() -> int:
+    """Vector dimension the schema must hold.
+
+    Resolution order: explicit EMBED_DIM env wins; otherwise inferred from
+    LLM_EMBED_MODEL. Matching is case-insensitive, ignores provider prefixes
+    (`azure/…`), and prefers the longest family name so a short key cannot
+    shadow a more specific one. An unrecognised model raises rather than
+    guessing — see UnknownEmbedDimError.
+    """
+    explicit = os.environ.get("EMBED_DIM", "")
+    if explicit:
+        return int(explicit)
+    model = LLM_EMBED_MODEL.rsplit("/", 1)[-1].lower()
+    for name in sorted(_MODEL_DIMS, key=len, reverse=True):
+        if name in model:
+            return _MODEL_DIMS[name]
+    raise UnknownEmbedDimError(
+        f"cannot infer embedding dimension for LLM_EMBED_MODEL={LLM_EMBED_MODEL!r}; "
+        f"known families={sorted(_MODEL_DIMS)}. Set EMBED_DIM to pin it explicitly."
+    )
+
 
 def is_configured() -> bool:
     return bool(LLM_API_BASE) and bool(LLM_API_KEY)
 
 
-def embed_text(text: str, model: Optional[str] = None) -> list[float]:
+def embed_text(text: str, model: str | None = None) -> list[float]:
     """Generate an embedding vector via POST {base}/embeddings."""
     if not LLM_API_BASE or not LLM_API_KEY:
         raise RuntimeError("LLM_API_BASE and LLM_API_KEY must be set")

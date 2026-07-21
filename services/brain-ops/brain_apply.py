@@ -78,6 +78,30 @@ def parse_edges(section: str) -> list[dict]:
     return edges
 
 
+# A MERGE line's title field routinely carries the model's justification after
+# the new arc name: ``→ `new-id` — why these two are the same thing``. Cut at
+# the rationale separator and drop the backtick quoting.
+_MERGE_RATIONALE_RE = re.compile(r'\s*(?:[—–]|--)\s.*$')
+
+
+def clean_merge_title(raw: str) -> str:
+    """Reduce a MERGE line's title field to just the arc name.
+
+    The capture is anchored at end-of-line, so it swallows whatever the model
+    wrote after the name. Left in, that prose is written verbatim into the
+    arc's ``title:`` frontmatter and surfaces as the arc's display name in
+    ``/feed``, hot-arc tables, and every search result — a paragraph of merge
+    justification where a name belongs.
+
+    Scope note: this does NOT make the arc unreadable.
+    ``markers.parse_frontmatter`` is a line-splitter, not a YAML parser, so it
+    loads such a title verbatim and the arc stays fully visible. The damage is
+    legibility, not retrieval.
+    """
+    title = _MERGE_RATIONALE_RE.sub('', raw.strip())
+    return title.strip().strip('`').strip()
+
+
 def parse_merges(section: str) -> list[dict]:
     """Parse '### 2. Merge/Split Candidates' section."""
     ops = []
@@ -85,9 +109,14 @@ def parse_merges(section: str) -> list[dict]:
         merge_m = re.match(r'`?MERGE:\s*(\S+)\s*\+\s*(\S+)\s*[→→]\s*(.*?)`?$', line)
         split_m = re.match(r'`?SPLIT:\s*(\S+)\s*[→→]\s*(.*?)`?$', line)
         if merge_m:
-            ops.append({"op": "merge", "arc_a": merge_m.group(1), "arc_b": merge_m.group(2), "title": merge_m.group(3).strip()})
+            ops.append({
+                "op": "merge",
+                "arc_a": merge_m.group(1),
+                "arc_b": merge_m.group(2),
+                "title": clean_merge_title(merge_m.group(3)),
+            })
         elif split_m:
-            ops.append({"op": "split", "arc": split_m.group(1), "into": split_m.group(2).strip()})
+            ops.append({"op": "split", "arc": split_m.group(1), "into": clean_merge_title(split_m.group(2))})
     return ops
 
 
@@ -544,7 +573,15 @@ def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
             merged = text_a.rstrip() + merge_note
 
             if merge.get("title"):
-                merged = re.sub(r'^title:.*$', f'title: {merge["title"]}', merged, count=1, flags=re.MULTILINE)
+                # Quote the value so a title carrying a colon, a bracket, or a
+                # leading indicator stays one intact scalar. The kernel's own
+                # reader tolerates these, but the vault is also opened in
+                # Obsidian and by other tooling that does use a real YAML
+                # parser. json.dumps emits a double-quoted scalar YAML accepts.
+                safe_title = json.dumps(merge["title"])
+                merged = re.sub(
+                    r'^title:.*$', f'title: {safe_title}', merged, count=1, flags=re.MULTILINE
+                )
 
             file_a.write_text(merged)
 

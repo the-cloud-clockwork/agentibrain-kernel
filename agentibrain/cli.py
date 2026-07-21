@@ -153,6 +153,98 @@ def status_cmd() -> None:
         console.print(f"[red]health check failed: {e}[/red]")
 
 
+@main.command("check")
+@click.option("--brain-url", envvar="BRAIN_URL", help="Override brain-api base URL.")
+@click.option(
+    "--token",
+    envvar="KB_ROUTER_TOKEN",
+    help="Bearer token (defaults to env / settings).",
+)
+def check_cmd(brain_url: str | None, token: str | None) -> None:
+    """Deep sanity check — verify every dependency actually works.
+
+    Calls brain-api /health/deep, which round-trips a vault write, asks the
+    embeddings service to hit its DB and run a real embedding call (checking
+    the model's output dimension against the pgvector schema), and verifies
+    the inference gateway accepts the configured key.
+
+    Exit 0 when everything passes, 1 when any check is degraded.
+    """
+    settings = _load_settings()
+    base = (brain_url or settings.brain_url).rstrip("/")
+
+    if not token:
+        env_path = settings.config_dir.expanduser() / ".env"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if line.startswith("KB_ROUTER_TOKEN="):
+                    token = line.split("=", 1)[1].strip()
+                    break
+    if not token:
+        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `brain init`[/red]")
+        sys.exit(2)
+
+    try:
+        r = httpx.get(
+            f"{base}/health/deep",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=60.0,
+        )
+        r.raise_for_status()
+    except httpx.HTTPError as e:
+        # A degraded endpoint returns 500-with-JSON in some deployments; try to
+        # render its body before giving up so the operator sees the reason.
+        body = None
+        resp = getattr(e, "response", None)
+        if resp is not None:
+            try:
+                body = resp.json()
+            except ValueError:
+                body = None
+        console.print(f"[red]GET {base}/health/deep failed: {e}[/red]")
+        if isinstance(body, dict) and body.get("detail"):
+            console.print(f"[red]  {body['detail']}[/red]")
+        sys.exit(1)
+
+    try:
+        payload = r.json()
+    except ValueError:
+        console.print(f"[red]non-JSON response from {base}/health/deep:[/red]")
+        console.print(r.text[:500])
+        sys.exit(1)
+
+    overall = payload.get("status", "unknown")
+    checks = payload.get("checks", {})
+
+    for name, detail in checks.items():
+        if not isinstance(detail, dict):
+            console.print(f"[red]✗[/red] [bold]{name}[/bold]: {detail}")
+            continue
+        mark = "[green]✓[/green]" if detail.get("ok") else "[red]✗[/red]"
+        console.print(f"{mark} [bold]{name}[/bold]")
+        for key, value in detail.items():
+            if key == "ok":
+                continue
+            if key == "checks" and isinstance(value, dict):
+                for sub_name, sub in value.items():
+                    if not isinstance(sub, dict):
+                        console.print(f"    {sub_name}: {sub}")
+                        continue
+                    sub_mark = "[green]✓[/green]" if sub.get("ok") else "[red]✗[/red]"
+                    sub_detail = " ".join(
+                        f"{k}={v}" for k, v in sub.items() if k != "ok"
+                    )
+                    console.print(f"    {sub_mark} {sub_name}: {sub_detail}")
+                continue
+            console.print(f"    {key}: {value}")
+
+    if overall == "ok":
+        console.print("[green]all checks passed[/green]")
+        sys.exit(0)
+    console.print(f"[red]status: {overall}[/red]")
+    sys.exit(1)
+
+
 @main.command("tick")
 @click.option("--dry-run", is_flag=True, help="Run tick read-only (no writes).")
 @click.option("--no-ai", is_flag=True, help="Skip AI reasoning phase (deterministic only).")

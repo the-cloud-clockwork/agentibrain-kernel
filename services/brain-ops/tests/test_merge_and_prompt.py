@@ -17,6 +17,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 # Make brain-ops modules + scripts importable from any cwd.
 _HERE = Path(__file__).resolve().parent
 _BRAIN_TOOLS = _HERE.parent
@@ -176,3 +178,116 @@ class TestVaultCleanup:
         # related+parent → one canonical edge to x.
         assert edges["edges_removed"] >= 1
         assert (d / "foo.md").read_text().count("target=x") == 1
+
+
+def test_merge_title_drops_the_models_rationale():
+    """A MERGE line's title must reduce to the arc name, not carry the why.
+
+    The model writes ``→ `new-id` — why they are the same thing``. The capture
+    is anchored at end-of-line, so it used to swallow the whole justification
+    and write it into the arc's `title:` frontmatter.
+    """
+    section = (
+        "MERGE: a-arc + b-arc → `unified-id` — identical session ID, "
+        "continuous work across two calendar days.\n"
+        "MERGE: c-arc + d-arc → plain-id\n"
+        "MERGE: e-arc + f-arc → `quoted-id`\n"
+        "MERGE: g-arc + h-arc → dashed-id -- rationale after a double dash\n"
+    )
+    titles = [m["title"] for m in brain_apply.parse_merges(section)]
+    assert titles == ["unified-id", "plain-id", "quoted-id", "dashed-id"]
+    for t in titles:
+        assert "`" not in t and "—" not in t
+
+
+def test_merged_title_keeps_frontmatter_parseable(tmp_path):
+    """A title containing a colon must not corrupt the arc's frontmatter.
+
+    An arc whose frontmatter will not parse is skipped by the feed entirely,
+    so this is a retrieval failure rather than a cosmetic one.
+    """
+    yaml = pytest.importorskip("yaml")
+    d = tmp_path / "clusters" / "2026-07-21"
+    d.mkdir(parents=True)
+    (d / "a.md").write_text("---\ntitle: old\ncluster_id: a\nheat: 3\n---\n\nbody A\n")
+    (d / "b.md").write_text("---\ntitle: other\ncluster_id: b\nheat: 1\n---\n\nbody B\n")
+
+    brain_apply.apply_merges(
+        tmp_path,
+        [{"op": "merge", "arc_a": "a", "arc_b": "b", "title": "scope: a colon in the title"}],
+        dry_run=False,
+    )
+
+    text = (d / "a.md").read_text()
+    front = text.split("---")[1]
+    assert yaml.safe_load(front)["title"] == "scope: a colon in the title"
+
+
+def _repair_mod():
+    sys.path.insert(0, str(_BRAIN_TOOLS / "scripts"))
+    import repair_arc_titles
+    return repair_arc_titles
+
+
+def test_title_repair_spares_legitimate_subtitles():
+    """An em-dash is not evidence. Only a backtick, or a long punctuated
+    clause, distinguishes merge rationale from a real subtitle."""
+    r = _repair_mod()
+    keep = [
+        "Session markers — de4d189d",
+        "Brain smoke tests — 2026-04-13",
+        "KB Pipeline — federated search + synthesis + dispatch",
+        "Embed fallback probe — Content embedding verification",
+        "GitHub Org Migration Trail: tcc-ecosystem Rename",
+    ]
+    for title in keep:
+        assert not r.is_polluted(title), title
+
+
+def test_title_repair_catches_merge_rationale():
+    r = _repair_mod()
+    strip = [
+        "symbiosis-manifesto-canonical` — both are right-hemisphere arcs; the separate one is redundant",
+        "amygdala-deploy-failed-series` — repeated deploy failures in one environment are one thread.",
+        "writer-corpus-active-unified — both are writer session arcs feeding the same parents, "
+        "with overlapping sibling clusters and no distinction",
+    ]
+    for title in strip:
+        assert r.is_polluted(title), title
+        cleaned = r.clean_merge_title(title)
+        assert cleaned and "`" not in cleaned and "—" not in cleaned
+
+
+def test_title_repair_rewrites_file_and_is_idempotent(tmp_path):
+    r = _repair_mod()
+    d = tmp_path / "clusters" / "2026-07-21"
+    d.mkdir(parents=True)
+    arc = d / "a.md"
+    arc.write_text(
+        "---\ntitle: unified-id` — identical session ID, continuous work, two days\n"
+        "cluster_id: a\nheat: 3\n---\n\nbody stays\n"
+    )
+    keep = d / "b.md"
+    keep.write_text("---\ntitle: Session markers — b12345\ncluster_id: b\nheat: 1\n---\n\nbody\n")
+
+    first = r.repair(tmp_path, dry_run=False)
+    assert first["repaired"] == 1
+    text = arc.read_text()
+    assert 'title: "unified-id"' in text
+    assert "body stays" in text
+    assert keep.read_text().count("Session markers — b12345") == 1
+
+    # Running it again must be a no-op.
+    assert r.repair(tmp_path, dry_run=False)["repaired"] == 0
+
+
+def test_title_repair_dry_run_writes_nothing(tmp_path):
+    r = _repair_mod()
+    d = tmp_path / "clusters" / "2026-07-21"
+    d.mkdir(parents=True)
+    arc = d / "a.md"
+    original = "---\ntitle: x` — both are the same thing, merged for clarity here\ncluster_id: a\n---\n\nb\n"
+    arc.write_text(original)
+    stats = r.repair(tmp_path, dry_run=True)
+    assert stats["repaired"] == 1
+    assert arc.read_text() == original

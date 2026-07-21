@@ -96,6 +96,98 @@ def health() -> dict:
     }
 
 
+@app.get("/health/deep")
+async def health_deep(_: None = Depends(require_token)) -> dict:
+    """End-to-end readiness across the whole kernel.
+
+    Verifies what liveness /health cannot: the vault is actually writable,
+    the embeddings service can reach both its DB and the embedding model
+    (via its own /health/deep), and the inference gateway accepts our key.
+    """
+    import httpx
+    import uuid
+
+    checks: dict[str, Any] = {}
+    ok = True
+
+    # Vault: prove a real write round-trips, not just that the mount exists.
+    # The probe name is unique per call so concurrent /health/deep requests
+    # never write or unlink each other's file (a shared name races: the second
+    # unlink hits a missing path and falsely reports the vault unwritable).
+    probe = VAULT_ROOT / f".healthcheck.{os.getpid()}.{uuid.uuid4().hex}"
+    try:
+        probe.write_text(str(time.time()))
+        checks["vault"] = {"ok": True, "root": str(VAULT_ROOT), "writable": True}
+    except OSError as exc:
+        ok = False
+        checks["vault"] = {"ok": False, "root": str(VAULT_ROOT), "error": str(exc)[:300]}
+    finally:
+        try:
+            probe.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Embeddings: delegate to its deep check (DB + live embed + dim match).
+        if not EMBEDDINGS_URL or not _EMBEDDINGS_API_KEY:
+            ok = False
+            checks["embeddings"] = {"ok": False, "error": "EMBEDDINGS_URL or EMBEDDINGS_API_KEY not configured"}
+        else:
+            try:
+                resp = await client.get(
+                    f"{EMBEDDINGS_URL.rstrip('/')}/health/deep",
+                    headers={"Authorization": f"Bearer {_EMBEDDINGS_API_KEY}"},
+                )
+                body = resp.json() if resp.status_code == 200 else {"error": resp.text[:300]}
+                healthy = resp.status_code == 200 and body.get("status") == "ok"
+                if not healthy:
+                    ok = False
+                checks["embeddings"] = {"ok": healthy, "url": EMBEDDINGS_URL, **body}
+            except Exception as exc:
+                ok = False
+                checks["embeddings"] = {"ok": False, "url": EMBEDDINGS_URL, "error": str(exc)[:300]}
+
+        # Inference: the gateway answers /models with our key, and the
+        # classify model is in the catalogue. This is a reachability +
+        # auth + catalogue check, NOT proof a completion will succeed — a
+        # listed model can still be out of quota or a broken deployment. We
+        # deliberately stop short of a real completion to keep this check
+        # free; gross outages (gateway down, bad key, model removed) are
+        # caught, model-specific degradation is not.
+        inference_url = os.getenv("INFERENCE_URL", "")
+        inference_key = os.getenv("INFERENCE_API_KEY", "")
+        if not inference_url:
+            ok = False
+            checks["inference"] = {"ok": False, "error": "INFERENCE_URL not configured"}
+        else:
+            try:
+                resp = await client.get(
+                    f"{inference_url.rstrip('/')}/models",
+                    headers={"Authorization": f"Bearer {inference_key}"},
+                )
+                healthy = resp.status_code == 200
+                if not healthy:
+                    ok = False
+                detail: dict[str, Any] = {"ok": healthy, "url": inference_url, "http_status": resp.status_code}
+                if healthy:
+                    models = resp.json().get("data", [])
+                    detail["model_count"] = len(models)
+                    classify_model = os.getenv("BRAIN_CLASSIFY_MODEL", "")
+                    if classify_model:
+                        detail["classify_model"] = classify_model
+                        detail["classify_model_available"] = any(
+                            m.get("id") == classify_model for m in models
+                        )
+                else:
+                    detail["error"] = resp.text[:300]
+                checks["inference"] = detail
+            except Exception as exc:
+                ok = False
+                checks["inference"] = {"ok": False, "url": inference_url, "error": str(exc)[:300]}
+
+    return {"status": "ok" if ok else "degraded", "service": "brain-api", "checks": checks}
+
+
 # ---------------------------------------------------------------------------
 # Vault read/write — absorbed from the former obsidian-reader microservice
 # ---------------------------------------------------------------------------

@@ -61,6 +61,12 @@ services:
       LLM_API_BASE: ${LLM_API_BASE:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_EMBED_MODEL: ${LLM_EMBED_MODEL:-text-embedding-3-small}
+      # Pin the vector dimension when LLM_EMBED_MODEL is not a recognised
+      # family; required for unknown models (the service refuses to guess).
+      EMBED_DIM: ${EMBED_DIM:-}
+      # Opt in to dropping existing embeddings when the model dimension
+      # changes. Off by default — a mismatch is reported, not silently wiped.
+      EMBED_DIM_FORCE_MIGRATE: ${EMBED_DIM_FORCE_MIGRATE:-}
       API_KEYS: ${EMBEDDINGS_API_KEYS:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:

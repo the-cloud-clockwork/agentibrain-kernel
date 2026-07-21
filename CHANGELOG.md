@@ -6,7 +6,30 @@ Tags are issued by the release workflow, not locally. Cut one by dispatching `.g
 
 ---
 
-## [0.7.0] — 2026-07-21
+## [Unreleased]
+
+### Bug Fixes
+
+- **Merge rationale was being written into arc titles** (`brain_apply.py`) — a MERGE
+  line reads ``MERGE: a + b → `new-id` — why these two are the same thing``, and the
+  title capture was anchored at end-of-line, so it swallowed the justification and
+  `apply_merges` wrote the whole string into the arc's `title:`. The arc's display
+  name in `/feed`, in hot-arc tables, and in every search result became a paragraph
+  of reasoning. `clean_merge_title()` now cuts at the rationale separator and strips
+  the backtick quoting; the frontmatter write emits a quoted scalar so a title
+  carrying a colon stays one intact value for the strict YAML parsers that read the
+  vault (Obsidian and friends — the kernel's own reader is a line splitter and was
+  never affected).
+
+### Maintenance
+
+- **`scripts/repair_arc_titles.py`** — one-time repair for arcs written before that
+  fix. Backs the vault up, then rewrites only titles carrying a backtick or a long
+  internally-punctuated clause. Deliberately conservative: an em-dash alone proves
+  nothing, since `KB Pipeline — federated search + synthesis + dispatch` is a real
+  subtitle and must survive, so a false negative (one ugly title left alone) is
+  preferred over a false positive (a real name destroyed). Idempotent, `--dry-run`
+  first, and it never blanks a title.
 
 **Brain injection quality + on-demand ticks**: the brain now injects real
 synthesized arc summaries backed by a working semantic index instead of
