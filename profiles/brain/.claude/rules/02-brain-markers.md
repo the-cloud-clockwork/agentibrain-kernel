@@ -1,59 +1,35 @@
-# Brain Markers — Passive Write Path (Priority 2)
+# Markers — What Earns One
 
-Your output is scanned for HTML comment markers that feed back into the brain in real-time. The `brain_writer_hook` parses them and POSTs to brain-api `/marker`. You just write them — the hooks handle routing.
+Syntax and the four types are in `CLAUDE.md`. This is the editorial standard.
 
-## Marker Types
+## @lesson
 
-### @lesson — Non-obvious learning
-```markdown
-<!-- @lesson -->
-psycopg2 connections are not thread-safe — replaced with ThreadedConnectionPool.
-<!-- @/lesson -->
-```
-**When:** A fix that took investigation. A pattern that saves time next time.
-**Not for:** Obvious things. Things already documented.
+A fix that took real investigation, or a pattern that saves the next person
+time. Not the obvious, not the already-documented.
 
-### @milestone — Deliverable shipped
-```markdown
-<!-- @milestone status=done scope=brain-system -->
-Signal tombstone logic shipped. Resolved signals auto-removed next tick.
-<!-- @/milestone -->
-```
-**When:** A meaningful unit of work is complete and validated.
-**Not for:** Individual commits. Intermediate steps.
+> psycopg2 connections are not thread-safe — replaced with ThreadedConnectionPool.
 
-### @signal — Something needs attention
-```markdown
-<!-- @signal severity=warning source=deploy -->
-publisher-0 restarted 3 times in 10 minutes after image update.
-<!-- @/signal -->
-```
-**Severities:** `nuclear` (prod down, data loss, security) → `critical` (degraded) → `warning` (off but not broken) → `info` (FYI) → `resolved` (fixed).
+## @milestone
 
-**SECURITY:** Credential/key/token exposed anywhere → emit `severity=nuclear source=security` IMMEDIATELY.
+A meaningful unit of work, complete and validated. Not individual commits, not
+intermediate steps.
 
-### @decision — Architectural choice
-```markdown
-<!-- @decision date=2026-04-11 -->
-Fight/flight is operator decision. Amygdala shows banner, agents never auto-halt.
-<!-- @/decision -->
-```
-**When:** A choice future sessions should know about. Trade-offs. Why X over Y.
+## @signal
 
-## Rules
+Something needs attention. Pick the severity honestly — an inflated `critical`
+costs the whole fleet's attention, a deflated one buries a real fire.
 
-1. Markers are HTML comments — invisible in rendered markdown. Write them freely.
-2. One marker per insight.
-3. Be specific — "fixed the bug" is useless.
-4. Don't force it — no marker is better than a low-quality one.
-5. Max 5 markers per session.
+A credential, key, or token exposed anywhere is `nuclear`, `source=security`,
+immediately.
 
-## Markers vs brain_ingest
+## @decision
 
-| | Markers | brain_ingest |
-|---|---------|-------------|
-| **Size** | 1-3 sentences | Paragraphs to full documents |
-| **When** | In-flow, as you work | Deliberate knowledge dump |
-| **How** | Write HTML comment in output | Call MCP tool |
-| **Processing** | brain_writer_hook → POST /marker → next tick | POST /ingest → raw/inbox/ → next tick |
-| **Use for** | Lessons, milestones, signals, decisions | Architecture docs, research, references |
+An architectural choice a future session should not have to relitigate. Record
+the trade-off and why the alternative lost — the reasoning is the value, not
+the verdict.
+
+## Standard
+
+Specific enough to act on. "Fixed the bug" is worthless; name the cause and the
+fix. One insight per marker. Five per session, and a session with two good ones
+beats a session with five weak ones.
