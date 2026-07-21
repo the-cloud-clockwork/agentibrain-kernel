@@ -84,6 +84,18 @@ the update/redeploy procedure is documented for both.
   coalescing by kind, and omitted the `BRAIN_DECAY_*` / `BRAIN_STALE_SIGNAL_DAYS`
   tuning that `tick-cron` carries, so drain ticks and scheduled ticks could
   promote/demote the same arc differently. All three corrected.
+- **A single failed `mv` aborted the whole drain** (both `compose.yml` and
+  `helm/brain-ops/templates/tick-drain-cronjob.yaml`) — `run_kind`'s last statement was
+  the file-move loop, so a `for` loop's exit status became the function's, and under
+  `set -eu` a bare call site killed the script outright. By that point `brain_tick.py`
+  had already run and mutated the vault, so a permission error, stale NFS handle, or
+  ENOSPC discarded completed work, skipped every remaining bucket, and emitted no
+  `drain-summary` at all — the failure was invisible. On Compose, `restart:
+  unless-stopped` then respawned the container into a tight loop re-running the tick.
+  Failed moves are now warned, counted in a new `stuck=` summary field, and retried on
+  the next pass; `run_kind` returns 0 explicitly so the call site can never inherit a
+  move's status. Reproduced against the real extracted script under `dash` before and
+  after the fix.
 - **Helm and Compose disagreed on signal ageing** — `helm/brain-ops/values.yaml` shipped
   `BRAIN_STALE_SIGNAL_DAYS: "1"` while Compose and the code default in
   `brain_keeper.py` both use `3`, so stock Helm aged signals out three times faster
