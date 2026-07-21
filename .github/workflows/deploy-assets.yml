@@ -1,0 +1,119 @@
+name: deploy-assets
+
+# Validates the things that describe HOW the kernel is deployed — Helm charts
+# and the Compose stack — as opposed to the service code that docker-build
+# covers.
+#
+# This exists because a real defect shipped undetected: four of five charts
+# defaulted to `image.tag: latest`, a tag CI has never published, so a stock
+# `helm install` produced ImagePullBackOff on every one of them. Nothing in CI
+# looked at chart values, on any branch, so nothing caught it. The tag-contract
+# check below is the regression test for exactly that.
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "helm/**"
+      - "compose.yml"
+      - "local/compose*.yml"
+      - ".github/workflows/deploy-assets.yml"
+  pull_request:
+    paths:
+      - "helm/**"
+      - "compose.yml"
+      - "local/compose*.yml"
+      - ".github/workflows/deploy-assets.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Every chart renders
+        run: |
+          set -euo pipefail
+          fail=0
+          for chart in helm/*/Chart.yaml; do
+            dir=$(dirname "$chart")
+            printf '%-40s ' "$dir"
+            if helm template ci-render "$dir" >/dev/null 2>/tmp/helm.err; then
+              echo "OK"
+            else
+              echo "FAIL"; sed 's/^/    /' /tmp/helm.err; fail=1
+            fi
+          done
+          exit "$fail"
+
+      - name: Charts pin only tags CI actually publishes
+        run: |
+          set -euo pipefail
+          # docker-build.yml publishes exactly one floating tag: :dev.
+          # Anything else in a first-party agentibrain image reference is
+          # unpullable. Third-party images (pgvector, redis, ollama, …) are
+          # not our contract and are skipped.
+          bad=$(grep -rnE 'image:\s*"?ghcr\.io/[^"]*agentibrain-[a-z-]+:(?!dev)' \
+                  --include='*.yaml' --include='*.yml' -P helm/ || true)
+          bad_tag=$(grep -rnE '^\s*tag:\s*"?(latest|main|stable|prod)"?\s*$' \
+                  --include='values*.yaml' helm/ || true)
+          if [ -n "$bad$bad_tag" ]; then
+            echo "::error::Chart references a tag CI does not publish. Only ':dev' exists."
+            printf '%s\n%s\n' "$bad" "$bad_tag"
+            exit 1
+          fi
+          echo "All first-party image references pin :dev"
+
+      - name: Rendered manifests pin only :dev
+        run: |
+          set -euo pipefail
+          # Values-level greps miss a tag baked into a template. Assert on the
+          # rendered output, which is what the cluster actually pulls.
+          # Collect first, then judge — a `while` inside a pipeline runs in a
+          # subshell, so failing there would be silently discarded.
+          helm template ci-render helm/brain-api  > /tmp/rendered.yaml
+          for chart in helm/*/Chart.yaml; do
+            helm template ci-render "$(dirname "$chart")" >> /tmp/rendered.yaml
+          done
+          offenders=$(grep -oE 'image: "?[^" ]+' /tmp/rendered.yaml \
+            | sed 's/image: "\?//' | sort -u \
+            | grep -E 'agentibrain-|agenticore' \
+            | grep -vE ':dev$' || true)
+          if [ -n "$offenders" ]; then
+            echo "::error::First-party image rendered without the :dev tag"
+            printf '%s\n' "$offenders"
+            exit 1
+          fi
+          echo "Every rendered first-party image pins :dev"
+
+      - name: Compose stack is valid
+        run: docker compose --env-file /dev/null config >/dev/null
+
+      - name: Compose entrypoints are POSIX-clean
+        run: |
+          set -euo pipefail
+          # tick-drain and tick-cron run under /bin/sh (dash) in the container,
+          # not bash — bash hides POSIX violations. Extract each rendered
+          # script, unescape compose's '$$' -> '$', syntax-check with dash.
+          sudo apt-get install -y --no-install-recommends dash >/dev/null 2>&1 || true
+          docker compose --env-file /dev/null config --format json > /tmp/compose.json
+          for svc in tick-drain tick-cron; do
+            printf '%-12s ' "$svc"
+            python3 - "$svc" > "/tmp/$svc.raw" <<'PY'
+          import json, sys
+          svc = sys.argv[1]
+          cmd = json.load(open("/tmp/compose.json"))["services"][svc].get("command") or []
+          print(cmd[0] if cmd else "")
+          PY
+            sed 's/\$\$/\$/g' "/tmp/$svc.raw" > "/tmp/$svc.sh"
+            dash -n "/tmp/$svc.sh"
+            echo "POSIX OK"
+          done
