@@ -85,15 +85,51 @@ if [[ -n "$EMB_PLURAL" ]]; then
   echo "[bootstrap] aligned EMBEDDINGS_API_KEY = EMBEDDINGS_API_KEYS"
 fi
 
-# 2. Resolve vault path (default ./vault, override via VAULT_ROOT_HOST in .env)
-VAULT_HOST="$(grep -E '^VAULT_ROOT_HOST=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '\r' || echo './vault')"
-[[ -z "$VAULT_HOST" ]] && VAULT_HOST="./vault"
+# 2. Resolve vault path (default ~/agentibrain-vault, override via
+#    VAULT_ROOT_HOST in .env). The vault lives in $HOME, not the repo checkout,
+#    so it survives re-clones and never pollutes the working tree.
+DEFAULT_VAULT="$HOME/agentibrain-vault"
+VAULT_HOST="$(grep -E '^VAULT_ROOT_HOST=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '\r' || true)"
 
-# Resolve relative to repo root
+# The pre-relocation default was ./vault inside the repo — treat it (and empty)
+# as "use the current default" so existing .env files upgrade in place.
+if [[ -z "$VAULT_HOST" || "$VAULT_HOST" == "./vault" ]]; then
+  VAULT_HOST="$DEFAULT_VAULT"
+fi
+
 case "$VAULT_HOST" in
+  "~") VAULT_ABS="$HOME" ;;
+  "~/"*) VAULT_ABS="$HOME/${VAULT_HOST#\~/}" ;;
   /*) VAULT_ABS="$VAULT_HOST" ;;
   *)  VAULT_ABS="$ROOT/${VAULT_HOST#./}" ;;
 esac
+
+# Pin the resolved absolute path in .env so docker compose (which reads .env
+# directly, without this script) mounts the exact same directory.
+if grep -qE '^VAULT_ROOT_HOST=' "$ENV_FILE"; then
+  if sed --version >/dev/null 2>&1; then
+    sed -i "s|^VAULT_ROOT_HOST=.*|VAULT_ROOT_HOST=${VAULT_ABS}|" "$ENV_FILE"
+  else
+    sed -i "" "s|^VAULT_ROOT_HOST=.*|VAULT_ROOT_HOST=${VAULT_ABS}|" "$ENV_FILE"
+  fi
+else
+  printf "\nVAULT_ROOT_HOST=%s\n" "$VAULT_ABS" >> "$ENV_FILE"
+fi
+echo "[bootstrap] vault path: $VAULT_ABS"
+
+# 2a. Migrate a legacy in-repo vault. Earlier versions scaffolded ./vault
+#     inside the checkout; move its content to the new home if the target
+#     doesn't exist yet.
+LEGACY_VAULT="$ROOT/vault"
+if [[ "$LEGACY_VAULT" != "$VAULT_ABS" && -d "$LEGACY_VAULT" && -n "$(ls -A "$LEGACY_VAULT" 2>/dev/null)" ]]; then
+  if [[ ! -d "$VAULT_ABS" ]]; then
+    echo "[bootstrap] migrating legacy repo vault $LEGACY_VAULT → $VAULT_ABS"
+    mkdir -p "$(dirname "$VAULT_ABS")"
+    mv "$LEGACY_VAULT" "$VAULT_ABS"
+  else
+    echo "[bootstrap] WARNING: legacy vault $LEGACY_VAULT still holds data but $VAULT_ABS already exists — merge it manually, leaving both untouched"
+  fi
+fi
 
 if [[ ! -d "$VAULT_ABS" ]]; then
   echo "[bootstrap] scaffolding vault at $VAULT_ABS"
