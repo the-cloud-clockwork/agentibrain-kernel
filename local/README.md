@@ -8,7 +8,7 @@ deploy for laptops. This directory holds the compose entry point.
 ```bash
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
-./local/bootstrap.sh              # writes .env + scaffolds ./vault
+./local/bootstrap.sh              # writes .env + scaffolds ~/agentibrain-vault
 docker compose up -d              # 8 containers come up
 docker compose ps                 # see the health note below
 ```
@@ -19,8 +19,9 @@ workers with no healthcheck, so the absence of `(healthy)` on those three is
 expected, not a fault. Judge them by their logs instead.
 
 On macOS, enable VirtioFS (Docker Desktop → Settings → General → "VirtioFS")
-for fast bind mounts. If you ever see root-owned files under `./vault` from a
-prior run, `sudo chown -R $(id -u):$(id -g) ./vault`.
+for fast bind mounts. If you ever see root-owned files under the vault
+(`~/agentibrain-vault` by default) from a prior run,
+`sudo chown -R $(id -u):$(id -g) ~/agentibrain-vault`.
 
 Smoke the brain feed:
 
@@ -48,19 +49,28 @@ at build time. Pulling new code does not change a running container, and
 `docker compose up -d` alone will not rebuild it: compose sees an image with the
 expected tag already present and reuses it.
 
-The update is therefore three steps, and the middle one is the one people skip:
+The update is therefore this sequence, and `--build` is the step people skip:
 
 ```bash
 git pull
+./local/bootstrap.sh              # idempotent: re-pins .env, migrates the vault if needed
 docker compose up -d --build      # rebuild changed services, recreate them
 docker compose ps                 # the five healthchecked services report (healthy)
 ```
+
+Re-running `bootstrap.sh` on every update is safe and is what makes an update
+seamless across layout changes: it keeps your tokens, upgrades a legacy
+in-repo `./vault` to `~/agentibrain-vault` (moving the data), and pins the
+resolved path in `~/.agentibrain/.env`. When the vault path changes, compose
+sees a changed bind mount and recreates the affected containers on the next
+`up -d` — no manual `down` required.
 
 `--build` is what makes the new code take effect. If you prefer the explicit
 form:
 
 ```bash
 git pull
+./local/bootstrap.sh              # re-pin .env + migrate vault if needed
 docker compose build              # rebuild images from the new source
 docker compose down               # stop old containers (volumes survive)
 docker compose up -d              # start on the new images
@@ -138,7 +148,8 @@ destroys them. A schema change that needs a fresh database says so in
      │     │                                 │
      │     │         ┌──────────────┐        ▼
      │     │         │ vault (RW)   │ ┌──────────────┐
-     │     ├────────▶│ ./vault by   │ │ postgres+    │
+     │     ├────────▶│ ~/agentibrain│ │ postgres+    │
+     │     │         │ -vault by    │ │              │
      │     │         │ default      │ │ pgvector     │
      │     │         └──────────────┘ └──────────────┘
      │     │                ▲
@@ -195,8 +206,11 @@ vault/
 └── clusters/           # arc cluster files (one per active arc)
 ```
 
-By default the vault lives at `./vault` (relative to the repo root, bind-mounted
-into containers at `/vault`). To use your existing Obsidian vault instead:
+By default the vault lives at `~/agentibrain-vault` (in $HOME, outside the
+repo checkout, bind-mounted into containers at `/vault`). Earlier versions
+scaffolded `./vault` inside the repo — `bootstrap.sh` migrates that
+automatically when the new location doesn't exist yet. To use your existing
+Obsidian vault instead:
 
 ```bash
 echo 'VAULT_ROOT_HOST=/Users/you/Documents/MyVault' >> .env
@@ -204,6 +218,37 @@ docker compose up -d
 ```
 
 Path can be absolute or relative.
+
+## Seeding the vault from Claude Code transcripts
+
+`tick-cron` clusters arcs out of Claude Code session transcripts. The host's
+`~/.claude/projects` is mounted read-only at `/shared/.claude/projects`
+(override the host side with `CLAUDE_PROJECTS_HOST` in `.env`). Extraction runs
+once daily at `EXTRACT_HOUR` UTC (default `04`), looking back `EXTRACT_SINCE`
+(default `26h`) and skipping sessions shorter than `EXTRACT_MIN_TURNS` turns.
+Single-digit hours are accepted (`EXTRACT_HOUR=4` ≡ `04`). A mounted-but-empty
+transcripts directory is treated as "not mounted" and extraction is skipped —
+Docker silently creates a missing host directory, so emptiness is the only
+reliable signal that `CLAUDE_PROJECTS_HOST` points at the wrong place.
+
+A fresh vault starts empty — nothing appears until the first extraction window.
+To seed it immediately from historical transcripts:
+
+```bash
+EXTRACT_ON_BOOT=1 docker compose up -d --force-recreate tick-cron
+docker compose logs -f tick-cron   # watch the "[tick-cron] extraction:" pass
+```
+
+`EXTRACT_BOOT_SINCE` (default `90d`) bounds the backfill window. Drop
+`EXTRACT_ON_BOOT` afterwards — leaving it set re-runs the seed on every
+container start (idempotent but wasteful).
+
+Markers (`@lesson`, `@signal`, `@decision`, `@milestone`) arrive separately:
+agentihooks POSTs them to brain-api when `BRAIN_URL` is set in the agent's
+environment (e.g. `http://127.0.0.1:8103` for this compose stack, plus
+`KB_ROUTER_TOKEN` for auth). Without `BRAIN_URL`, markers never reach the
+vault.
+
 
 ## Common operations
 
@@ -247,7 +292,7 @@ docker compose down -v
 
 **Vault permission errors (root-owned files inside container)**
 - The services run as non-root. If a previous run as root left files behind,
-  `sudo chown -R $(id -u):$(id -g) ./vault`.
+  `sudo chown -R $(id -u):$(id -g) ~/agentibrain-vault`.
 - On macOS / Windows: enable VirtioFS / WSL2 native filesystem for fast bind
   mounts.
 

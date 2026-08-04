@@ -1,7 +1,7 @@
 # agentibrain-kernel — root compose for local non-k8s deployment.
 #
 # Quickstart:
-#   ./local/bootstrap.sh   # generates .env + scaffolds ./vault
+#   ./local/bootstrap.sh   # generates .env + scaffolds ~/agentibrain-vault
 #   docker compose up -d
 #
 # Optional Ollama overlay for local AI tick:
@@ -98,7 +98,7 @@ services:
       VAULT_ROOT: /vault
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - ${VAULT_ROOT_HOST:-./vault}:/vault
+      - ${VAULT_ROOT_HOST:-~/agentibrain-vault}:/vault
     ports:
       - "${PORT_BRAIN_API:-8103}:8080"
     healthcheck:
@@ -131,19 +131,45 @@ services:
           FLAGS="--no-ai"
           echo "[tick-cron] INFERENCE_URL not set — running deterministic only"
         fi
+        PROJECTS_DIR="$${EXTRACT_PROJECTS_DIR:-/shared/.claude/projects}"
+        # Normalise a single-digit hour ("4" → "04") to match `date -u +%H`.
+        GATE_HOUR="$${EXTRACT_HOUR:-04}"
+        case "$${GATE_HOUR}" in
+          [0-9]) GATE_HOUR="0$${GATE_HOUR}" ;;
+        esac
+        # Docker auto-creates a missing bind-mount source, so `-d` alone is
+        # always true — an empty dir is the real "nothing mounted" signal.
+        have_transcripts() {
+          [ -d "$${PROJECTS_DIR}" ] && [ -n "$$(ls -A "$${PROJECTS_DIR}" 2>/dev/null)" ]
+        }
+        run_extraction() {
+          ex_since="$$1"
+          ex_outdir="/vault/clusters/$$(date -u +%Y-%m-%d)"
+          mkdir -p "$${ex_outdir}" 2>/dev/null || true
+          echo "[tick-cron] extraction: since=$${ex_since} min-turns=$${EXTRACT_MIN_TURNS:-5}"
+          python3 /app/extract.py --since "$${ex_since}" \
+            --min-turns "$${EXTRACT_MIN_TURNS:-5}" \
+            --projects-dir "$${PROJECTS_DIR}" \
+            | python3 /app/cluster.py --out-dir "$${ex_outdir}" \
+            || echo "[tick-cron] extraction failed (continuing)"
+        }
+        # One-shot seed pass at container start (historical backfill).
+        if [ "$${EXTRACT_ON_BOOT:-0}" = "1" ]; then
+          if have_transcripts; then
+            run_extraction "$${EXTRACT_BOOT_SINCE:-90d}"
+          else
+            echo "[tick-cron] EXTRACT_ON_BOOT=1 but $${PROJECTS_DIR} is empty or not mounted — skipping seed"
+          fi
+        fi
         while true; do
           DATE=$$(date -u +%Y-%m-%d)
           HOUR=$$(date -u +%H)
           OUTDIR="/vault/clusters/$${DATE}"
           mkdir -p "$${OUTDIR}" 2>/dev/null || true
 
-          # Extraction: once daily at the first tick of the day (hour 04)
-          if [ "$${HOUR}" = "04" ] && [ -d /shared/.claude/projects ]; then
-            echo "[tick-cron] extraction: since=26h min-turns=5"
-            python3 /app/extract.py --since 26h --min-turns 5 \
-              --projects-dir /shared/.claude/projects \
-              | python3 /app/cluster.py --out-dir "$${OUTDIR}" \
-              || echo "[tick-cron] extraction failed (continuing)"
+          # Extraction: once daily at EXTRACT_HOUR UTC
+          if [ "$${HOUR}" = "$${GATE_HOUR}" ] && have_transcripts; then
+            run_extraction "$${EXTRACT_SINCE:-26h}"
           fi
 
           # Hybrid brain tick
@@ -172,9 +198,16 @@ services:
       BRAIN_DECAY_START_DAYS: ${BRAIN_DECAY_START_DAYS:-2}
       BRAIN_DECAY_INTERVAL_DAYS: ${BRAIN_DECAY_INTERVAL_DAYS:-2}
       BRAIN_STALE_SIGNAL_DAYS: ${BRAIN_STALE_SIGNAL_DAYS:-3}
+      EXTRACT_HOUR: "${EXTRACT_HOUR:-04}"
+      EXTRACT_SINCE: ${EXTRACT_SINCE:-26h}
+      EXTRACT_MIN_TURNS: "${EXTRACT_MIN_TURNS:-5}"
+      EXTRACT_PROJECTS_DIR: /shared/.claude/projects
+      EXTRACT_ON_BOOT: "${EXTRACT_ON_BOOT:-0}"
+      EXTRACT_BOOT_SINCE: ${EXTRACT_BOOT_SINCE:-90d}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - ${VAULT_ROOT_HOST:-./vault}:/vault
+      - ${VAULT_ROOT_HOST:-~/agentibrain-vault}:/vault
+      - ${CLAUDE_PROJECTS_HOST:-~/.claude/projects}:/shared/.claude/projects:ro
 
   tick-drain:
     build:
@@ -287,7 +320,7 @@ services:
       BRAIN_STALE_SIGNAL_DAYS: ${BRAIN_STALE_SIGNAL_DAYS:-3}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - ${VAULT_ROOT_HOST:-./vault}:/vault
+      - ${VAULT_ROOT_HOST:-~/agentibrain-vault}:/vault
 
   amygdala:
     build:
@@ -315,7 +348,7 @@ services:
       AMYGDALA_CONSUMER: ${AMYGDALA_CONSUMER:-amygdala-local}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - ${VAULT_ROOT_HOST:-./vault}:/vault
+      - ${VAULT_ROOT_HOST:-~/agentibrain-vault}:/vault
 
   mcp:
     build:

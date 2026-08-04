@@ -9,7 +9,7 @@
 ```bash
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
-./local/bootstrap.sh      # generates ~/.agentibrain/.env, symlinks to repo, scaffolds ./vault
+./local/bootstrap.sh      # generates ~/.agentibrain/.env, symlinks to repo, scaffolds ~/agentibrain-vault
 ```
 
 ### 2. Configure your LLM provider (optional)
@@ -114,7 +114,7 @@ curl -X POST http://localhost:8103/search \
   -d '{"query": "fox"}'
 ```
 
-Content lands in `./vault/raw/inbox/`. The tick drains it to a region dir, recomputes heat, and updates brain-feed.
+Content lands in the vault at `raw/inbox/` (`~/agentibrain-vault` by default). The tick drains it to a region dir, recomputes heat, and updates brain-feed.
 
 **Force a tick on demand** (don't wait for the 2h scheduled cycle):
 
@@ -255,7 +255,7 @@ Plus an **opt-in `brain-keeper`** agent (ops oracle for triage, enrichment, repl
 ```bash
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
-./local/bootstrap.sh           # writes .env (random tokens) + scaffolds ./vault
+./local/bootstrap.sh           # writes .env (random tokens) + scaffolds ~/agentibrain-vault
 docker compose up -d           # 8 containers come up
 ```
 
