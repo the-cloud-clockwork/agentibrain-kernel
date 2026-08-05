@@ -181,50 +181,51 @@ async def health_deep(_: None = Depends(require_token)) -> dict:
                     classify_model = os.getenv("BRAIN_CLASSIFY_MODEL", "")
                     if classify_model:
                         detail["classify_model"] = classify_model
-                        available = any(m.get("id") == classify_model for m in models)
-                        detail["classify_model_available"] = available
-                        if available:
-                            try:
-                                t0 = time.monotonic()
-                                comp = await client.post(
-                                    f"{inference_url.rstrip('/')}/chat/completions",
-                                    headers={"Authorization": f"Bearer {inference_key}"},
-                                    json={
-                                        "model": classify_model,
-                                        "messages": [
-                                            {
-                                                "role": "user",
-                                                "content": "Reply with exactly one word: pong",
-                                            }
-                                        ],
-                                        "max_tokens": 5,
-                                        "temperature": 0,
-                                    },
-                                )
-                                comp.raise_for_status()
-                                text = (
-                                    comp.json()["choices"][0]["message"]["content"] or ""
-                                ).strip()
-                                pong = "pong" in text.lower()
-                                if not pong:
-                                    ok = False
-                                    detail["ok"] = False
-                                detail["completion"] = {
-                                    "ok": pong,
-                                    "probe": "ping",
-                                    "response": text[:80],
-                                    "latency_ms": round((time.monotonic() - t0) * 1000),
-                                }
-                            except Exception as exc:
+                        # Informational only: wildcard/passthrough routing can
+                        # serve models /models never enumerates, so absence
+                        # from the catalogue must not degrade health. The
+                        # completion below is the arbiter.
+                        detail["classify_model_available"] = any(
+                            m.get("id") == classify_model for m in models
+                        )
+                        try:
+                            t0 = time.monotonic()
+                            comp = await client.post(
+                                f"{inference_url.rstrip('/')}/chat/completions",
+                                headers={"Authorization": f"Bearer {inference_key}"},
+                                json={
+                                    "model": classify_model,
+                                    "messages": [
+                                        {
+                                            "role": "user",
+                                            "content": "Reply with exactly one word: pong",
+                                        }
+                                    ],
+                                    "max_tokens": 5,
+                                    "temperature": 0,
+                                },
+                            )
+                            comp.raise_for_status()
+                            text = (
+                                comp.json()["choices"][0]["message"]["content"] or ""
+                            ).strip()
+                            pong = "pong" in text.lower()
+                            if not pong:
                                 ok = False
                                 detail["ok"] = False
-                                detail["completion"] = {
-                                    "ok": False,
-                                    "error": str(exc)[:300],
-                                }
-                        else:
+                            detail["completion"] = {
+                                "ok": pong,
+                                "probe": "ping",
+                                "response": text[:80],
+                                "latency_ms": round((time.monotonic() - t0) * 1000),
+                            }
+                        except Exception as exc:
                             ok = False
                             detail["ok"] = False
+                            detail["completion"] = {
+                                "ok": False,
+                                "error": str(exc)[:300],
+                            }
                 else:
                     detail["error"] = resp.text[:300]
                 checks["inference"] = detail

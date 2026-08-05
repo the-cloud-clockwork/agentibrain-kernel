@@ -72,6 +72,11 @@ def write_config(settings: BrainSettings) -> Path:
         # postgres_url / redis_url are NOT written here — they may contain
         # passwords. If operators override them via flags, they come from env.
     }
+    # brain_url auto-derives from port_brain_api when unset. Persisting the
+    # derived literal would freeze it in config.yaml and silently mask any
+    # later PORT_BRAIN_API override — keep only an explicit operator URL.
+    if settings.brain_url == f"http://localhost:{settings.port_brain_api}":
+        payload.pop("brain_url")
     cfg_path = cfg_dir / "config.yaml"
     cfg_path.write_text(yaml.safe_dump(payload, sort_keys=False))
     return cfg_path
