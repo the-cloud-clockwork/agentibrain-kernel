@@ -95,10 +95,28 @@ def init(
     )
 
 
+def _require_init_stack() -> BrainSettings:
+    """Load settings and exit 2 unless `agentibrain init` rendered a stack.
+
+    compose up/down/ps run docker compose with cwd=config_dir; without the
+    rendered compose.yml that's a raw FileNotFoundError. Root-compose
+    deployments (local/bootstrap.sh) manage the stack with docker compose
+    directly and never hit this path.
+    """
+    settings = _load_settings()
+    if not (settings.config_dir.expanduser() / "compose.yml").exists():
+        console.print(
+            "[red]no agentibrain-init stack found — run `agentibrain init` first "
+            "(root-compose deployments: use `docker compose` in the repo)[/red]"
+        )
+        sys.exit(2)
+    return settings
+
+
 @main.command("up")
 def up_cmd() -> None:
     """Start the brain stack (docker compose up -d + migrations)."""
-    settings = _load_settings()
+    settings = _require_init_stack()
     proc = bootstrap.compose_up(settings)
     if proc.returncode != 0:
         console.print(f"[red]compose up failed[/red]\n{proc.stderr}")
@@ -112,7 +130,7 @@ def up_cmd() -> None:
 @main.command("down")
 def down_cmd() -> None:
     """Stop the brain stack (docker compose down)."""
-    settings = _load_settings()
+    settings = _require_init_stack()
     proc = bootstrap.compose_down(settings)
     if proc.returncode != 0:
         console.print(f"[red]compose down failed[/red]\n{proc.stderr}")
