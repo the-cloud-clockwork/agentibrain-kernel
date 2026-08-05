@@ -47,9 +47,7 @@ class _FakeClient:
 
     async def post(self, url, **kwargs):
         assert url.endswith("/chat/completions"), url
-        return _FakeResponse(
-            payload={"choices": [{"message": {"content": self.completion_text}}]}
-        )
+        return _FakeResponse(payload={"choices": [{"message": {"content": self.completion_text}}]})
 
 
 @pytest.fixture()
