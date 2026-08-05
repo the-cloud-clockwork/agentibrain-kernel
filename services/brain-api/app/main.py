@@ -150,13 +150,12 @@ async def health_deep(_: None = Depends(require_token)) -> dict:
                 ok = False
                 checks["embeddings"] = {"ok": False, "url": EMBEDDINGS_URL, "error": str(exc)[:300]}
 
-        # Inference: the gateway answers /models with our key, and the
-        # classify model is in the catalogue. This is a reachability +
-        # auth + catalogue check, NOT proof a completion will succeed — a
-        # listed model can still be out of quota or a broken deployment. We
-        # deliberately stop short of a real completion to keep this check
-        # free; gross outages (gateway down, bad key, model removed) are
-        # caught, model-specific degradation is not.
+        # Inference: the gateway answers /models with our key, the classify
+        # model is in the catalogue, AND a real one-token completion round-
+        # trips ("ping" → "pong"). The completion is the proof a listed model
+        # actually serves — catalogue presence alone hides quota exhaustion
+        # and broken deployments. Deep health is on-demand only (see the
+        # embeddings docstring), so the spend is one tiny completion per call.
         inference_url = os.getenv("INFERENCE_URL", "")
         inference_key = os.getenv("INFERENCE_API_KEY", "")
         if not inference_url:
@@ -182,9 +181,50 @@ async def health_deep(_: None = Depends(require_token)) -> dict:
                     classify_model = os.getenv("BRAIN_CLASSIFY_MODEL", "")
                     if classify_model:
                         detail["classify_model"] = classify_model
-                        detail["classify_model_available"] = any(
-                            m.get("id") == classify_model for m in models
-                        )
+                        available = any(m.get("id") == classify_model for m in models)
+                        detail["classify_model_available"] = available
+                        if available:
+                            try:
+                                t0 = time.monotonic()
+                                comp = await client.post(
+                                    f"{inference_url.rstrip('/')}/chat/completions",
+                                    headers={"Authorization": f"Bearer {inference_key}"},
+                                    json={
+                                        "model": classify_model,
+                                        "messages": [
+                                            {
+                                                "role": "user",
+                                                "content": "Reply with exactly one word: pong",
+                                            }
+                                        ],
+                                        "max_tokens": 5,
+                                        "temperature": 0,
+                                    },
+                                )
+                                comp.raise_for_status()
+                                text = (
+                                    comp.json()["choices"][0]["message"]["content"] or ""
+                                ).strip()
+                                pong = "pong" in text.lower()
+                                if not pong:
+                                    ok = False
+                                    detail["ok"] = False
+                                detail["completion"] = {
+                                    "ok": pong,
+                                    "probe": "ping",
+                                    "response": text[:80],
+                                    "latency_ms": round((time.monotonic() - t0) * 1000),
+                                }
+                            except Exception as exc:
+                                ok = False
+                                detail["ok"] = False
+                                detail["completion"] = {
+                                    "ok": False,
+                                    "error": str(exc)[:300],
+                                }
+                        else:
+                            ok = False
+                            detail["ok"] = False
                 else:
                     detail["error"] = resp.text[:300]
                 checks["inference"] = detail
