@@ -137,17 +137,13 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
     checkout managed by local/bootstrap.sh) or ``"init"`` (stack rendered by
     ``agentibrain init``) — or None when no deployment exists.
 
-    Order: the repo path bootstrap.sh pinned into ~/.agentibrain/.env works
-    from any cwd; the upward walk covers un-bootstrapped checkouts; the
-    init-rendered stack comes last so a checkout wins when both exist.
+    Order: the checkout you are standing in wins — running a command from
+    inside checkout B must never target checkout A that an old bootstrap
+    pinned. The AGENTIBRAIN_REPO pin (written by local/bootstrap.sh into
+    ~/.agentibrain/.env) covers every other cwd; the init-rendered stack
+    comes last.
     """
     cfg_dir = settings.config_dir.expanduser()
-
-    repo = _read_env_value(cfg_dir / ".env", "AGENTIBRAIN_REPO")
-    if repo:
-        repo_dir = Path(repo).expanduser()
-        if (repo_dir / "compose.yml").is_file():
-            return ("root-compose", repo_dir)
 
     start = (cwd or Path.cwd()).resolve()
     for candidate in (start, *start.parents):
@@ -158,16 +154,42 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
         except OSError:
             continue
 
+    repo = _read_env_value(cfg_dir / ".env", "AGENTIBRAIN_REPO")
+    if repo:
+        repo_dir = Path(repo).expanduser()
+        if (repo_dir / "compose.yml").is_file():
+            return ("root-compose", repo_dir)
+
     if (cfg_dir / "compose.yml").is_file():
         return ("init", cfg_dir)
     return None
 
 
+def _compose_binargs() -> list[str]:
+    """Pick `docker compose` vs legacy `docker-compose`, probing the plugin.
+
+    `docker compose` on a plugin-less install exits 1 (not 127), so a
+    which("docker") test alone would pick a broken invocation while the
+    legacy binary sits unused — the same fallback _docker_compose does
+    reactively, done proactively here for streaming commands.
+    """
+    if shutil.which("docker"):
+        probe = subprocess.run(
+            ["docker", "compose", "version"],
+            check=False,
+            capture_output=True,
+        )
+        if probe.returncode == 0:
+            return ["docker", "compose"]
+    if shutil.which("docker-compose"):
+        return ["docker-compose"]
+    return ["docker", "compose"]  # fail loudly with docker's own message
+
+
 def compose_stream(cmd: list[str], cwd: Path) -> int:
     """Run ``docker compose`` with inherited stdio for long/streaming commands
     (build, logs -f) so output reaches the terminal live."""
-    binargs = ["docker", "compose"] if shutil.which("docker") else ["docker-compose"]
-    return subprocess.run([*binargs, *cmd], cwd=cwd, check=False).returncode
+    return subprocess.run([*_compose_binargs(), *cmd], cwd=cwd, check=False).returncode
 
 
 def _docker_compose(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:

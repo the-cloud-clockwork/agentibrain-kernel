@@ -30,9 +30,11 @@ agentibrain --version
 Every stack command (`build`/`up`/`down`/`logs`/`status`) **auto-detects**
 where the deployment lives, from any cwd:
 
-1. The repo path `local/bootstrap.sh` pinned as `AGENTIBRAIN_REPO` in
-   `~/.agentibrain/.env` (root-compose mode)
-2. A `compose.yml` found walking up from the current directory
+1. The checkout you are standing in — a `compose.yml` found walking up from
+   the current directory always wins, so working in checkout B never targets
+   a checkout A pinned by an older bootstrap
+2. The repo path `local/bootstrap.sh` pinned as `AGENTIBRAIN_REPO` in
+   `~/.agentibrain/.env` (covers every other cwd)
 3. The init-rendered stack in `~/.agentibrain/` (`agentibrain init` mode)
 
 No deployment anywhere → exit 2 with the bootstrap/init hint. You never need

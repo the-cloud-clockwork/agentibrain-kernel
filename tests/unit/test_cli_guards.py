@@ -105,6 +105,20 @@ def test_logs_passthrough_flags(tmp_path, docker_shim):
     assert f"{repo} :: compose logs --since 10m --tail 50 tick-cron" in record.read_text()
 
 
+def test_cwd_checkout_beats_stale_pin(tmp_path, docker_shim):
+    """Standing inside checkout B must target B, not the pinned checkout A."""
+    path, record = docker_shim
+    home, pinned_repo = _home_with_repo(tmp_path)
+    other = tmp_path / "checkout-b"
+    other.mkdir()
+    (other / "compose.yml").write_text(MARKER_COMPOSE)
+    r = _run_cli(["build"], home, cwd=other, path=path)
+    assert r.returncode == 0, r.stderr
+    content = record.read_text()
+    assert f"{other} :: compose up -d --build" in content
+    assert str(pinned_repo) not in content
+
+
 def test_upward_walk_detects_unpinned_checkout(tmp_path, docker_shim):
     path, record = docker_shim
     home = tmp_path / "home"
