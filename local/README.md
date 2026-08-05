@@ -13,6 +13,12 @@ docker compose up -d              # 8 containers come up
 docker compose ps                 # see the health note below
 ```
 
+Run `bootstrap.sh` as your normal user — **never with sudo**. Under sudo,
+`$HOME` is `/root`, so the vault and `.env` land in root's home and the stack
+breaks for your user (the script now refuses to run as root for this reason).
+A `Permission denied` from bootstrap means root-owned files from an old
+container run: `sudo chown -R $(id -u):$(id -g) <path>` and re-run plain.
+
 `postgres`, `redis`, `brain-api`, `embeddings`, and `mcp` report `(healthy)`.
 `tick-cron`, `tick-drain`, and `amygdala` show a bare `Up` — they are batch
 workers with no healthcheck, so the absence of `(healthy)` on those three is
