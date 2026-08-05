@@ -74,7 +74,7 @@ def health_deep(_token: str = Depends(auth.require_api_key)):
     against LiteLLM. Do NOT wire this to a Kubernetes liveness/readiness probe
     or a high-frequency scrape — a tight poll would burn quota and can trip the
     very rate limit it is meant to detect. Use plain /health for probes; call
-    this from `brain check`, CI, or an operator on suspicion of breakage.
+    this from `agentibrain check`, CI, or an operator on suspicion of breakage.
     """
     import time
 

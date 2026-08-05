@@ -26,6 +26,7 @@ def _force_migrate() -> bool:
     than a loud, self-describing degraded state."""
     return os.environ.get("EMBED_DIM_FORCE_MIGRATE", "").lower() in ("1", "true", "yes")
 
+
 _pool = None
 
 
@@ -193,15 +194,17 @@ def search(
             score = float(row[6])
             if score < min_score:
                 continue
-            results.append({
-                "key": row[0],
-                "producer": row[1],
-                "chunk_idx": row[2],
-                "content_type": row[3],
-                "text_preview": row[4],
-                "metadata": row[5],
-                "score": round(score, 4),
-            })
+            results.append(
+                {
+                    "key": row[0],
+                    "producer": row[1],
+                    "chunk_idx": row[2],
+                    "content_type": row[3],
+                    "text_preview": row[4],
+                    "metadata": row[5],
+                    "score": round(score, 4),
+                }
+            )
         return results
 
 

@@ -20,6 +20,7 @@ Usage:
     for lesson in doc.lessons:
         print(lesson.content)
 """
+
 from __future__ import annotations
 
 import re
@@ -38,8 +39,8 @@ INLINE_RE = re.compile(
 # Block marker: <!-- @type attrs --> content <!-- @/type -->
 BLOCK_RE = re.compile(
     r'<!--\s*@(\w+)((?:\s+\w+=[^\s>]+|\s+\w+="[^"]*")*)\s*-->'
-    r'(.*?)'
-    r'<!--\s*@/\1\s*-->',
+    r"(.*?)"
+    r"<!--\s*@/\1\s*-->",
     re.DOTALL,
 )
 
@@ -55,9 +56,11 @@ SEVERITY_ORDER = {"info": 0, "warning": 1, "critical": 2, "nuclear": 3}
 
 # ── Data classes ──────────────────────────────────────────────────────
 
+
 @dataclass
 class Marker:
     """A single marker found in a document."""
+
     type: str
     attrs: dict = field(default_factory=dict)
     content: str = ""
@@ -78,6 +81,7 @@ class Marker:
 @dataclass
 class DocumentMeta:
     """Full extraction result for a document."""
+
     path: Optional[Path] = None
     frontmatter: dict = field(default_factory=dict)
     body: str = ""
@@ -117,6 +121,7 @@ class DocumentMeta:
 
 
 # ── Parsing functions ─────────────────────────────────────────────────
+
 
 def canonical_arc_id(name: str) -> str:
     """Collapse a (possibly chained) arc filename to its canonical id.
@@ -218,14 +223,16 @@ def find_markers(text: str, marker_type: str | None = None) -> list[Marker]:
         end_pos = match.end()
         line_start = text[:start_pos].count("\n")
         line_end = text[:end_pos].count("\n")
-        markers.append(Marker(
-            type=mtype,
-            attrs=attrs,
-            content=content,
-            line_start=line_start,
-            line_end=line_end,
-            is_block=True,
-        ))
+        markers.append(
+            Marker(
+                type=mtype,
+                attrs=attrs,
+                content=content,
+                line_start=line_start,
+                line_end=line_end,
+                is_block=True,
+            )
+        )
 
     # Find inline markers (not part of a block)
     block_ranges = [(m.line_start, m.line_end) for m in markers]
@@ -240,14 +247,16 @@ def find_markers(text: str, marker_type: str | None = None) -> list[Marker]:
         if in_block:
             continue
         attrs = _parse_attrs(match.group(2))
-        markers.append(Marker(
-            type=mtype,
-            attrs=attrs,
-            content="",
-            line_start=line_num,
-            line_end=line_num,
-            is_block=False,
-        ))
+        markers.append(
+            Marker(
+                type=mtype,
+                attrs=attrs,
+                content="",
+                line_start=line_num,
+                line_end=line_num,
+                is_block=False,
+            )
+        )
 
     markers.sort(key=lambda m: m.line_start)
     return markers
@@ -255,17 +264,15 @@ def find_markers(text: str, marker_type: str | None = None) -> list[Marker]:
 
 def find_hot_spots(text: str, min_heat: int = 7) -> list[Marker]:
     """Find @hot markers with heat >= min_heat."""
-    return [
-        m for m in find_markers(text, "hot")
-        if m.attr_int("heat", 0) >= min_heat
-    ]
+    return [m for m in find_markers(text, "hot") if m.attr_int("heat", 0) >= min_heat]
 
 
 def find_signals(text: str, min_severity: str = "warning") -> list[Marker]:
     """Find @signal markers at or above min_severity."""
     threshold = SEVERITY_ORDER.get(min_severity, 1)
     return [
-        m for m in find_markers(text, "signal")
+        m
+        for m in find_markers(text, "signal")
         if SEVERITY_ORDER.get(m.attr("severity", "info"), 0) >= threshold
     ]
 
@@ -292,6 +299,7 @@ def extract_all(filepath: Path) -> DocumentMeta:
 
 
 # ── Self-test ─────────────────────────────────────────────────────────
+
 
 def _self_test():
     """Quick self-test of the parser."""
@@ -378,6 +386,7 @@ Implement the full brain-keeper maintenance tick.
 
     # Test DocumentMeta
     import tempfile
+
     with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
         f.write(test_doc)
         f.flush()
@@ -407,7 +416,9 @@ Implement the full brain-keeper maintenance tick.
     print("All tests passed ✓")
     print(f"  Frontmatter keys: {list(fm.keys())}")
     print(f"  Markers found: {len(markers)} ({', '.join(set(types))})")
-    print(f"  Hot spots: {len(doc.hot_spots)}, Signals: {len(doc.signals)}, Lessons: {len(doc.lessons)}")
+    print(
+        f"  Hot spots: {len(doc.hot_spots)}, Signals: {len(doc.signals)}, Lessons: {len(doc.lessons)}"
+    )
     print(f"  Edges: {len(doc.edges)}, Inject blocks: {len(doc.inject_blocks)}")
 
 

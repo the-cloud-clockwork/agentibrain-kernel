@@ -3,7 +3,7 @@
 Guards the tick-cron extraction path (transcripts mount, env-driven gate,
 boot seed) and the ~/agentibrain-vault default shared by every
 vault-mounting service. None of this is covered by test_compose_render.py,
-which exercises the Jinja template used by `brain init`, not this file.
+which exercises the Jinja template used by `agentibrain init`, not this file.
 """
 
 from pathlib import Path
@@ -14,9 +14,7 @@ COMPOSE = Path(__file__).resolve().parents[2] / "compose.yml"
 
 VAULT_SERVICES = ("brain-api", "tick-cron", "tick-drain", "amygdala")
 VAULT_MOUNT = "${VAULT_ROOT_HOST:-~/agentibrain-vault}:/vault"
-PROJECTS_MOUNT = (
-    "${CLAUDE_PROJECTS_HOST:-~/.claude/projects}:/shared/.claude/projects:ro"
-)
+PROJECTS_MOUNT = "${CLAUDE_PROJECTS_HOST:-~/.claude/projects}:/shared/.claude/projects:ro"
 
 
 def _services() -> dict:

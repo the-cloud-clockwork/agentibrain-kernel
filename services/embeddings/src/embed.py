@@ -108,11 +108,13 @@ def embed_content(content: str) -> list[dict]:
     for idx, chunk_text in enumerate(chunks):
         try:
             embedding = embed_text(chunk_text)
-            results.append({
-                "chunk_idx": idx,
-                "text_preview": chunk_text[:500],
-                "embedding": embedding,
-            })
+            results.append(
+                {
+                    "chunk_idx": idx,
+                    "text_preview": chunk_text[:500],
+                    "embedding": embedding,
+                }
+            )
         except Exception as e:
             log.error(f"embed_chunk_failed chunk={idx} error={e}")
             raise

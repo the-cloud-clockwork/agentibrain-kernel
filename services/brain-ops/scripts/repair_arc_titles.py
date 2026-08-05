@@ -48,8 +48,8 @@ from brain_apply import clean_merge_title  # noqa: E402
 # than as a subtitle.
 _MIN_RATIONALE_WORDS = 12
 
-_TITLE_RE = re.compile(r'^title:[ \t]*(.*)$', re.MULTILINE)
-_SEPARATOR_RE = re.compile(r'\s(?:[—–]|--)\s')
+_TITLE_RE = re.compile(r"^title:[ \t]*(.*)$", re.MULTILINE)
+_SEPARATOR_RE = re.compile(r"\s(?:[—–]|--)\s")
 
 
 def is_polluted(title: str) -> bool:
@@ -71,13 +71,13 @@ def is_polluted(title: str) -> bool:
     """
     if not title:
         return False
-    if '`' in title:
+    if "`" in title:
         return True
     parts = _SEPARATOR_RE.split(title, maxsplit=1)
     if len(parts) != 2:
         return False
     clause = parts[1]
-    return len(clause.split()) >= _MIN_RATIONALE_WORDS and re.search(r'[,;]', clause) is not None
+    return len(clause.split()) >= _MIN_RATIONALE_WORDS and re.search(r"[,;]", clause) is not None
 
 
 def _backup(vault: Path, backup_dir: Path) -> Path:
@@ -134,8 +134,9 @@ def repair(vault: Path, dry_run: bool, limit: int | None = None) -> dict:
             continue
 
         if len(samples) < 15:
-            samples.append({"path": str(path.relative_to(vault)),
-                            "before": original[:110], "after": cleaned})
+            samples.append(
+                {"path": str(path.relative_to(vault)), "before": original[:110], "after": cleaned}
+            )
 
         if not dry_run:
             new_head = _TITLE_RE.sub(f"title: {json.dumps(cleaned)}", head, count=1)

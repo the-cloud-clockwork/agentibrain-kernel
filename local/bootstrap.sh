@@ -13,6 +13,19 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Never run as root: under sudo $HOME resolves to /root, so the vault and
+# ~/.agentibrain/.env land in root's home and the stack breaks for the real
+# user. Nothing in this script needs elevation. If a previous container run
+# left root-owned files in the vault, fix ownership instead of escalating.
+if [[ ${EUID:-$(id -u)} -eq 0 && -z "${ALLOW_ROOT_BOOTSTRAP:-}" ]]; then
+  echo "ERROR: do not run bootstrap with sudo/root — \$HOME would be /root." >&2
+  echo "  Re-run as your normal user:  ./local/bootstrap.sh" >&2
+  echo "  Root-owned files in the vault from an old container run? Fix with:" >&2
+  echo "    sudo chown -R <you>:<you> <vault-path>   # then re-run without sudo" >&2
+  echo "  Set ALLOW_ROOT_BOOTSTRAP=1 only if the stack genuinely runs as root." >&2
+  exit 1
+fi
+
 # Primary .env lives in the home directory so it survives re-clones.
 # The repo-root .env is a symlink to it (auto-created below).
 HOME_ENV_DIR="$HOME/.agentibrain"

@@ -26,7 +26,7 @@ services:
       start_period: 10s
 
 # This compose is for solo-dev of brain-api in isolation.
-# Postgres + Redis + optional MinIO), use `brain up` which renders the unified
+# Postgres + Redis + optional MinIO), use `agentibrain up` which renders the unified
 # compose from agentibrain/templates/compose/.
 networks:
   agentibrain_net:

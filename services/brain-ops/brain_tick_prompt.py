@@ -24,6 +24,7 @@ Usage:
     # Full hybrid tick: deterministic + AI dispatch
     python3 brain_tick_prompt.py --vault /vault --brain-feed /vault/brain-feed --dispatch
 """
+
 from __future__ import annotations
 
 import argparse
@@ -44,8 +45,8 @@ from brain_apply import _rank
 # table overflows it — the model then returns an unparseable stub and the tick
 # scores 0/10 → nuclear. These caps plus the final char budget keep the prompt
 # inside the window regardless of vault size or merge/edge corruption.
-MAX_EDGE_LINES = 500        # rendered edge lines after (source, target) dedup
-MAX_ARC_ROWS = 250          # arc-table rows, highest heat first
+MAX_EDGE_LINES = 500  # rendered edge lines after (source, target) dedup
+MAX_ARC_ROWS = 250  # arc-table rows, highest heat first
 MAX_PROMPT_CHARS = 400_000  # ~100K tokens — hard ceiling enforced before POST
 # Synthesis (Task 6). Bounded per tick: an unsynthesized backlog drains over
 # successive ticks rather than blowing one prompt. Summaries persist to arc
@@ -124,8 +125,9 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
                 continue
             stem = md_file.name[:-3]
             # Prefer .merged.md over the raw counterpart in the same dir.
-            if (not md_file.name.endswith(".merged.md")
-                and stem in merged_stems_by_dir.get(md_file.parent, set())):
+            if not md_file.name.endswith(".merged.md") and stem in merged_stems_by_dir.get(
+                md_file.parent, set()
+            ):
                 continue
             arc_id = md_file.stem.replace(".merged", "")
             if arc_id in seen_ids:
@@ -155,9 +157,7 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
 
     # Arc table — capped at MAX_ARC_ROWS by heat. Rows scale with vault size;
     # the cap keeps this section bounded (defensive; see prompt-size guards).
-    sorted_arcs = sorted(
-        arcs, key=lambda a: int(a.frontmatter.get("heat", 0) or 0), reverse=True
-    )
+    sorted_arcs = sorted(arcs, key=lambda a: int(a.frontmatter.get("heat", 0) or 0), reverse=True)
     arc_table = "| # | Arc ID | Heat | Region | Status | Title | Sessions | Markers |\n"
     arc_table += "|---|--------|------|--------|--------|-------|----------|--------|\n"
     for i, arc in enumerate(sorted_arcs[:MAX_ARC_ROWS], 1):
@@ -196,8 +196,7 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
             elif _rank(etype) < _rank(chosen_edges[key]):
                 chosen_edges[key] = etype
     edge_lines = [
-        f"  {cid} --{chosen_edges[(cid, target)]}--> {target}"
-        for (cid, target) in edge_order
+        f"  {cid} --{chosen_edges[(cid, target)]}--> {target}" for (cid, target) in edge_order
     ]
     total_edges = len(edge_lines)
     if total_edges > MAX_EDGE_LINES:
@@ -216,9 +215,9 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
             sev = sig.attr("severity", "info")
             src = sig.attr("source", "?")
             content = sig.content.splitlines()[0] if sig.content else "(empty)"
-            content_hash = hashlib.sha256(
-                (sig.content or "").strip().encode("utf-8")
-            ).hexdigest()[:16]
+            content_hash = hashlib.sha256((sig.content or "").strip().encode("utf-8")).hexdigest()[
+                :16
+            ]
             dedup_key = (src, content_hash)
             if dedup_key in seen_signals:
                 continue
@@ -328,9 +327,9 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
         )
 
     prompt = f"""You are brain-keeper's AI reasoning layer. The deterministic layer already ran (47ms):
-- {stats.get('arcs_scanned', 0)} arcs scanned, {stats.get('heat_changes', 0)} heat changes
-- {stats.get('signals_collected', 0)} signals, {stats.get('lessons_collected', 0)} lessons, {stats.get('inject_blocks_collected', 0)} inject blocks
-- {stats.get('promotions', 0)} promotions, {stats.get('demotions', 0)} demotions
+- {stats.get("arcs_scanned", 0)} arcs scanned, {stats.get("heat_changes", 0)} heat changes
+- {stats.get("signals_collected", 0)} signals, {stats.get("lessons_collected", 0)} lessons, {stats.get("inject_blocks_collected", 0)} inject blocks
+- {stats.get("promotions", 0)} promotions, {stats.get("demotions", 0)} demotions
 
 Your job: REASON about the data below. Do NOT read files — everything is pre-extracted.
 
@@ -444,9 +443,7 @@ Respond ONLY with the 6 sections above. No preamble. No explanation of what you'
             edge_map, "  [edge map omitted — exceeded context budget; run vault cleanup]"
         )
     if len(prompt) > MAX_PROMPT_CHARS:
-        prompt = prompt.replace(
-            arc_table, "  [arc table omitted — exceeded context budget]\n"
-        )
+        prompt = prompt.replace(arc_table, "  [arc table omitted — exceeded context budget]\n")
     if len(prompt) > MAX_PROMPT_CHARS:
         prompt = prompt[:MAX_PROMPT_CHARS] + "\n\n[prompt hard-truncated to fit context]\n"
 
@@ -454,11 +451,17 @@ Respond ONLY with the 6 sections above. No preamble. No explanation of what you'
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Generate AI tick prompt from deterministic brain state")
+    p = argparse.ArgumentParser(
+        description="Generate AI tick prompt from deterministic brain state"
+    )
     p.add_argument("--vault", required=True, help="Vault root path")
     p.add_argument("--brain-feed", required=True, help="Brain feed output directory")
-    p.add_argument("--dispatch", action="store_true", help="Dispatch the prompt to brain-keeper agent")
-    p.add_argument("--print-only", action="store_true", help="Just print the prompt, don't dispatch")
+    p.add_argument(
+        "--dispatch", action="store_true", help="Dispatch the prompt to brain-keeper agent"
+    )
+    p.add_argument(
+        "--print-only", action="store_true", help="Just print the prompt, don't dispatch"
+    )
     args = p.parse_args()
 
     vault = Path(args.vault)
@@ -474,12 +477,17 @@ def main() -> int:
 
     # Dispatch to brain-keeper agent
     # This would call the agenticore REST API
-    print(json.dumps({
-        "prompt_length": len(prompt),
-        "stats": stats,
-        "action": "dispatch",
-        "note": "Would POST to brain-keeper /jobs endpoint with this prompt",
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "prompt_length": len(prompt),
+                "stats": stats,
+                "action": "dispatch",
+                "note": "Would POST to brain-keeper /jobs endpoint with this prompt",
+            },
+            indent=2,
+        )
+    )
     return 0
 
 

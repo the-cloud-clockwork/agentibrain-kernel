@@ -26,6 +26,7 @@ def _patch(monkeypatch, *, configured=True, model_dim=3072, schema_dim=3072, db_
         monkeypatch.setattr(db, "get_vector_count", lambda: 5)
         monkeypatch.setattr(db, "get_schema_dim", lambda *a, **k: schema_dim)
     else:
+
         def _boom(*a, **k):
             raise RuntimeError("db down")
 

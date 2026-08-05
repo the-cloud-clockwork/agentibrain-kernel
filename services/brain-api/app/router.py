@@ -217,7 +217,9 @@ def _slugify(text: str) -> str:
     return (s or "ingest")[:60]
 
 
-def _write_extractable_to_vault(title: str, content: str, tags: list[str], batch_id: str) -> str | None:
+def _write_extractable_to_vault(
+    title: str, content: str, tags: list[str], batch_id: str
+) -> str | None:
     """Write an extracted piece of content to the vault inbox."""
     try:
         result = vault_reader.write_inbox(
@@ -248,12 +250,18 @@ async def _fetch_url(value: str, hint: str, batch_id: str) -> tuple[str | None, 
     title = f"URL: {hint or slug} ({value})"
     body = f"# {title}\n\nSource: {value}\nFetched: {datetime.now(timezone.utc).isoformat()}\n\n---\n\n{text[:500_000]}"
     path = await asyncio.to_thread(
-        _write_extractable_to_vault, title=slug, content=body, tags=["url", "extracted"], batch_id=batch_id,
+        _write_extractable_to_vault,
+        title=slug,
+        content=body,
+        tags=["url", "extracted"],
+        batch_id=batch_id,
     )
     return path, None if path else f"vault write failed for {value}"
 
 
-async def _fetch_youtube_transcript(value: str, hint: str, batch_id: str) -> tuple[str | None, str | None]:
+async def _fetch_youtube_transcript(
+    value: str, hint: str, batch_id: str
+) -> tuple[str | None, str | None]:
     video_id = YOUTUBE_RE.search(value)
     if not video_id:
         return None, f"could not extract video ID from: {value}"
@@ -261,6 +269,7 @@ async def _fetch_youtube_transcript(value: str, hint: str, batch_id: str) -> tup
 
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
+
         transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
         try:
             transcript = transcript_list.find_transcript(["en"])
@@ -277,12 +286,18 @@ async def _fetch_youtube_transcript(value: str, hint: str, batch_id: str) -> tup
     slug = _slugify(hint or f"youtube-{video_id}")
     body = f"# YouTube Transcript: {hint or video_id}\n\nSource: {value}\nVideo ID: {video_id}\n\n---\n\n{text}"
     path = await asyncio.to_thread(
-        _write_extractable_to_vault, title=slug, content=body, tags=["youtube", "transcript", "extracted"], batch_id=batch_id,
+        _write_extractable_to_vault,
+        title=slug,
+        content=body,
+        tags=["youtube", "transcript", "extracted"],
+        batch_id=batch_id,
     )
     return path, None if path else f"vault write failed for {value}"
 
 
-async def _clone_and_read_repo(value: str, hint: str, batch_id: str) -> tuple[str | None, str | None]:
+async def _clone_and_read_repo(
+    value: str, hint: str, batch_id: str
+) -> tuple[str | None, str | None]:
     workdir = tempfile.mkdtemp(prefix="brain-api-repo-")
     try:
         repo_name = value.rstrip("/").split("/")[-1]
@@ -292,10 +307,15 @@ async def _clone_and_read_repo(value: str, hint: str, batch_id: str) -> tuple[st
         try:
             subprocess.run(
                 ["git", "clone", "--depth=1", "--quiet", value, clone_path],
-                check=True, capture_output=True, timeout=300,
+                check=True,
+                capture_output=True,
+                timeout=300,
             )
         except subprocess.CalledProcessError as exc:
-            return None, f"git clone failed: {value} — {exc.stderr.decode('utf-8', errors='replace')[:200]}"
+            return (
+                None,
+                f"git clone failed: {value} — {exc.stderr.decode('utf-8', errors='replace')[:200]}",
+            )
 
         readme_path = Path(clone_path) / "README.md"
         if not readme_path.exists():
@@ -303,7 +323,9 @@ async def _clone_and_read_repo(value: str, hint: str, batch_id: str) -> tuple[st
                 readme_path = candidate
                 break
 
-        parts = [f"# Repository: {repo_name}\n\nSource: {value}\nCloned: {datetime.now(timezone.utc).isoformat()}\n"]
+        parts = [
+            f"# Repository: {repo_name}\n\nSource: {value}\nCloned: {datetime.now(timezone.utc).isoformat()}\n"
+        ]
         if readme_path.exists():
             parts.append(f"## README\n\n{readme_path.read_text(errors='replace')[:100_000]}")
 
@@ -319,11 +341,16 @@ async def _clone_and_read_repo(value: str, hint: str, batch_id: str) -> tuple[st
         body = "\n\n---\n\n".join(parts)
         slug = _slugify(hint or repo_name)
         path = await asyncio.to_thread(
-            _write_extractable_to_vault, title=slug, content=body[:500_000], tags=["repo", "extracted"], batch_id=batch_id,
+            _write_extractable_to_vault,
+            title=slug,
+            content=body[:500_000],
+            tags=["repo", "extracted"],
+            batch_id=batch_id,
         )
         return path, None if path else f"vault write failed for {value}"
     finally:
         import shutil
+
         shutil.rmtree(workdir, ignore_errors=True)
 
 
@@ -339,7 +366,11 @@ async def _read_local_file(value: str, hint: str, batch_id: str) -> tuple[str | 
     slug = _slugify(hint or p.stem)
     body = f"# Local File: {p.name}\n\nPath: {value}\nRead: {datetime.now(timezone.utc).isoformat()}\n\n---\n\n{text[:500_000]}"
     path = await asyncio.to_thread(
-        _write_extractable_to_vault, title=slug, content=body, tags=["local-file", "extracted"], batch_id=batch_id,
+        _write_extractable_to_vault,
+        title=slug,
+        content=body,
+        tags=["local-file", "extracted"],
+        batch_id=batch_id,
     )
     return path, None if path else f"vault write failed for {value}"
 
@@ -358,7 +389,10 @@ async def _write_vault_note(
     try:
         result = await asyncio.to_thread(
             vault_reader.write_inbox,
-            title=title, content=content + extra, tags=tags, artifact_refs=[],
+            title=title,
+            content=content + extra,
+            tags=tags,
+            artifact_refs=[],
         )
         return result.get("path")
     except Exception as exc:
@@ -410,7 +444,9 @@ async def ingest_message(message: str) -> IngestResult:
     obsidian_path: str | None = None
     if semantic or vault_paths:
         note_content = semantic or f"(no semantic text — ingested {len(vault_paths)} references)"
-        note_content += f"\n\n---\n\n_ingest_batch: {batch_id}_\n_original_message: {message[:500]}_"
+        note_content += (
+            f"\n\n---\n\n_ingest_batch: {batch_id}_\n_original_message: {message[:500]}_"
+        )
         obsidian_path = await _write_vault_note(
             title=title,
             content=note_content,

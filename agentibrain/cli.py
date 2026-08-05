@@ -1,4 +1,4 @@
-"""``brain`` CLI entry point."""
+"""``agentibrain`` CLI entry point."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def _load_settings() -> BrainSettings:
 
 
 @click.group()
-@click.version_option(__version__, prog_name="brain")
+@click.version_option(__version__, prog_name="agentibrain")
 def main() -> None:
     """agentibrain — standalone brain + KB kernel."""
 
@@ -91,14 +91,32 @@ def init(
     console.print(f"  {token}")
     console.print()
     console.print(
-        "Next: [cyan]brain up[/cyan] to start the stack, then [cyan]brain scaffold[/cyan]."
+        "Next: [cyan]agentibrain up[/cyan] to start the stack, then [cyan]agentibrain scaffold[/cyan]."
     )
+
+
+def _require_init_stack() -> BrainSettings:
+    """Load settings and exit 2 unless `agentibrain init` rendered a stack.
+
+    compose up/down/ps run docker compose with cwd=config_dir; without the
+    rendered compose.yml that's a raw FileNotFoundError. Root-compose
+    deployments (local/bootstrap.sh) manage the stack with docker compose
+    directly and never hit this path.
+    """
+    settings = _load_settings()
+    if not (settings.config_dir.expanduser() / "compose.yml").exists():
+        console.print(
+            "[red]no agentibrain-init stack found — run `agentibrain init` first "
+            "(root-compose deployments: use `docker compose` in the repo)[/red]"
+        )
+        sys.exit(2)
+    return settings
 
 
 @main.command("up")
 def up_cmd() -> None:
     """Start the brain stack (docker compose up -d + migrations)."""
-    settings = _load_settings()
+    settings = _require_init_stack()
     proc = bootstrap.compose_up(settings)
     if proc.returncode != 0:
         console.print(f"[red]compose up failed[/red]\n{proc.stderr}")
@@ -112,7 +130,7 @@ def up_cmd() -> None:
 @main.command("down")
 def down_cmd() -> None:
     """Stop the brain stack (docker compose down)."""
-    settings = _load_settings()
+    settings = _require_init_stack()
     proc = bootstrap.compose_down(settings)
     if proc.returncode != 0:
         console.print(f"[red]compose down failed[/red]\n{proc.stderr}")
@@ -124,9 +142,17 @@ def down_cmd() -> None:
 def status_cmd() -> None:
     """Show health of all services."""
     settings = _load_settings()
-    ps = bootstrap.compose_ps(settings)
-    console.print("[bold]docker compose ps[/bold]")
-    console.print(ps.stdout)
+    if (settings.config_dir.expanduser() / "compose.yml").exists():
+        ps = bootstrap.compose_ps(settings)
+        console.print("[bold]docker compose ps[/bold]")
+        console.print(ps.stdout)
+    else:
+        # Root-compose deployment (local/bootstrap.sh) — no CLI-rendered
+        # stack to inspect; the HTTP health check below still runs.
+        console.print(
+            "[yellow]no agentibrain-init stack found — "
+            "for root-compose deployments run `docker compose ps` in the repo[/yellow]"
+        )
 
     token_path = settings.config_dir.expanduser() / ".env"
     token = None
@@ -137,7 +163,7 @@ def status_cmd() -> None:
                 break
 
     if not token:
-        console.print("[yellow]no KB_ROUTER_TOKEN — run `brain init` first[/yellow]")
+        console.print("[yellow]no KB_ROUTER_TOKEN — run `agentibrain init` first[/yellow]")
         return
 
     try:
@@ -181,7 +207,7 @@ def check_cmd(brain_url: str | None, token: str | None) -> None:
                     token = line.split("=", 1)[1].strip()
                     break
     if not token:
-        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `brain init`[/red]")
+        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
         sys.exit(2)
 
     try:
@@ -231,9 +257,7 @@ def check_cmd(brain_url: str | None, token: str | None) -> None:
                         console.print(f"    {sub_name}: {sub}")
                         continue
                     sub_mark = "[green]✓[/green]" if sub.get("ok") else "[red]✗[/red]"
-                    sub_detail = " ".join(
-                        f"{k}={v}" for k, v in sub.items() if k != "ok"
-                    )
+                    sub_detail = " ".join(f"{k}={v}" for k, v in sub.items() if k != "ok")
                     console.print(f"    {sub_mark} {sub_name}: {sub_detail}")
                 continue
             console.print(f"    {key}: {value}")
@@ -262,7 +286,7 @@ def tick_cmd(
     brain_url: str | None,
     token: str | None,
 ) -> None:
-    """Trigger a manual brain tick via the /tick endpoint.
+    """Trigger a manual agentibrain tick via the /tick endpoint.
 
     Enqueues a request file in brain-feed/ticks/requested/ which the
     tick-cron drains within ~2 minutes. Use --wait to block until completion.
@@ -278,7 +302,7 @@ def tick_cmd(
                     token = line.split("=", 1)[1].strip()
                     break
     if not token:
-        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `brain init`[/red]")
+        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
         sys.exit(2)
 
     headers = {"Authorization": f"Bearer {token}"}

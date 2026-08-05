@@ -13,6 +13,14 @@ docker compose up -d              # 8 containers come up
 docker compose ps                 # see the health note below
 ```
 
+Broken or missing vault? Re-run the same three commands — `bootstrap.sh` is
+idempotent and repairs the vault, then `--build` recreates the containers:
+
+```bash
+./local/bootstrap.sh              # no sudo
+docker compose up -d --build
+```
+
 `postgres`, `redis`, `brain-api`, `embeddings`, and `mcp` report `(healthy)`.
 `tick-cron`, `tick-drain`, and `amygdala` show a bare `Up` — they are batch
 workers with no healthcheck, so the absence of `(healthy)` on those three is

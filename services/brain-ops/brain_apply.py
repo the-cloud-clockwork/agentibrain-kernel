@@ -19,6 +19,7 @@ Usage:
     # Dry run
     python3 brain_apply.py --vault /vault --brain-feed /vault/brain-feed --ai-output /tmp/ai-tick.md --dry-run
 """
+
 from __future__ import annotations
 
 import argparse
@@ -51,6 +52,7 @@ def _rank(t: str) -> int:
 
 # ── Parsers for AI tick output sections ───────────────────────────────
 
+
 def parse_edges(section: str) -> list[dict]:
     """Parse '### 1. Missing Edges' section.
 
@@ -63,25 +65,27 @@ def parse_edges(section: str) -> list[dict]:
     """
     edges = []
     for line in section.splitlines():
-        m = re.match(r'`?(\S+)\s+--(\w+)-->\s+(\S+)`?\s*[—–-]\s*(.*)', line)
+        m = re.match(r"`?(\S+)\s+--(\w+)-->\s+(\S+)`?\s*[—–-]\s*(.*)", line)
         if m:
             source = m.group(1).strip("`")
             target = m.group(3).strip("`")
             if source == target:
                 continue  # self-loops pollute connectivity metrics
-            edges.append({
-                "source": source,
-                "type": m.group(2),
-                "target": target,
-                "reason": m.group(4).strip(),
-            })
+            edges.append(
+                {
+                    "source": source,
+                    "type": m.group(2),
+                    "target": target,
+                    "reason": m.group(4).strip(),
+                }
+            )
     return edges
 
 
 # A MERGE line's title field routinely carries the model's justification after
 # the new arc name: ``→ `new-id` — why these two are the same thing``. Cut at
 # the rationale separator and drop the backtick quoting.
-_MERGE_RATIONALE_RE = re.compile(r'\s*(?:[—–]|--)\s.*$')
+_MERGE_RATIONALE_RE = re.compile(r"\s*(?:[—–]|--)\s.*$")
 
 
 def clean_merge_title(raw: str) -> str:
@@ -98,25 +102,33 @@ def clean_merge_title(raw: str) -> str:
     loads such a title verbatim and the arc stays fully visible. The damage is
     legibility, not retrieval.
     """
-    title = _MERGE_RATIONALE_RE.sub('', raw.strip())
-    return title.strip().strip('`').strip()
+    title = _MERGE_RATIONALE_RE.sub("", raw.strip())
+    return title.strip().strip("`").strip()
 
 
 def parse_merges(section: str) -> list[dict]:
     """Parse '### 2. Merge/Split Candidates' section."""
     ops = []
     for line in section.splitlines():
-        merge_m = re.match(r'`?MERGE:\s*(\S+)\s*\+\s*(\S+)\s*[→→]\s*(.*?)`?$', line)
-        split_m = re.match(r'`?SPLIT:\s*(\S+)\s*[→→]\s*(.*?)`?$', line)
+        merge_m = re.match(r"`?MERGE:\s*(\S+)\s*\+\s*(\S+)\s*[→→]\s*(.*?)`?$", line)
+        split_m = re.match(r"`?SPLIT:\s*(\S+)\s*[→→]\s*(.*?)`?$", line)
         if merge_m:
-            ops.append({
-                "op": "merge",
-                "arc_a": merge_m.group(1),
-                "arc_b": merge_m.group(2),
-                "title": clean_merge_title(merge_m.group(3)),
-            })
+            ops.append(
+                {
+                    "op": "merge",
+                    "arc_a": merge_m.group(1),
+                    "arc_b": merge_m.group(2),
+                    "title": clean_merge_title(merge_m.group(3)),
+                }
+            )
         elif split_m:
-            ops.append({"op": "split", "arc": split_m.group(1), "into": clean_merge_title(split_m.group(2))})
+            ops.append(
+                {
+                    "op": "split",
+                    "arc": split_m.group(1),
+                    "into": clean_merge_title(split_m.group(2)),
+                }
+            )
     return ops
 
 
@@ -132,34 +144,38 @@ def parse_signals(section: str) -> list[dict]:
     for line in section.splitlines():
         line = line.strip()
         # Strip any leading list/bullet marker ('- ', '* ', '1. ', backticks)
-        stripped = re.sub(r'^[-*0-9.\s`]+', '', line)
+        stripped = re.sub(r"^[-*0-9.\s`]+", "", line)
         esc_m = re.match(
-            r'(?:ESCALATE):\s*`?([^`→]+?)`?\s*[→]\s*(\w+)\s*\((.*?)\)',
+            r"(?:ESCALATE):\s*`?([^`→]+?)`?\s*[→]\s*(\w+)\s*\((.*?)\)",
             stripped,
         )
         clr_m = re.match(
-            r'(?:CLEAR):\s*`?([^`(]+?)`?\s*\((.*?)\)',
+            r"(?:CLEAR):\s*`?([^`(]+?)`?\s*\((.*?)\)",
             stripped,
         )
         if esc_m:
-            changes.append({
-                "op": "escalate",
-                "source": esc_m.group(1).strip(),
-                "new_severity": esc_m.group(2),
-                "reason": esc_m.group(3),
-            })
+            changes.append(
+                {
+                    "op": "escalate",
+                    "source": esc_m.group(1).strip(),
+                    "new_severity": esc_m.group(2),
+                    "reason": esc_m.group(3),
+                }
+            )
         elif clr_m:
-            changes.append({
-                "op": "clear",
-                "source": clr_m.group(1).strip(),
-                "reason": clr_m.group(2),
-            })
+            changes.append(
+                {
+                    "op": "clear",
+                    "source": clr_m.group(1).strip(),
+                    "reason": clr_m.group(2),
+                }
+            )
     return changes
 
 
 def parse_health(section: str) -> dict:
     """Parse '### 5. Brain Health' section."""
-    m = re.search(r'(\d+)/10\s*[—–-]\s*(.*)', section)
+    m = re.search(r"(\d+)/10\s*[—–-]\s*(.*)", section)
     if m:
         return {"score": int(m.group(1)), "reason": m.group(2).strip()}
     return {"score": 0, "reason": "unparseable"}
@@ -227,9 +243,7 @@ def parse_ai_output(text: str) -> dict:
 # Leading `-`/`*`/backtick and a trailing backtick are all tolerated: the tick
 # prompt writes its format examples in backticks (as every other section does),
 # so the model faithfully wraps each emitted line the same way.
-_SUMMARY_RE = re.compile(
-    r"^[\s\-*`]*SUMMARY:\s*(?P<cid>[^|]+?)\s*\|\s*(?P<text>.+?)\s*[`\s]*$"
-)
+_SUMMARY_RE = re.compile(r"^[\s\-*`]*SUMMARY:\s*(?P<cid>[^|]+?)\s*\|\s*(?P<text>.+?)\s*[`\s]*$")
 
 
 def parse_summaries(section: str) -> list[dict]:
@@ -259,6 +273,7 @@ def parse_summaries(section: str) -> list[dict]:
 
 
 # ── Apply functions ───────────────────────────────────────────────────
+
 
 def find_arc_file(vault_root: Path, arc_id: str) -> Path | None:
     """Locate an arc file by cluster_id or stem.
@@ -298,9 +313,9 @@ def find_arc_file(vault_root: Path, arc_id: str) -> Path | None:
             # the same canonical id exists in this dir. canonical_arc_id folds
             # the whole .merged.merged…md chain to one id; str.replace stripped
             # only one level, which let chains escape suppression.
-            if (not md_file.name.endswith(".merged.md")
-                and markers.canonical_arc_id(md_file.name)
-                    in merged_stems_by_dir.get(md_file.parent, set())):
+            if not md_file.name.endswith(".merged.md") and markers.canonical_arc_id(
+                md_file.name
+            ) in merged_stems_by_dir.get(md_file.parent, set()):
                 continue
             try:
                 fm, _ = markers.parse_frontmatter(md_file.read_text())
@@ -354,7 +369,7 @@ def apply_edges(vault_root: Path, edges: list[dict], dry_run: bool) -> int:
         if any_to_target.search(text):
             continue
 
-        marker = f'<!-- @edge type={edge["type"]} target={tgt_norm} -->'
+        marker = f"<!-- @edge type={edge['type']} target={tgt_norm} -->"
 
         # Insert before ## Source sessions (or at end)
         if "## Source sessions" in text:
@@ -408,9 +423,9 @@ def apply_signal_changes(vault_root: Path, changes: list[dict], dry_run: bool) -
             for md_file in files:
                 if md_file.name.startswith("_"):
                     continue
-                if (not md_file.name.endswith(".merged.md")
-                    and markers.canonical_arc_id(md_file.name)
-                        in merged_stems_by_dir.get(md_file.parent, set())):
+                if not md_file.name.endswith(".merged.md") and markers.canonical_arc_id(
+                    md_file.name
+                ) in merged_stems_by_dir.get(md_file.parent, set()):
                     continue
                 yield md_file
 
@@ -420,28 +435,24 @@ def apply_signal_changes(vault_root: Path, changes: list[dict], dry_run: bool) -
         source_slug = source[:30]
         for md_file in _iter_arc_files():
             text = md_file.read_text()
-            has_source_attr = f'source={source}' in text
-            fuzzy_hit = (
-                not has_source_attr
-                and source_slug in text
-                and '<!-- @signal' in text
-            )
+            has_source_attr = f"source={source}" in text
+            fuzzy_hit = not has_source_attr and source_slug in text and "<!-- @signal" in text
             if not has_source_attr and not fuzzy_hit:
                 continue
 
             if change["op"] == "clear":
                 pattern = re.compile(
-                    r'<!-- @signal[^>]*source=' + re.escape(source) + r'[^>]*-->'
-                    r'(.*?)'
-                    r'<!-- @/signal -->',
+                    r"<!-- @signal[^>]*source=" + re.escape(source) + r"[^>]*-->"
+                    r"(.*?)"
+                    r"<!-- @/signal -->",
                     re.DOTALL,
                 )
                 match = pattern.search(text)
                 if not match and fuzzy_hit:
                     pattern = re.compile(
-                        r'<!-- @signal[^>]*-->\s*\n'
-                        r'([^<]*?' + re.escape(source_slug) + r'[^<]*?)\n'
-                        r'<!-- @/signal -->',
+                        r"<!-- @signal[^>]*-->\s*\n"
+                        r"([^<]*?" + re.escape(source_slug) + r"[^<]*?)\n"
+                        r"<!-- @/signal -->",
                         re.DOTALL,
                     )
                     match = pattern.search(text)
@@ -451,7 +462,7 @@ def apply_signal_changes(vault_root: Path, changes: list[dict], dry_run: bool) -
                         text = pattern.sub("", text, count=1)
                         print(f"  TOMBSTONE: {change['source']} in {md_file.name}")
                     else:
-                        replacement = f'<!-- @signal severity=resolved source={change["source"]} -->\n{content} (CLEARED: {change["reason"]})\n<!-- @/signal -->'
+                        replacement = f"<!-- @signal severity=resolved source={change['source']} -->\n{content} (CLEARED: {change['reason']})\n<!-- @/signal -->"
                         text = pattern.sub(replacement, text, count=1)
                         print(f"  CLEAR: {change['source']} in {md_file.name} ({change['reason']})")
                     if not dry_run:
@@ -460,33 +471,37 @@ def apply_signal_changes(vault_root: Path, changes: list[dict], dry_run: bool) -
 
             elif change["op"] == "escalate":
                 old_pattern = re.compile(
-                    r'(<!-- @signal\s+)severity=\w+(\s+source=' + re.escape(source) + r')'
+                    r"(<!-- @signal\s+)severity=\w+(\s+source=" + re.escape(source) + r")"
                 )
                 if not old_pattern.search(text) and fuzzy_hit:
                     bare_pattern = re.compile(
-                        r'(<!-- @signal)(\s*-->\s*\n[^<]*?' + re.escape(source_slug) + r')',
+                        r"(<!-- @signal)(\s*-->\s*\n[^<]*?" + re.escape(source_slug) + r")",
                     )
                     if bare_pattern.search(text):
                         text = bare_pattern.sub(
-                            rf'\1 severity={change["new_severity"]} source={source}\2',
+                            rf"\1 severity={change['new_severity']} source={source}\2",
                             text,
                             count=1,
                         )
                         if not dry_run:
                             md_file.write_text(text)
                         applied += 1
-                        print(f"  ESCALATE (fuzzy): {source} → {change['new_severity']} in {md_file.name}")
+                        print(
+                            f"  ESCALATE (fuzzy): {source} → {change['new_severity']} in {md_file.name}"
+                        )
                         continue
                 if old_pattern.search(text):
                     text = old_pattern.sub(
-                        rf'\1severity={change["new_severity"]}\2',
+                        rf"\1severity={change['new_severity']}\2",
                         text,
                         count=1,
                     )
                     if not dry_run:
                         md_file.write_text(text)
                     applied += 1
-                    print(f"  ESCALATE: {change['source']} → {change['new_severity']} in {md_file.name}")
+                    print(
+                        f"  ESCALATE: {change['source']} → {change['new_severity']} in {md_file.name}"
+                    )
 
     return applied
 
@@ -495,7 +510,7 @@ def apply_signal_changes(vault_root: Path, changes: list[dict], dry_run: bool) -
 # is appended into another arc is what let edges accumulate into the thousands
 # (the prompt re-renders every one). Strip them from the merged-in body — the
 # AI re-derives edges each tick from the arc table, so nothing is lost.
-_EDGE_MARKER_RE = re.compile(r'[ \t]*<!--\s*@edge\b[^>]*-->[ \t]*\n?')
+_EDGE_MARKER_RE = re.compile(r"[ \t]*<!--\s*@edge\b[^>]*-->[ \t]*\n?")
 
 
 def _strip_edge_markers(body: str) -> str:
@@ -517,6 +532,7 @@ def _drop_duplicate_markers(body_b: str, text_a: str) -> str:
     way. Compare on normalised content, since the same marker can differ in
     whitespace or (historically) shell-escaping between writers.
     """
+
     def _norm(s: str) -> str:
         return " ".join(s.split()).lower()
 
@@ -550,7 +566,10 @@ def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
             print(f"  SKIP merge: {merge['arc_a']} or {merge['arc_b']} not found", file=sys.stderr)
             continue
         if file_a == file_b:
-            print(f"  SKIP merge: {merge['arc_a']} and {merge['arc_b']} resolve to one file", file=sys.stderr)
+            print(
+                f"  SKIP merge: {merge['arc_a']} and {merge['arc_b']} resolve to one file",
+                file=sys.stderr,
+            )
             continue
         # Never re-merge an already-merged tombstone — that is the runaway loop.
         if file_b.name.endswith(".merged.md"):
@@ -560,7 +579,10 @@ def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
         text_a = file_a.read_text()
         # Idempotent across ticks: if B was already folded into A, do nothing.
         if f"## Merged from {merge['arc_b']}" in text_a:
-            print(f"  SKIP merge: {merge['arc_b']} already merged into {merge['arc_a']}", file=sys.stderr)
+            print(
+                f"  SKIP merge: {merge['arc_b']} already merged into {merge['arc_a']}",
+                file=sys.stderr,
+            )
             continue
 
         if not dry_run:
@@ -580,7 +602,7 @@ def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
                 # parser. json.dumps emits a double-quoted scalar YAML accepts.
                 safe_title = json.dumps(merge["title"])
                 merged = re.sub(
-                    r'^title:.*$', f'title: {safe_title}', merged, count=1, flags=re.MULTILINE
+                    r"^title:.*$", f"title: {safe_title}", merged, count=1, flags=re.MULTILINE
                 )
 
             file_a.write_text(merged)
@@ -639,7 +661,7 @@ def append_health(health_file: Path, health: dict, tick_stats: dict, dry_run: bo
 
 def generate_diff_report(vault_root: Path, actions: dict) -> str:
     """Generate a human-readable diff of what this tick changed."""
-    ts = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines = [
         "---",
         "id: last-tick-diff",
@@ -661,6 +683,7 @@ def generate_diff_report(vault_root: Path, actions: dict) -> str:
 
 
 # ── Main ──────────────────────────────────────────────────────────────
+
 
 def apply_summaries(vault_root: Path, summaries: list[dict], dry_run: bool = False) -> int:
     """Write `summary:` into arc frontmatter and flip `synthesized` to true.
@@ -723,10 +746,12 @@ def apply(vault_root: Path, brain_feed_dir: Path, ai_output: str, dry_run: bool 
     """Parse AI output and apply all recommendations to the vault."""
     parsed = parse_ai_output(ai_output)
 
-    print(f"Parsed AI output: {len(parsed['edges'])} edges, {len(parsed['merges'])} merges, "
-          f"{len(parsed['signals'])} signal changes, {len(parsed['summaries'])} summaries, "
-          f"health={parsed['health'].get('score', '?')}/10",
-          file=sys.stderr)
+    print(
+        f"Parsed AI output: {len(parsed['edges'])} edges, {len(parsed['merges'])} merges, "
+        f"{len(parsed['signals'])} signal changes, {len(parsed['summaries'])} summaries, "
+        f"health={parsed['health'].get('score', '?')}/10",
+        file=sys.stderr,
+    )
 
     actions = {}
 
@@ -757,7 +782,11 @@ def apply(vault_root: Path, brain_feed_dir: Path, ai_output: str, dry_run: bool 
 
     # Append health
     print("\n--- Recording health ---", file=sys.stderr)
-    health_file = brain_feed_dir.parent / "brain-etl" / "health.jsonl" if (brain_feed_dir.parent / "brain-etl").exists() else brain_feed_dir / "health.jsonl"
+    health_file = (
+        brain_feed_dir.parent / "brain-etl" / "health.jsonl"
+        if (brain_feed_dir.parent / "brain-etl").exists()
+        else brain_feed_dir / "health.jsonl"
+    )
     append_health(health_file, parsed["health"], {}, dry_run)
     actions["health"] = parsed["health"]
 

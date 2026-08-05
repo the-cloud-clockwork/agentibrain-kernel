@@ -17,6 +17,7 @@ Usage:
     python3 heal.py --vault /vault --brain-feed /vault/brain-feed
     python3 heal.py --vault /vault --brain-feed /vault/brain-feed --out /tmp/heal.md
 """
+
 from __future__ import annotations
 
 import argparse
@@ -51,6 +52,7 @@ def _ch_query(sql: str, timeout: int = 5) -> str | None:
         )
         if CLICKHOUSE_PASSWORD:
             import base64
+
             auth = base64.b64encode(f"{CLICKHOUSE_USER}:{CLICKHOUSE_PASSWORD}".encode()).decode()
             req.add_header("Authorization", f"Basic {auth}")
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -63,15 +65,30 @@ def check_stale_signals(brain_feed: Path) -> dict:
     """Count signals older than 24h in signals.md, excluding nuclear/critical."""
     sig_file = brain_feed / "signals.md"
     if not sig_file.exists():
-        return {"name": "stale_signals", "status": "SKIP", "value": 0, "detail": "signals.md missing"}
+        return {
+            "name": "stale_signals",
+            "status": "SKIP",
+            "value": 0,
+            "detail": "signals.md missing",
+        }
     text = sig_file.read_text(encoding="utf-8", errors="replace")
     total = sum(1 for line in text.splitlines() if line.startswith("- **["))
     nuclear = sum(1 for line in text.splitlines() if line.startswith("- **[nuclear]"))
     critical = sum(1 for line in text.splitlines() if line.startswith("- **[critical]"))
     stale = max(0, total - nuclear - critical)
     if stale > 5:
-        return {"name": "stale_signals", "status": "WARN", "value": stale, "detail": f"{stale} non-critical signals; sweep may not be running"}
-    return {"name": "stale_signals", "status": "PASS", "value": stale, "detail": f"{nuclear} nuclear, {critical} critical, {stale} other"}
+        return {
+            "name": "stale_signals",
+            "status": "WARN",
+            "value": stale,
+            "detail": f"{stale} non-critical signals; sweep may not be running",
+        }
+    return {
+        "name": "stale_signals",
+        "status": "PASS",
+        "value": stale,
+        "detail": f"{nuclear} nuclear, {critical} critical, {stale} other",
+    }
 
 
 def check_hook_silence() -> dict:
@@ -79,48 +96,118 @@ def check_hook_silence() -> dict:
     sql = "SELECT dateDiff('minute', max(Timestamp), now64(9)) FROM otel.otel_traces WHERE ServiceName='agentihooks' AND SpanName='brain.delivery' FORMAT TabSeparated"
     raw = _ch_query(sql)
     if raw is None:
-        return {"name": "hook_silence", "status": "SKIP", "value": -1, "detail": "ClickHouse unreachable"}
+        return {
+            "name": "hook_silence",
+            "status": "SKIP",
+            "value": -1,
+            "detail": "ClickHouse unreachable",
+        }
     try:
         minutes = int(raw)
     except ValueError:
-        return {"name": "hook_silence", "status": "SKIP", "value": -1, "detail": f"unexpected response: {raw[:60]}"}
+        return {
+            "name": "hook_silence",
+            "status": "SKIP",
+            "value": -1,
+            "detail": f"unexpected response: {raw[:60]}",
+        }
     if minutes > 120:
-        return {"name": "hook_silence", "status": "FAIL", "value": minutes, "detail": f"last span {minutes}m ago — OTel pipeline broken"}
+        return {
+            "name": "hook_silence",
+            "status": "FAIL",
+            "value": minutes,
+            "detail": f"last span {minutes}m ago — OTel pipeline broken",
+        }
     if minutes > 30:
-        return {"name": "hook_silence", "status": "WARN", "value": minutes, "detail": f"last span {minutes}m ago — sessions idle or hooks slow"}
-    return {"name": "hook_silence", "status": "PASS", "value": minutes, "detail": f"last span {minutes}m ago"}
+        return {
+            "name": "hook_silence",
+            "status": "WARN",
+            "value": minutes,
+            "detail": f"last span {minutes}m ago — sessions idle or hooks slow",
+        }
+    return {
+        "name": "hook_silence",
+        "status": "PASS",
+        "value": minutes,
+        "detail": f"last span {minutes}m ago",
+    }
 
 
 def check_brain_feed_freshness(brain_feed: Path) -> dict:
     """mtime of hot-arcs.md vs now."""
     f = brain_feed / "hot-arcs.md"
     if not f.exists():
-        return {"name": "brain_feed_freshness", "status": "FAIL", "value": -1, "detail": "hot-arcs.md missing"}
+        return {
+            "name": "brain_feed_freshness",
+            "status": "FAIL",
+            "value": -1,
+            "detail": "hot-arcs.md missing",
+        }
     age_min = int((time.time() - f.stat().st_mtime) / 60)
     if age_min > 180:
-        return {"name": "brain_feed_freshness", "status": "FAIL", "value": age_min, "detail": f"hot-arcs.md {age_min}m old — tick stalled"}
+        return {
+            "name": "brain_feed_freshness",
+            "status": "FAIL",
+            "value": age_min,
+            "detail": f"hot-arcs.md {age_min}m old — tick stalled",
+        }
     if age_min > 130:
-        return {"name": "brain_feed_freshness", "status": "WARN", "value": age_min, "detail": f"hot-arcs.md {age_min}m old — last tick may have failed"}
-    return {"name": "brain_feed_freshness", "status": "PASS", "value": age_min, "detail": f"hot-arcs.md {age_min}m old"}
+        return {
+            "name": "brain_feed_freshness",
+            "status": "WARN",
+            "value": age_min,
+            "detail": f"hot-arcs.md {age_min}m old — last tick may have failed",
+        }
+    return {
+        "name": "brain_feed_freshness",
+        "status": "PASS",
+        "value": age_min,
+        "detail": f"hot-arcs.md {age_min}m old",
+    }
 
 
 def check_broadcast_bloat() -> dict:
     """Count lines in local broadcast_delivery_state.json."""
     state = Path.home() / ".agentihooks" / "broadcast_delivery_state.json"
     if not state.exists():
-        return {"name": "broadcast_bloat", "status": "SKIP", "value": 0, "detail": "no local state file"}
+        return {
+            "name": "broadcast_bloat",
+            "status": "SKIP",
+            "value": 0,
+            "detail": "no local state file",
+        }
     try:
         size = state.stat().st_size
         with open(state) as f:
             data = json.load(f)
         entries = len(data) if isinstance(data, dict) else 0
     except Exception as e:
-        return {"name": "broadcast_bloat", "status": "WARN", "value": -1, "detail": f"parse error: {e}"}
+        return {
+            "name": "broadcast_bloat",
+            "status": "WARN",
+            "value": -1,
+            "detail": f"parse error: {e}",
+        }
     if entries > 50000:
-        return {"name": "broadcast_bloat", "status": "FAIL", "value": entries, "detail": f"{entries} entries / {size//1024}KB — TTL eviction broken"}
+        return {
+            "name": "broadcast_bloat",
+            "status": "FAIL",
+            "value": entries,
+            "detail": f"{entries} entries / {size // 1024}KB — TTL eviction broken",
+        }
     if entries > 10000:
-        return {"name": "broadcast_bloat", "status": "WARN", "value": entries, "detail": f"{entries} entries / {size//1024}KB"}
-    return {"name": "broadcast_bloat", "status": "PASS", "value": entries, "detail": f"{entries} entries / {size//1024}KB"}
+        return {
+            "name": "broadcast_bloat",
+            "status": "WARN",
+            "value": entries,
+            "detail": f"{entries} entries / {size // 1024}KB",
+        }
+    return {
+        "name": "broadcast_bloat",
+        "status": "PASS",
+        "value": entries,
+        "detail": f"{entries} entries / {size // 1024}KB",
+    }
 
 
 def check_channel_subscriptions() -> dict:
@@ -128,11 +215,21 @@ def check_channel_subscriptions() -> dict:
     home = Path.home()
     projects_dir = home / "dev"
     if not projects_dir.exists():
-        return {"name": "channel_subscriptions", "status": "SKIP", "value": 0, "detail": "~/dev not found"}
+        return {
+            "name": "channel_subscriptions",
+            "status": "SKIP",
+            "value": 0,
+            "detail": "~/dev not found",
+        }
     configs = list(projects_dir.glob("*/.agentihooks.json"))
     configs += list(projects_dir.glob("*/*/.agentihooks.json"))
     if not configs:
-        return {"name": "channel_subscriptions", "status": "PASS", "value": 0, "detail": "no .agentihooks.json files (fleet uses defaults)"}
+        return {
+            "name": "channel_subscriptions",
+            "status": "PASS",
+            "value": 0,
+            "detail": "no .agentihooks.json files (fleet uses defaults)",
+        }
     missing = []
     for c in configs[:30]:
         try:
@@ -142,14 +239,29 @@ def check_channel_subscriptions() -> dict:
         except Exception:
             continue
     if missing:
-        return {"name": "channel_subscriptions", "status": "WARN", "value": len(missing), "detail": f"{len(missing)} projects missing channels[]: {missing[:3]}"}
-    return {"name": "channel_subscriptions", "status": "PASS", "value": 0, "detail": f"all {len(configs)} configs have channels[]"}
+        return {
+            "name": "channel_subscriptions",
+            "status": "WARN",
+            "value": len(missing),
+            "detail": f"{len(missing)} projects missing channels[]: {missing[:3]}",
+        }
+    return {
+        "name": "channel_subscriptions",
+        "status": "PASS",
+        "value": 0,
+        "detail": f"all {len(configs)} configs have channels[]",
+    }
 
 
 def check_litellm_reachability() -> dict:
     """Self-ping brain-keeper via LiteLLM /v1/models."""
     if not LITELLM_KEY:
-        return {"name": "litellm_reachability", "status": "SKIP", "value": -1, "detail": "LITELLM_KEY not set"}
+        return {
+            "name": "litellm_reachability",
+            "status": "SKIP",
+            "value": -1,
+            "detail": "LITELLM_KEY not set",
+        }
     url = LITELLM_URL.rstrip("/") + "/v1/models"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {LITELLM_KEY}"})
     try:
@@ -159,10 +271,25 @@ def check_litellm_reachability() -> dict:
             data = json.loads(r.read())
         ids = [m.get("id", "") for m in data.get("data", [])]
         if "brain-keeper" not in ids:
-            return {"name": "litellm_reachability", "status": "WARN", "value": dt_ms, "detail": "brain-keeper model not registered"}
-        return {"name": "litellm_reachability", "status": "PASS", "value": dt_ms, "detail": f"{dt_ms}ms, {len(ids)} models registered"}
+            return {
+                "name": "litellm_reachability",
+                "status": "WARN",
+                "value": dt_ms,
+                "detail": "brain-keeper model not registered",
+            }
+        return {
+            "name": "litellm_reachability",
+            "status": "PASS",
+            "value": dt_ms,
+            "detail": f"{dt_ms}ms, {len(ids)} models registered",
+        }
     except Exception as e:
-        return {"name": "litellm_reachability", "status": "FAIL", "value": -1, "detail": str(e)[:80]}
+        return {
+            "name": "litellm_reachability",
+            "status": "FAIL",
+            "value": -1,
+            "detail": str(e)[:80],
+        }
 
 
 def check_nuclear_age(brain_feed: Path) -> dict:
@@ -174,7 +301,12 @@ def check_nuclear_age(brain_feed: Path) -> dict:
     nuclear_lines = [line for line in text.splitlines() if line.startswith("- **[nuclear]")]
     if not nuclear_lines:
         return {"name": "nuclear_age", "status": "PASS", "value": 0, "detail": "no nuclear signals"}
-    return {"name": "nuclear_age", "status": "WARN", "value": len(nuclear_lines), "detail": f"{len(nuclear_lines)} nuclear signal(s) active — needs mitigates: arc to close"}
+    return {
+        "name": "nuclear_age",
+        "status": "WARN",
+        "value": len(nuclear_lines),
+        "detail": f"{len(nuclear_lines)} nuclear signal(s) active — needs mitigates: arc to close",
+    }
 
 
 CHECKS = [
@@ -193,12 +325,21 @@ def run(brain_feed: Path) -> tuple[list[dict], int]:
     results = []
     for check in CHECKS:
         try:
-            if check.__name__ in ("check_stale_signals", "check_brain_feed_freshness", "check_nuclear_age"):
+            if check.__name__ in (
+                "check_stale_signals",
+                "check_brain_feed_freshness",
+                "check_nuclear_age",
+            ):
                 r = check(brain_feed)
             else:
                 r = check()
         except Exception as e:
-            r = {"name": check.__name__.removeprefix("check_"), "status": "FAIL", "value": -1, "detail": f"check raised: {e}"}
+            r = {
+                "name": check.__name__.removeprefix("check_"),
+                "status": "FAIL",
+                "value": -1,
+                "detail": f"check raised: {e}",
+            }
         results.append(r)
     fails = sum(1 for r in results if r["status"] == "FAIL")
     warns = sum(1 for r in results if r["status"] == "WARN")
@@ -229,12 +370,15 @@ def render_markdown(results: list[dict], exit_code: int) -> str:
     elif exit_code == 1:
         lines.append("One or more checks degraded. Review WARN items; system still functional.")
     else:
-        lines.append("Critical drift detected. FAIL items demand immediate attention — broadcasts may be silently dropped.")
+        lines.append(
+            "Critical drift detected. FAIL items demand immediate attention — broadcasts may be silently dropped."
+        )
     return "\n".join(lines) + "\n"
 
 
 def render_csv(results: list[dict]) -> str:
     import io
+
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["check", "status", "value", "detail"])
@@ -249,7 +393,9 @@ def main() -> int:
     p.add_argument("--vault", help="Vault root (unused, accepted for symmetry)")
     p.add_argument("--out", help="Write markdown report to file")
     p.add_argument("--csv", help="Write CSV summary to file")
-    p.add_argument("--json", action="store_true", help="Emit JSON results to stdout instead of markdown")
+    p.add_argument(
+        "--json", action="store_true", help="Emit JSON results to stdout instead of markdown"
+    )
     args = p.parse_args()
 
     brain_feed = Path(args.brain_feed)

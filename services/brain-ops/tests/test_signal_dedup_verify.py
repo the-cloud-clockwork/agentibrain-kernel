@@ -30,11 +30,10 @@ import markers  # noqa: E402
 
 # ---------- Phase 4: parse_signals regex ----------
 
+
 class TestParseSignals:
     def test_single_token_source(self):
-        out = brain_apply.parse_signals(
-            "ESCALATE: paper2slides-s3 → warning (all jobs fail)"
-        )
+        out = brain_apply.parse_signals("ESCALATE: paper2slides-s3 → warning (all jobs fail)")
         assert len(out) == 1
         assert out[0]["op"] == "escalate"
         assert out[0]["source"] == "paper2slides-s3"
@@ -49,34 +48,33 @@ class TestParseSignals:
         assert out[0]["new_severity"] == "critical"
 
     def test_bullet_list_prefix(self):
-        out = brain_apply.parse_signals(
-            "- ESCALATE: `multi word source` → critical (reason)"
-        )
+        out = brain_apply.parse_signals("- ESCALATE: `multi word source` → critical (reason)")
         assert len(out) == 1
         assert out[0]["source"] == "multi word source"
 
     def test_clear_directive(self):
-        out = brain_apply.parse_signals(
-            "`CLEAR: foo-bar (resolved per operator)`"
-        )
+        out = brain_apply.parse_signals("`CLEAR: foo-bar (resolved per operator)`")
         assert len(out) == 1
         assert out[0]["op"] == "clear"
         assert out[0]["source"] == "foo-bar"
         assert out[0]["reason"] == "resolved per operator"
 
     def test_mixed_section(self):
-        section = "\n".join([
-            "- ESCALATE: paper2slides-s3 → warning (all jobs fail)",
-            "- ESCALATE: `another multi word` → critical (reason here)",
-            "- CLEAR: old-signal-source (fixed)",
-            "- no directive here, just prose",
-        ])
+        section = "\n".join(
+            [
+                "- ESCALATE: paper2slides-s3 → warning (all jobs fail)",
+                "- ESCALATE: `another multi word` → critical (reason here)",
+                "- CLEAR: old-signal-source (fixed)",
+                "- no directive here, just prose",
+            ]
+        )
         out = brain_apply.parse_signals(section)
         ops = [c["op"] for c in out]
         assert ops == ["escalate", "escalate", "clear"], f"got {out}"
 
 
 # ---------- Phase 3: brain_verifier ----------
+
 
 class TestVerifier:
     def test_skip_when_no_verify_attr(self):
@@ -102,8 +100,12 @@ class TestVerifier:
 
     def test_apply_results_stamps_mitigated(self):
         sigs = [
-            markers.Marker(type="signal", content="claim", attrs={"source": "foo", "verify": "true"}),
-            markers.Marker(type="signal", content="claim2", attrs={"source": "bar", "verify": "false"}),
+            markers.Marker(
+                type="signal", content="claim", attrs={"source": "foo", "verify": "true"}
+            ),
+            markers.Marker(
+                type="signal", content="claim2", attrs={"source": "bar", "verify": "false"}
+            ),
             markers.Marker(type="signal", content="claim3", attrs={"source": "baz"}),
         ]
         results = brain_verifier.verify_all(sigs)
@@ -120,6 +122,7 @@ class TestVerifier:
 
 
 # ---------- Phase 2: dedup logic (unit-level, avoid full tick) ----------
+
 
 class TestCollectorDedup:
     def test_identical_signals_collapse(self):
@@ -165,6 +168,7 @@ class TestCollectorDedup:
 
 # ---------- Phase 4: apply fuzzy fallback ----------
 
+
 class TestApplyFuzzyFallback:
     def test_structured_source_path(self, tmp_path):
         """Signal with source= attr → primary regex path matches and CLEARs."""
@@ -198,11 +202,13 @@ class TestApplyFuzzyFallback:
         )
         applied = brain_apply.apply_signal_changes(
             tmp_path,
-            [{
-                "op": "clear",
-                "source": "image updater registry auth broken",
-                "reason": "verified secret present",
-            }],
+            [
+                {
+                    "op": "clear",
+                    "source": "image updater registry auth broken",
+                    "reason": "verified secret present",
+                }
+            ],
             dry_run=False,
         )
         assert applied == 1

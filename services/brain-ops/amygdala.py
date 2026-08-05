@@ -17,6 +17,7 @@ Usage:
     python3 amygdala.py --redis-url redis://redis:6379/11 \
         --vault /vault --brain-feed /vault/brain-feed --dry-run
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,7 +36,9 @@ except ImportError:
 _DEFAULT_STREAMS = "events:health,events:host,events:deploy,events:system,events:brain"
 # Operators with an existing namespaced prefix (e.g. <prefix>:events:*) override via
 # AMYGDALA_STREAMS="<prefix>:events:health,<prefix>:events:host,...".
-STREAMS = [s.strip() for s in os.getenv("AMYGDALA_STREAMS", _DEFAULT_STREAMS).split(",") if s.strip()]
+STREAMS = [
+    s.strip() for s in os.getenv("AMYGDALA_STREAMS", _DEFAULT_STREAMS).split(",") if s.strip()
+]
 GROUP = "amygdala"
 CONSUMER = os.getenv("AMYGDALA_CONSUMER", "amygdala-cron")
 CLEAR_WINDOW_SEC = int(os.getenv("AMYGDALA_CLEAR_WINDOW", "900"))  # 15 min
@@ -54,7 +57,9 @@ def classify_severity(fields: dict) -> str | None:
         sev = fields.get("severity", "")
         return sev if sev in ("nuclear", "critical", "warning") else None
 
-    if priority == "urgent" or any(w in text for w in ["down", "offline", "fatal", "data loss", "nuclear"]):
+    if priority == "urgent" or any(
+        w in text for w in ["down", "offline", "fatal", "data loss", "nuclear"]
+    ):
         return "nuclear"
     if priority == "high" or any(w in text for w in ["failed", "crash", "timeout", "unreachable"]):
         return "critical"
@@ -68,7 +73,9 @@ def write_signal_file(brain_feed_dir: Path, events: list[dict], dry_run: bool) -
     if not events:
         return False
 
-    worst = max(events, key=lambda e: {"nuclear": 3, "critical": 2, "warning": 1}.get(e["severity"], 0))
+    worst = max(
+        events, key=lambda e: {"nuclear": 3, "critical": 2, "warning": 1}.get(e["severity"], 0)
+    )
     sev = worst["severity"]
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
@@ -121,25 +128,25 @@ def write_incident_arc(vault_root: Path, event: dict, dry_run: bool) -> Path | N
 
     content = f"""---
 cluster_id: amygdala-{ts}-{slug}
-title: "{event['title']}"
+title: "{event["title"]}"
 region: amygdala
 status: active
 heat: 10
-severity: {event['severity']}
-source_event: "{event['event']}"
-source_stream: "{event['stream']}"
-created: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}
+severity: {event["severity"]}
+source_event: "{event["event"]}"
+source_stream: "{event["stream"]}"
+created: {datetime.now(timezone.utc).strftime("%Y-%m-%d")}
 ---
 
-# {event['title']}
+# {event["title"]}
 
-<!-- @signal severity={event['severity']} source={event.get('source', 'event-bus')} -->
-{event.get('message', event['title'])}
+<!-- @signal severity={event["severity"]} source={event.get("source", "event-bus")} -->
+{event.get("message", event["title"])}
 <!-- @/signal -->
 
 ## Timeline
 
-- **{ts}** — Signal detected from {event['stream']}
+- **{ts}** — Signal detected from {event["stream"]}
 
 ## Resolution
 
@@ -189,16 +196,18 @@ def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: boo
         for msg_id, fields in messages:
             severity = classify_severity(fields)
             if severity:
-                active_events.append({
-                    "severity": severity,
-                    "title": fields.get("title", fields.get("event", "unknown")),
-                    "event": fields.get("event", "unknown"),
-                    "message": fields.get("message", ""),
-                    "source": fields.get("source", ""),
-                    "stream": stream_name,
-                    "msg_id": msg_id,
-                    "ts": fields.get("ts", ""),
-                })
+                active_events.append(
+                    {
+                        "severity": severity,
+                        "title": fields.get("title", fields.get("event", "unknown")),
+                        "event": fields.get("event", "unknown"),
+                        "message": fields.get("message", ""),
+                        "source": fields.get("source", ""),
+                        "stream": stream_name,
+                        "msg_id": msg_id,
+                        "ts": fields.get("ts", ""),
+                    }
+                )
             r.xack(stream_name, GROUP, msg_id)
 
     stats = {
@@ -215,7 +224,7 @@ def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: boo
         # status broadcast, not an incident. Creating a vault @signal arc
         # from it would seed the next tick's reasoning with self-generated
         # noise: brain says "score=3" → amygdala writes @signal nuclear →
-        # next brain tick reads it → AI scores ≤4 again → loop. The
+        # next agentibrain tick reads it → AI scores ≤4 again → loop. The
         # primary defense is brain_tick.py's explicit severity field
         # (paired with the "brain." event prefix amygdala honors), but
         # this source-based skip is defense in depth so the loop cannot
@@ -301,16 +310,18 @@ def replay(redis_url: str, count: int = 100, severity_filter: str | None = None)
             severity = classify_severity(fields) or "info"
             if severity_filter and severity != severity_filter:
                 continue
-            all_events.append({
-                "stream": stream,
-                "msg_id": msg_id,
-                "severity": severity,
-                "event": fields.get("event", "unknown"),
-                "title": fields.get("title", "")[:120],
-                "message": fields.get("message", "")[:200],
-                "source": fields.get("source", ""),
-                "ts": fields.get("ts", ""),
-            })
+            all_events.append(
+                {
+                    "stream": stream,
+                    "msg_id": msg_id,
+                    "severity": severity,
+                    "event": fields.get("event", "unknown"),
+                    "title": fields.get("title", "")[:120],
+                    "message": fields.get("message", "")[:200],
+                    "source": fields.get("source", ""),
+                    "ts": fields.get("ts", ""),
+                }
+            )
 
     # Sort newest-first across all streams (msg_id is timestamp-based)
     all_events.sort(key=lambda e: e["msg_id"], reverse=True)
@@ -351,6 +362,7 @@ def run_continuous(redis_url: str, vault_root: Path, brain_feed_dir: Path, poll_
             break
         except Exception as e:
             import traceback
+
             print(f"Amygdala error (cycle {cycle}): {e}", flush=True)
             traceback.print_exc()
             time.sleep(30)
@@ -362,11 +374,25 @@ def main() -> int:
     p.add_argument("--vault", help="Vault root path (required unless --replay)")
     p.add_argument("--brain-feed", help="Brain feed directory (required unless --replay)")
     p.add_argument("--dry-run", action="store_true")
-    p.add_argument("--continuous", action="store_true", help="Run as continuous consumer (daemon mode)")
-    p.add_argument("--poll-interval", type=int, default=5, help="Seconds between polls in continuous mode")
-    p.add_argument("--replay", action="store_true", help="Forensics: replay last N events from all streams (read-only, no side effects)")
-    p.add_argument("--last", type=int, default=100, help="Number of events to replay (default 100, max 1000)")
-    p.add_argument("--severity", choices=["info", "warning", "critical", "nuclear"], help="Filter replay by severity")
+    p.add_argument(
+        "--continuous", action="store_true", help="Run as continuous consumer (daemon mode)"
+    )
+    p.add_argument(
+        "--poll-interval", type=int, default=5, help="Seconds between polls in continuous mode"
+    )
+    p.add_argument(
+        "--replay",
+        action="store_true",
+        help="Forensics: replay last N events from all streams (read-only, no side effects)",
+    )
+    p.add_argument(
+        "--last", type=int, default=100, help="Number of events to replay (default 100, max 1000)"
+    )
+    p.add_argument(
+        "--severity",
+        choices=["info", "warning", "critical", "nuclear"],
+        help="Filter replay by severity",
+    )
     args = p.parse_args()
 
     if args.replay:
@@ -377,7 +403,9 @@ def main() -> int:
         return 0
 
     if not args.vault or not args.brain_feed:
-        print("ERROR: --vault and --brain-feed are required unless --replay is set", file=sys.stderr)
+        print(
+            "ERROR: --vault and --brain-feed are required unless --replay is set", file=sys.stderr
+        )
         return 2
 
     if args.continuous:
