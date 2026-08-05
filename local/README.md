@@ -13,11 +13,13 @@ docker compose up -d              # 8 containers come up
 docker compose ps                 # see the health note below
 ```
 
-Run `bootstrap.sh` as your normal user — **never with sudo**. Under sudo,
-`$HOME` is `/root`, so the vault and `.env` land in root's home and the stack
-breaks for your user (the script now refuses to run as root for this reason).
-A `Permission denied` from bootstrap means root-owned files from an old
-container run: `sudo chown -R $(id -u):$(id -g) <path>` and re-run plain.
+Broken or missing vault? Re-run the same three commands — `bootstrap.sh` is
+idempotent and repairs the vault, then `--build` recreates the containers:
+
+```bash
+./local/bootstrap.sh              # no sudo
+docker compose up -d --build
+```
 
 `postgres`, `redis`, `brain-api`, `embeddings`, and `mcp` report `(healthy)`.
 `tick-cron`, `tick-drain`, and `amygdala` show a bare `Up` — they are batch
