@@ -100,7 +100,7 @@ class BrainSettings(BaseSettings):
     )
 
     @model_validator(mode="after")
-    def _derive_brain_url(self) -> "BrainSettings":
+    def _derive_brain_url(self) -> BrainSettings:
         if not self.brain_url:
             self.brain_url = f"http://localhost:{self.port_brain_api}"
         return self

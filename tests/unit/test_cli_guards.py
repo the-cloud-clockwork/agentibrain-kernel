@@ -100,9 +100,7 @@ def test_build_forwards_service_names(tmp_path, docker_shim):
 def test_logs_passthrough_flags(tmp_path, docker_shim):
     path, record = docker_shim
     home, repo = _home_with_repo(tmp_path)
-    r = _run_cli(
-        ["logs", "tick-cron", "--since", "10m", "--tail", "50"], home, cwd=home, path=path
-    )
+    r = _run_cli(["logs", "tick-cron", "--since", "10m", "--tail", "50"], home, cwd=home, path=path)
     assert r.returncode == 0, r.stderr
     assert f"{repo} :: compose logs --since 10m --tail 50 tick-cron" in record.read_text()
 
