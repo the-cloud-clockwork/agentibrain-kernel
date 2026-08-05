@@ -95,43 +95,86 @@ def init(
     )
 
 
-def _require_init_stack() -> BrainSettings:
-    """Load settings and exit 2 unless `agentibrain init` rendered a stack.
-
-    compose up/down/ps run docker compose with cwd=config_dir; without the
-    rendered compose.yml that's a raw FileNotFoundError. Root-compose
-    deployments (local/bootstrap.sh) manage the stack with docker compose
-    directly and never hit this path.
-    """
+def _find_deployment_or_exit() -> tuple[str, Path, BrainSettings]:
+    """Detect the compose deployment (any mode, any cwd) or exit 2."""
     settings = _load_settings()
-    if not (settings.config_dir.expanduser() / "compose.yml").exists():
+    dep = bootstrap.find_deployment(settings)
+    if dep is None:
         console.print(
-            "[red]no agentibrain-init stack found — run `agentibrain init` first "
-            "(root-compose deployments: use `docker compose` in the repo)[/red]"
+            "[red]no agentibrain deployment found — run ./local/bootstrap.sh "
+            "in the repo, or `agentibrain init`[/red]"
         )
         sys.exit(2)
-    return settings
+    mode, compose_dir = dep
+    return mode, compose_dir, settings
 
 
 @main.command("up")
 def up_cmd() -> None:
-    """Start the brain stack (docker compose up -d + migrations)."""
-    settings = _require_init_stack()
-    proc = bootstrap.compose_up(settings)
-    if proc.returncode != 0:
-        console.print(f"[red]compose up failed[/red]\n{proc.stderr}")
-        sys.exit(proc.returncode)
-    console.print(proc.stdout or "[green]compose up ok[/green]")
-    console.print("\nRunning migrations…")
-    for line in bootstrap.run_migrations(settings):
-        console.print(f"  {line}")
+    """Start the brain stack wherever it lives (docker compose up -d)."""
+    mode, compose_dir, settings = _find_deployment_or_exit()
+    if mode == "init":
+        proc = bootstrap.compose_up(settings)
+        if proc.returncode != 0:
+            console.print(f"[red]compose up failed[/red]\n{proc.stderr}")
+            sys.exit(proc.returncode)
+        console.print(proc.stdout or "[green]compose up ok[/green]")
+        console.print("\nRunning migrations…")
+        for line in bootstrap.run_migrations(settings):
+            console.print(f"  {line}")
+        return
+    console.print(f"[bold]starting[/bold] ({mode} @ {compose_dir})")
+    rc = bootstrap.compose_stream(["up", "-d"], compose_dir)
+    if rc != 0:
+        sys.exit(rc)
+
+
+@main.command("build")
+@click.argument("services", nargs=-1)
+def build_cmd(services: tuple[str, ...]) -> None:
+    """Rebuild + restart the stack (docker compose up -d --build [SERVICES]).
+
+    The one command that makes a code change take effect: finds the compose
+    deployment, rebuilds changed images, recreates their containers, then
+    shows the resulting ps.
+    """
+    _, compose_dir, _ = _find_deployment_or_exit()
+    console.print(f"[bold]build + up[/bold] @ {compose_dir}")
+    rc = bootstrap.compose_stream(["up", "-d", "--build", *services], compose_dir)
+    if rc != 0:
+        sys.exit(rc)
+    ps = bootstrap._docker_compose(["ps"], compose_dir)
+    console.print(ps.stdout)
+
+
+@main.command("logs")
+@click.argument("service", required=False)
+@click.option("-f", "--follow", is_flag=True, help="Stream logs until Ctrl-C.")
+@click.option("--since", default=None, help="Only logs newer than this (e.g. 10m, 2h).")
+@click.option("--tail", default=None, type=int, help="Number of trailing lines per service.")
+def logs_cmd(service: str | None, follow: bool, since: str | None, tail: int | None) -> None:
+    """Show service logs (docker compose logs passthrough)."""
+    _, compose_dir, _ = _find_deployment_or_exit()
+    args = ["logs"]
+    if follow:
+        args.append("-f")
+    if since:
+        args += ["--since", since]
+    if tail is not None:
+        args += ["--tail", str(tail)]
+    if service:
+        args.append(service)
+    sys.exit(bootstrap.compose_stream(args, compose_dir))
 
 
 @main.command("down")
 def down_cmd() -> None:
-    """Stop the brain stack (docker compose down)."""
-    settings = _require_init_stack()
-    proc = bootstrap.compose_down(settings)
+    """Stop the brain stack (docker compose down — volumes survive)."""
+    mode, compose_dir, settings = _find_deployment_or_exit()
+    if mode == "init":
+        proc = bootstrap.compose_down(settings)
+    else:
+        proc = bootstrap._docker_compose(["down"], compose_dir)
     if proc.returncode != 0:
         console.print(f"[red]compose down failed[/red]\n{proc.stderr}")
         sys.exit(proc.returncode)
@@ -142,16 +185,17 @@ def down_cmd() -> None:
 def status_cmd() -> None:
     """Show health of all services."""
     settings = _load_settings()
-    if (settings.config_dir.expanduser() / "compose.yml").exists():
-        ps = bootstrap.compose_ps(settings)
-        console.print("[bold]docker compose ps[/bold]")
+    dep = bootstrap.find_deployment(settings)
+    if dep:
+        mode, compose_dir = dep
+        ps = bootstrap._docker_compose(["ps"], compose_dir)
+        console.print(f"[bold]docker compose ps[/bold] ({mode} @ {compose_dir})")
         console.print(ps.stdout)
     else:
-        # Root-compose deployment (local/bootstrap.sh) — no CLI-rendered
-        # stack to inspect; the HTTP health check below still runs.
+        # The HTTP health check below still runs.
         console.print(
-            "[yellow]no agentibrain-init stack found — "
-            "for root-compose deployments run `docker compose ps` in the repo[/yellow]"
+            "[yellow]no deployment found — run ./local/bootstrap.sh in the repo, "
+            "or `agentibrain init`[/yellow]"
         )
 
     token_path = settings.config_dir.expanduser() / ".env"

@@ -296,7 +296,7 @@ image and silently keeps running the old code:
 
 ```bash
 git pull
-docker compose up -d --build     # --build is the step that matters
+agentibrain build                # = docker compose up -d --build, auto-locates the stack
 docker compose ps
 ```
 

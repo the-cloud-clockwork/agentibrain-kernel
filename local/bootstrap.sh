@@ -130,6 +130,18 @@ else
 fi
 echo "[bootstrap] vault path: $VAULT_ABS"
 
+# Pin this checkout's location so the agentibrain CLI (build/up/down/logs/
+# status) finds the compose deployment from any cwd.
+if grep -qE '^AGENTIBRAIN_REPO=' "$ENV_FILE"; then
+  if sed --version >/dev/null 2>&1; then
+    sed -i "s|^AGENTIBRAIN_REPO=.*|AGENTIBRAIN_REPO=${ROOT}|" "$ENV_FILE"
+  else
+    sed -i "" "s|^AGENTIBRAIN_REPO=.*|AGENTIBRAIN_REPO=${ROOT}|" "$ENV_FILE"
+  fi
+else
+  printf "\nAGENTIBRAIN_REPO=%s\n" "$ROOT" >> "$ENV_FILE"
+fi
+
 # 2a. Migrate a legacy in-repo vault. Earlier versions scaffolded ./vault
 #     inside the checkout; move its content to the new home if the target
 #     doesn't exist yet.

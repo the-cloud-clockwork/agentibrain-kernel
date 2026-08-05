@@ -116,6 +116,60 @@ def write_compose(settings: BrainSettings, rendered: str) -> Path:
     return path
 
 
+# Any kernel root-compose file names this container; used to recognise a
+# checkout when walking up from cwd.
+COMPOSE_MARKER = "agentibrain_brain_api"
+
+
+def _read_env_value(env_path: Path, key: str) -> str:
+    if not env_path.exists():
+        return ""
+    for line in env_path.read_text().splitlines():
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
+def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[str, Path] | None:
+    """Locate the compose deployment the CLI should drive.
+
+    Returns ``(mode, compose_dir)`` — mode is ``"root-compose"`` (repo
+    checkout managed by local/bootstrap.sh) or ``"init"`` (stack rendered by
+    ``agentibrain init``) — or None when no deployment exists.
+
+    Order: the repo path bootstrap.sh pinned into ~/.agentibrain/.env works
+    from any cwd; the upward walk covers un-bootstrapped checkouts; the
+    init-rendered stack comes last so a checkout wins when both exist.
+    """
+    cfg_dir = settings.config_dir.expanduser()
+
+    repo = _read_env_value(cfg_dir / ".env", "AGENTIBRAIN_REPO")
+    if repo:
+        repo_dir = Path(repo).expanduser()
+        if (repo_dir / "compose.yml").is_file():
+            return ("root-compose", repo_dir)
+
+    start = (cwd or Path.cwd()).resolve()
+    for candidate in (start, *start.parents):
+        compose = candidate / "compose.yml"
+        try:
+            if compose.is_file() and COMPOSE_MARKER in compose.read_text():
+                return ("root-compose", candidate)
+        except OSError:
+            continue
+
+    if (cfg_dir / "compose.yml").is_file():
+        return ("init", cfg_dir)
+    return None
+
+
+def compose_stream(cmd: list[str], cwd: Path) -> int:
+    """Run ``docker compose`` with inherited stdio for long/streaming commands
+    (build, logs -f) so output reaches the terminal live."""
+    binargs = ["docker", "compose"] if shutil.which("docker") else ["docker-compose"]
+    return subprocess.run([*binargs, *cmd], cwd=cwd, check=False).returncode
+
+
 def _docker_compose(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
     """Run ``docker compose``; fall back to ``docker-compose`` for older installs."""
     if shutil.which("docker"):
