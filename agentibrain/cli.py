@@ -124,9 +124,17 @@ def down_cmd() -> None:
 def status_cmd() -> None:
     """Show health of all services."""
     settings = _load_settings()
-    ps = bootstrap.compose_ps(settings)
-    console.print("[bold]docker compose ps[/bold]")
-    console.print(ps.stdout)
+    if (settings.config_dir.expanduser() / "compose.yml").exists():
+        ps = bootstrap.compose_ps(settings)
+        console.print("[bold]docker compose ps[/bold]")
+        console.print(ps.stdout)
+    else:
+        # Root-compose deployment (local/bootstrap.sh) — no CLI-rendered
+        # stack to inspect; the HTTP health check below still runs.
+        console.print(
+            "[yellow]no agentibrain-init stack found — "
+            "for root-compose deployments run `docker compose ps` in the repo[/yellow]"
+        )
 
     token_path = settings.config_dir.expanduser() / ".env"
     token = None
