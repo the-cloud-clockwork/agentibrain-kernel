@@ -172,7 +172,7 @@ services:
             run_extraction "$${EXTRACT_SINCE:-26h}"
           fi
 
-          # Hybrid brain tick
+          # Hybrid agentibrain tick
           python3 /app/brain_tick.py \
             --vault /vault \
             --brain-feed /vault/brain-feed \

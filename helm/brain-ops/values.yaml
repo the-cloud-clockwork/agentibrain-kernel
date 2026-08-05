@@ -53,10 +53,10 @@ command:
       echo "Skipping extraction (hour=$HOUR, runs at $EXTRACT_HOUR only)."
     fi
 
-    echo "Running hybrid brain tick (with AI)..."
+    echo "Running hybrid agentibrain tick (with AI)..."
     python3 /app/brain_tick.py --vault /vault --brain-feed /vault/brain-feed \
       --inference-url "${INFERENCE_URL:-}" \
-      || notify_failure "brain tick phase"
+      || notify_failure "agentibrain tick phase"
     echo "Brain tick complete."
 
     # Refresh embeddings + reap orphans. Diff-only by mtime, so the cost

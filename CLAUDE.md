@@ -22,7 +22,7 @@ The brain system follows a 3-operation model: **ingest, read, update**.
 
 | Workload | Type | Role | What it does |
 |---|---|---|---|
-| **brain-ops** | CronJob (2h) | Update | Full 5-phase brain tick: scan, reason, signal, edge, write. |
+| **brain-ops** | CronJob (2h) | Update | Full 5-phase agentibrain tick: scan, reason, signal, edge, write. |
 | **tick-drain** | CronJob (1m) | Update | On-demand tick queue drain: coalesces pending requests by kind, runs the tick, then refreshes the semantic index. |
 | **amygdala** | Deployment | Alert | Redis Streams consumer, broadcasts severity alerts. |
 
@@ -57,9 +57,9 @@ This repo owns:
 - Helm charts: brain-ops, brain-keeper, embeddings, brain-api, mcp
 - The brain-keeper agent definition (single source of truth)
 - Brain profile overlays for agentihooks
-- The vault layout schema and the `brain scaffold` tool that writes it
+- The vault layout schema and the `agentibrain scaffold` tool that writes it
 - The HTTP API contract (`api/openapi.yaml`)
-- The Python CLI (`brain init|up|down|status|tick|scaffold|version`)
+- The Python CLI (`agentibrain init|up|down|status|tick|scaffold|version`)
 
 ## What this repo does NOT own
 
@@ -72,7 +72,7 @@ This repo owns:
 
 **Two contracts, nothing else:**
 1. The kernel exposes an HTTP API. No shared filesystem paths across boundaries.
-2. The vault layout is a versioned schema owned by the kernel. `brain scaffold`
+2. The vault layout is a versioned schema owned by the kernel. `agentibrain scaffold`
    is the only authoritative writer.
 
 ## Versioning

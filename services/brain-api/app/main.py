@@ -8,7 +8,7 @@ Endpoints:
   GET  /feed                           — hot arcs + inject blocks + intent
   GET  /signal                         — current amygdala signal (single file)
   POST /marker                         — emit lesson/milestone/signal/decision
-  POST /tick                           — request a manual brain tick
+  POST /tick                           — request a manual agentibrain tick
   GET  /tick/{job_id}                  — look up tick status
   GET  /vault/list                     — list vault files
   GET  /vault/read                     — read a single vault file
@@ -451,7 +451,7 @@ def post_tick(
     source: str = Query("brain-api"),
     _: None = Depends(require_token),
 ) -> dict:
-    """Request a manual brain tick. Returns 202 with a job_id.
+    """Request a manual agentibrain tick. Returns 202 with a job_id.
 
     Writes a request file to brain-feed/ticks/requested/. The tick-engine
     CronJob picks this up and moves it to completed/ or failed/ when done.

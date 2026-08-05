@@ -56,7 +56,7 @@ jobs:
       - name: CLI smoke
         run: |
           brain --version
-          brain version
+          agentibrain version
 
       - name: Pytest
         run: python -m pytest -q tests/unit

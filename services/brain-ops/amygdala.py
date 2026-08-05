@@ -215,7 +215,7 @@ def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: boo
         # status broadcast, not an incident. Creating a vault @signal arc
         # from it would seed the next tick's reasoning with self-generated
         # noise: brain says "score=3" → amygdala writes @signal nuclear →
-        # next brain tick reads it → AI scores ≤4 again → loop. The
+        # next agentibrain tick reads it → AI scores ≤4 again → loop. The
         # primary defense is brain_tick.py's explicit severity field
         # (paired with the "brain." event prefix amygdala honors), but
         # this source-based skip is defense in depth so the loop cannot

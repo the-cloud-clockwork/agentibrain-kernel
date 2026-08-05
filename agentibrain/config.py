@@ -1,6 +1,6 @@
 """Kernel configuration schema.
 
-Loaded from ``~/.agentibrain/config.yaml`` (written by ``brain init``) plus
+Loaded from ``~/.agentibrain/config.yaml`` (written by ``agentibrain init``) plus
 environment variables. Environment wins over the file so operators can override
 in CI / K8s without rewriting the config file.
 """

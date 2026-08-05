@@ -31,7 +31,7 @@ def _load_settings() -> BrainSettings:
 
 
 @click.group()
-@click.version_option(__version__, prog_name="brain")
+@click.version_option(__version__, prog_name="agentibrain")
 def main() -> None:
     """agentibrain — standalone brain + KB kernel."""
 
@@ -91,7 +91,7 @@ def init(
     console.print(f"  {token}")
     console.print()
     console.print(
-        "Next: [cyan]brain up[/cyan] to start the stack, then [cyan]brain scaffold[/cyan]."
+        "Next: [cyan]agentibrain up[/cyan] to start the stack, then [cyan]agentibrain scaffold[/cyan]."
     )
 
 
@@ -137,7 +137,7 @@ def status_cmd() -> None:
                 break
 
     if not token:
-        console.print("[yellow]no KB_ROUTER_TOKEN — run `brain init` first[/yellow]")
+        console.print("[yellow]no KB_ROUTER_TOKEN — run `agentibrain init` first[/yellow]")
         return
 
     try:
@@ -181,7 +181,7 @@ def check_cmd(brain_url: str | None, token: str | None) -> None:
                     token = line.split("=", 1)[1].strip()
                     break
     if not token:
-        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `brain init`[/red]")
+        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
         sys.exit(2)
 
     try:
@@ -262,7 +262,7 @@ def tick_cmd(
     brain_url: str | None,
     token: str | None,
 ) -> None:
-    """Trigger a manual brain tick via the /tick endpoint.
+    """Trigger a manual agentibrain tick via the /tick endpoint.
 
     Enqueues a request file in brain-feed/ticks/requested/ which the
     tick-cron drains within ~2 minutes. Use --wait to block until completion.
@@ -278,7 +278,7 @@ def tick_cmd(
                     token = line.split("=", 1)[1].strip()
                     break
     if not token:
-        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `brain init`[/red]")
+        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
         sys.exit(2)
 
     headers = {"Authorization": f"Bearer {token}"}

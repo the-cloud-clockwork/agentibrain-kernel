@@ -311,7 +311,7 @@ Operators pick one of:
   ```
 - **PVC** — a PersistentVolumeClaim with ReadWriteMany. Agent pods can mount
   the same claim read-only by sub-path.
-- **Local compose** — `brain up` mounts the host vault directory directly.
+- **Local compose** — `agentibrain up` mounts the host vault directory directly.
 
 ---
 
@@ -347,7 +347,7 @@ helm/brain-keeper/   ← StatefulSet chart (agenticore agent for AI tasks)
 | [`MATURITY.md`](MATURITY.md) | Maturity scorecard |
 | [`MARKERS.md`](MARKERS.md) | Marker grammar (`@lesson`, `@signal`, `@milestone`, `@decision`) |
 | [`TELEMETRY.md`](TELEMETRY.md) | OTel + ClickHouse + Langfuse pipeline |
-| [`../VAULT-SCHEMA.md`](../VAULT-SCHEMA.md) | Folder layout owned by `brain scaffold` |
+| [`../VAULT-SCHEMA.md`](../VAULT-SCHEMA.md) | Folder layout owned by `agentibrain scaffold` |
 | [`../API.md`](../API.md) | HTTP contract |
 
 Deployment-specific planning, rollout notes, and per-platform overlays live in your own platform repo, not here.

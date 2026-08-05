@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Full hybrid brain tick — the complete loop.
+"""Full hybrid agentibrain tick — the complete loop.
 
     brain_tick.py = brain_keeper.py + brain_tick_prompt.py + AI call + brain_apply.py
 
@@ -155,7 +155,7 @@ def _push_event_bus(report: dict, source: str = "brain-cron") -> None:
         "severity": _classify_tick_severity(report),
         "host": os.getenv("HOSTNAME", "unknown"),
         "ts": str(int(time.time())),
-        "title": f"brain tick (score={health.get('score', 0)})",
+        "title": f"agentibrain tick (score={health.get('score', 0)})",
         "message": health.get("reason", "")[:500],
         "priority": "low",
         "tags": "brain",
@@ -392,7 +392,7 @@ def run_tick(
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Full hybrid brain tick")
+    p = argparse.ArgumentParser(description="Full hybrid agentibrain tick")
     p.add_argument("--vault", required=True, help="Vault root path")
     p.add_argument("--brain-feed", required=True, help="Brain feed directory")
     p.add_argument("--dry-run", action="store_true", help="No writes, no LLM")

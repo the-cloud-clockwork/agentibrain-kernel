@@ -120,9 +120,9 @@ Content lands in the vault at `raw/inbox/` (`~/agentibrain-vault` by default). T
 
 ```bash
 pip install -e .                          # one-time, installs the `brain` CLI
-brain tick --no-ai --wait                 # deterministic-only, blocks until done
-brain tick --wait                         # full AI tick
-brain tick --dry-run --wait               # read-only verify, no writes
+agentibrain tick --no-ai --wait                 # deterministic-only, blocks until done
+agentibrain tick --wait                         # full AI tick
+agentibrain tick --dry-run --wait               # read-only verify, no writes
 ```
 
 The `tick-drain` service polls `brain-feed/ticks/requested/` every 30s, coalesces pending requests by kind into one `brain_tick.py` run each, then refreshes the semantic index — same behaviour as the K8s `tick-drain` CronJob. Scheduled ticks still run every `TICK_INTERVAL_SECONDS` (default 2h) via `tick-cron`.
@@ -512,11 +512,11 @@ curl -s -X POST "$BRAIN_URL/marker" \
 
 Idempotency-key window 1h (configurable via `IDEMPOTENCY_TTL_SECONDS`). Replay returns the original response with `idempotent_replay: true`.
 
-### `POST /tick` — request a manual brain tick
+### `POST /tick` — request a manual agentibrain tick
 
 File-protocol: writes a request to `brain-feed/ticks/requested/`. The `tick-drain` worker picks it up and moves it to `completed/` or `failed/`. Poll `GET /tick/{job_id}`.
 
-CLI wrapper: `brain tick [--dry-run] [--no-ai] [--wait]`. With `--wait`, blocks until the job leaves `requested/`.
+CLI wrapper: `agentibrain tick [--dry-run] [--no-ai] [--wait]`. With `--wait`, blocks until the job leaves `requested/`.
 
 ### `POST /ingest` — universal ingest
 
@@ -545,7 +545,7 @@ All vault reads and writes flow through brain-api (which mounts `/vault` directl
 
 ## Vault schema
 
-Obsidian-compatible folder tree, writable by humans and by kernel services. `brain scaffold` is the authoritative writer of the schema marker; `local/bootstrap.sh` invokes it on first run.
+Obsidian-compatible folder tree, writable by humans and by kernel services. `agentibrain scaffold` is the authoritative writer of the schema marker; `local/bootstrap.sh` invokes it on first run.
 
 ```
 <vault>/

@@ -35,7 +35,7 @@ def register(mcp: FastMCP):
     ) -> str:
         """Write text directly to the brain vault via brain-api /ingest.
 
-        Content lands in raw/inbox/ and is processed by the next brain tick.
+        Content lands in raw/inbox/ and is processed by the next agentibrain tick.
         Large content is chunked automatically.
 
         Args:

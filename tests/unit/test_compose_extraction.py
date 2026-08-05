@@ -3,7 +3,7 @@
 Guards the tick-cron extraction path (transcripts mount, env-driven gate,
 boot seed) and the ~/agentibrain-vault default shared by every
 vault-mounting service. None of this is covered by test_compose_render.py,
-which exercises the Jinja template used by `brain init`, not this file.
+which exercises the Jinja template used by `agentibrain init`, not this file.
 """
 
 from pathlib import Path

@@ -1,6 +1,6 @@
 # Your agentibrain vault
 
-This directory is your external brain. It was scaffolded by `brain scaffold` and is owned by you — edit anything except `.brain-schema`.
+This directory is your external brain. It was scaffolded by `agentibrain scaffold` and is owned by you — edit anything except `.brain-schema`.
 
 Open it in [Obsidian](https://obsidian.md) (or any markdown editor) to browse it visually — wikilinks, backlinks, and graph view all work out of the box. Nothing in this tree is Obsidian-specific; the folder layout is the contract.
 
@@ -30,4 +30,4 @@ Open it in [Obsidian](https://obsidian.md) (or any markdown editor) to browse it
 
 ## Don't touch
 
-- `.brain-schema` — schema version marker, managed by `brain scaffold`. Do not edit.
+- `.brain-schema` — schema version marker, managed by `agentibrain scaffold`. Do not edit.
