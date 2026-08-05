@@ -127,6 +127,15 @@ agentibrain tick --dry-run --wait               # read-only verify, no writes
 
 The `tick-drain` service polls `brain-feed/ticks/requested/` every 30s, coalesces pending requests by kind into one `brain_tick.py` run each, then refreshes the semantic index — same behaviour as the K8s `tick-drain` CronJob. Scheduled ticks still run every `TICK_INTERVAL_SECONDS` (default 2h) via `tick-cron`.
 
+**Verify the whole stack in one command:**
+
+```bash
+agentibrain check --brain-url http://127.0.0.1:8103   # exit 0 = healthy, 1 = degraded
+```
+
+Deep check: real vault write, embeddings → Postgres round-trip with dimension
+validation, inference-gateway auth. Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
+
 See [`local/README.md`](local/README.md) for full local docs, troubleshooting, port overrides, and inference modes.
 
 ---
