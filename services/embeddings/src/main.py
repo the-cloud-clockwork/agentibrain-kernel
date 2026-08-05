@@ -102,7 +102,7 @@ def health_deep(_token: str = Depends(auth.require_api_key)):
     else:
         try:
             t0 = time.monotonic()
-            vec = embed.embed_text("healthcheck ping")
+            vec = embed.embed_text("hello")
             model_dim = len(vec)
             # A dimension we could not read is a FAILURE to verify, not a pass:
             # only call it a match when the schema dim is known and equal.
@@ -113,6 +113,11 @@ def health_deep(_token: str = Depends(auth.require_api_key)):
                 "ok": dim_match,
                 "model": embed.LLM_EMBED_MODEL,
                 "api_base": embed.LLM_API_BASE,
+                # The probe text and the head of the vector it produced —
+                # visible proof a real embedding happened, not just an
+                # authenticated 200.
+                "probe": "hello",
+                "vector_head": [round(v, 4) for v in vec[:3]],
                 "model_dim": model_dim,
                 "schema_dim": schema_dim,
                 "dim_match": dim_match,

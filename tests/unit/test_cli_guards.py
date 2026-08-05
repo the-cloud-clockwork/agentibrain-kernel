@@ -1,19 +1,27 @@
-"""CLI guards for machines without an `agentibrain init` stack.
+"""CLI deployment detection + guards.
 
-up/down/status used to crash with a raw FileNotFoundError when
-~/.agentibrain (or its rendered compose.yml) didn't exist — the normal
-state on root-compose deployments. Each case runs the CLI in a subprocess
-with a scratch HOME because DEFAULT_CONFIG_DIR is resolved from Path.home()
-at import time.
+build/up/down/logs/status drive whichever compose deployment exists —
+the repo checkout pinned by local/bootstrap.sh (AGENTIBRAIN_REPO), a
+checkout found by walking up from cwd, or the init-rendered stack in
+~/.agentibrain. With none of those, commands exit 2 with a hint instead
+of a raw traceback.
+
+Each case runs the CLI in a subprocess with a scratch HOME (config paths
+resolve from Path.home() at import time) and a scratch cwd (so the real
+repo checkout is never detected). Docker is a shim script on PATH that
+records its argv and cwd — no real docker involved.
 """
 
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
+MARKER_COMPOSE = "services:\n  brain-api:\n    container_name: agentibrain_brain_api\n"
 
-def _run_cli(args: list[str], home) -> subprocess.CompletedProcess:
+
+def _run_cli(args: list[str], home: Path, cwd: Path, path: str = "/usr/bin:/bin"):
     code = (
         "import sys; sys.argv = ['agentibrain'] + sys.argv[1:]; "
         "from agentibrain.cli import main; main()"
@@ -22,21 +30,111 @@ def _run_cli(args: list[str], home) -> subprocess.CompletedProcess:
         [sys.executable, "-c", code, *args],
         capture_output=True,
         text=True,
-        env={"HOME": str(home), "PATH": "/usr/bin:/bin"},
+        env={"HOME": str(home), "PATH": path},
+        cwd=str(cwd),
         timeout=30,
     )
 
 
-@pytest.mark.parametrize("cmd", ["up", "down"])
-def test_up_down_exit_cleanly_without_init_stack(tmp_path, cmd):
-    r = _run_cli([cmd], tmp_path)
+@pytest.fixture
+def docker_shim(tmp_path):
+    """Fake `docker` on PATH that appends its argv + cwd to a record file."""
+    bindir = tmp_path / "shim-bin"
+    bindir.mkdir()
+    record = tmp_path / "docker-argv.txt"
+    shim = bindir / "docker"
+    shim.write_text(f'#!/bin/sh\necho "$PWD :: $@" >> "{record}"\n')
+    shim.chmod(0o755)
+    return f"{bindir}:/usr/bin:/bin", record
+
+
+def _home_with_repo(tmp_path) -> tuple[Path, Path]:
+    """Scratch HOME whose .agentibrain/.env pins a marker-carrying repo."""
+    home = tmp_path / "home"
+    (home / ".agentibrain").mkdir(parents=True)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "compose.yml").write_text(MARKER_COMPOSE)
+    (home / ".agentibrain" / ".env").write_text(f"AGENTIBRAIN_REPO={repo}\n")
+    return home, repo
+
+
+@pytest.mark.parametrize("cmd", ["up", "down", "build", "logs"])
+def test_commands_exit_cleanly_without_any_deployment(tmp_path, cmd):
+    home = tmp_path / "home"
+    home.mkdir()
+    r = _run_cli([cmd], home, cwd=home)
     assert r.returncode == 2, r.stderr
-    assert "agentibrain init" in r.stdout
+    assert "no agentibrain deployment found" in r.stdout
     assert "FileNotFoundError" not in r.stderr
 
 
-def test_status_degrades_gracefully_without_init_stack(tmp_path):
-    r = _run_cli(["status"], tmp_path)
+def test_status_degrades_gracefully_without_any_deployment(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    r = _run_cli(["status"], home, cwd=home)
     assert r.returncode == 0, r.stderr
-    assert "no agentibrain-init stack" in r.stdout
+    assert "no deployment found" in r.stdout
     assert "FileNotFoundError" not in r.stderr
+
+
+def test_build_targets_pinned_repo_from_any_cwd(tmp_path, docker_shim):
+    path, record = docker_shim
+    home, repo = _home_with_repo(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    r = _run_cli(["build"], home, cwd=elsewhere, path=path)
+    assert r.returncode == 0, r.stderr
+    lines = record.read_text().splitlines()
+    assert any(f"{repo} :: compose up -d --build" in ln for ln in lines)
+
+
+def test_build_forwards_service_names(tmp_path, docker_shim):
+    path, record = docker_shim
+    home, _ = _home_with_repo(tmp_path)
+    r = _run_cli(["build", "brain-api", "embeddings"], home, cwd=home, path=path)
+    assert r.returncode == 0, r.stderr
+    assert "compose up -d --build brain-api embeddings" in record.read_text()
+
+
+def test_logs_passthrough_flags(tmp_path, docker_shim):
+    path, record = docker_shim
+    home, repo = _home_with_repo(tmp_path)
+    r = _run_cli(["logs", "tick-cron", "--since", "10m", "--tail", "50"], home, cwd=home, path=path)
+    assert r.returncode == 0, r.stderr
+    assert f"{repo} :: compose logs --since 10m --tail 50 tick-cron" in record.read_text()
+
+
+def test_cwd_checkout_beats_stale_pin(tmp_path, docker_shim):
+    """Standing inside checkout B must target B, not the pinned checkout A."""
+    path, record = docker_shim
+    home, pinned_repo = _home_with_repo(tmp_path)
+    other = tmp_path / "checkout-b"
+    other.mkdir()
+    (other / "compose.yml").write_text(MARKER_COMPOSE)
+    r = _run_cli(["build"], home, cwd=other, path=path)
+    assert r.returncode == 0, r.stderr
+    content = record.read_text()
+    assert f"{other} :: compose up -d --build" in content
+    assert str(pinned_repo) not in content
+
+
+def test_upward_walk_detects_unpinned_checkout(tmp_path, docker_shim):
+    path, record = docker_shim
+    home = tmp_path / "home"
+    home.mkdir()
+    repo = tmp_path / "checkout"
+    (repo / "nested" / "deep").mkdir(parents=True)
+    (repo / "compose.yml").write_text(MARKER_COMPOSE)
+    r = _run_cli(["up"], home, cwd=repo / "nested" / "deep", path=path)
+    assert r.returncode == 0, r.stderr
+    assert f"{repo} :: compose up -d" in record.read_text()
+
+
+def test_status_uses_detected_deployment(tmp_path, docker_shim):
+    path, record = docker_shim
+    home, repo = _home_with_repo(tmp_path)
+    r = _run_cli(["status"], home, cwd=home, path=path)
+    assert r.returncode == 0, r.stderr
+    assert f"{repo} :: compose ps" in record.read_text()
+    assert "root-compose" in r.stdout

@@ -16,7 +16,9 @@ agentibrain --version
 | Command | What it does |
 |---|---|
 | `agentibrain init` | Render a self-contained stack into `~/.agentibrain/` (config, `.env` with fresh tokens, compose file). For machines NOT using the repo's root compose. |
-| `agentibrain up` / `down` | Start / stop the init-rendered stack. Exits 2 with a hint if you never ran `init`. |
+| `agentibrain build [SERVICE...]` | **Rebuild + restart** — `docker compose up -d --build` in the detected deployment, then `ps`. The one command that makes a code change take effect. |
+| `agentibrain up` / `down` | Start / stop the detected deployment (init mode also runs migrations on `up`). |
+| `agentibrain logs [SERVICE] [-f] [--since 10m] [--tail N]` | Service logs passthrough. |
 | `agentibrain status` | `docker compose ps` (init stacks) + shallow `GET /health`. |
 | `agentibrain check` | **Deep verification** — see below. |
 | `agentibrain tick [--dry-run] [--no-ai] [--wait]` | Enqueue a brain tick; `--wait` blocks until it completes. |
@@ -25,16 +27,29 @@ agentibrain --version
 
 ## Two deployment modes
 
-| Mode | Stack lives in | Start/stop with | `up`/`down` work? |
-|---|---|---|---|
-| **Root compose** (this repo, `./local/bootstrap.sh`) | repo `compose.yml` | `docker compose` in the repo | No — use `docker compose`. `status`/`check`/`tick` work fine. |
-| **Init-rendered** (`agentibrain init`) | `~/.agentibrain/compose.yml` | `agentibrain up` / `down` | Yes |
+Every stack command (`build`/`up`/`down`/`logs`/`status`) **auto-detects**
+where the deployment lives, from any cwd:
+
+1. The checkout you are standing in — a `compose.yml` found walking up from
+   the current directory always wins, so working in checkout B never targets
+   a checkout A pinned by an older bootstrap
+2. The repo path `local/bootstrap.sh` pinned as `AGENTIBRAIN_REPO` in
+   `~/.agentibrain/.env` (covers every other cwd)
+3. The init-rendered stack in `~/.agentibrain/` (`agentibrain init` mode)
+
+No deployment anywhere → exit 2 with the bootstrap/init hint. You never need
+to remember where the compose file is or type `docker compose` yourself.
 
 ## Testing a running brain
 
 ```bash
-agentibrain check --brain-url http://127.0.0.1:8103   # exit 0 = healthy, 1 = degraded
+agentibrain check          # exit 0 = healthy, 1 = degraded
 ```
+
+No URL needed locally — the CLI targets `http://localhost:8103` (brain-api's
+published port) by default; override the port with `PORT_BRAIN_API` in
+`~/.agentibrain/.env` or point at a remote brain with `--brain-url` /
+`$BRAIN_URL`.
 
 `check` calls `GET /health/deep`, which round-trips a real vault write, makes
 the embeddings service hit Postgres and run an actual embedding call

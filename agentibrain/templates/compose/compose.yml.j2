@@ -117,7 +117,7 @@ services:
     volumes:
       - "{{ vault_path }}:/vault:rw"
     ports:
-      - "{{ brain_api_port | default(8102) }}:8080"
+      - "{{ brain_api_port | default(8103) }}:8080"
     networks: [agentibrain_net]
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]

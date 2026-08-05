@@ -2,17 +2,44 @@
 
 > A standalone brain + knowledge-base kernel for Claude Code agent fleets. Bring your own vault, your own LLM keys, your own embeddings. Runs on a laptop, a server, or a Kubernetes cluster.
 
-## Quick Start (Docker Compose)
+## Quick Start
 
-### 1. Clone and bootstrap
+**One-time** (fresh machine: `git clone` first; existing deployment: `git pull`):
 
 ```bash
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
-./local/bootstrap.sh      # generates ~/.agentibrain/.env, symlinks to repo, scaffolds ~/agentibrain-vault
+pip install -e .                # installs the `agentibrain` CLI
+bash local/bootstrap.sh         # NO sudo — pins repo path + vault (~/agentibrain-vault), migrates if needed
+agentibrain build               # rebuild + restart the stack (replaces docker compose up -d --build)
 ```
 
-### 2. Configure your LLM provider (optional)
+If the vault is still empty, seed once from your Claude Code transcripts:
+
+```bash
+EXTRACT_ON_BOOT=1 agentibrain build tick-cron
+agentibrain logs tick-cron --since 5m      # look for "[tick-cron] extraction:"
+```
+
+**Daily driver — from any directory, no flags, no ports:**
+
+```bash
+agentibrain check               # deep verify: vault write, hello-embedding, pong completion
+agentibrain status              # compose ps + shallow health
+agentibrain logs <service> -f   # e.g. tick-cron, brain-api
+agentibrain build               # after any git pull / code change
+```
+
+- `build`/`up`/`down`/`logs`/`status` auto-locate the stack (checkout you're
+  standing in → pinned repo → init-rendered), so they work from `~` or
+  anywhere else.
+- Marker capture into the vault needs `BRAIN_URL=http://127.0.0.1:8103` in
+  your agentihooks env (one-time, `~/.agentihooks/.env`).
+
+After the one-time block, `agentibrain build` / `check` / `logs` are the whole
+workflow. Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
+
+### Configure your LLM provider (optional)
 
 Edit `~/.agentibrain/.env` — set at minimum one API key to enable semantic search:
 
@@ -34,16 +61,7 @@ docker compose -f compose.yml -f local/compose.ollama.yml up -d
 docker compose exec ollama ollama pull llama3.2
 ```
 
-### 3. Start
-
-```bash
-docker compose up -d    # 8 containers: postgres, redis, brain-api,
-                        # embeddings, mcp, tick-cron, tick-drain, amygdala
-docker compose ps       # 5 report (healthy); the 3 batch workers show a bare Up
-curl http://localhost:8104/ping  # pong — MCP server is up
-```
-
-### 4. Wire Claude Code
+### Wire Claude Code
 
 Add to your project or user MCP config (e.g. `~/.claude/.mcp.json`):
 
@@ -69,7 +87,7 @@ Restart Claude Code, run `/mcp` — you'll see `agentibrain` with 6 tools:
 | `brain_ingest` | Write text to the brain vault |
 | `brain_tick` | Force a tick now so new content becomes retrievable |
 
-### 5. Wire agentihooks profile (required for full brain injection)
+### Wire agentihooks profile (required for full brain injection)
 
 > **agentihooks is required for the full brain experience.**
 > Without it, you get the HTTP API and MCP tools — but agents won't
@@ -97,7 +115,7 @@ What this gives you:
 - **Every 30 turns** — `brain_adapter` re-fetches `/feed` and re-injects if content changed
 - **SessionStop** — `brain_writer_hook` scans transcripts for `@lesson`, `@milestone`, `@signal`, `@decision` markers and POSTs them to `/marker`
 
-### 6. Test it
+### Test it (raw HTTP)
 
 ```bash
 TOK=$(grep ^KB_ROUTER_TOKEN .env | cut -d= -f2)
@@ -130,7 +148,7 @@ The `tick-drain` service polls `brain-feed/ticks/requested/` every 30s, coalesce
 **Verify the whole stack in one command:**
 
 ```bash
-agentibrain check --brain-url http://127.0.0.1:8103   # exit 0 = healthy, 1 = degraded
+agentibrain check          # exit 0 = healthy, 1 = degraded (targets localhost:8103 by default)
 ```
 
 Deep check: real vault write, embeddings → Postgres round-trip with dimension
@@ -296,7 +314,7 @@ image and silently keeps running the old code:
 
 ```bash
 git pull
-docker compose up -d --build     # --build is the step that matters
+agentibrain build                # = docker compose up -d --build, auto-locates the stack
 docker compose ps
 ```
 

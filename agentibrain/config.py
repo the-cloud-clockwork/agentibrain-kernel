@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_CONFIG_DIR = Path.home() / ".agentibrain"
@@ -86,10 +86,24 @@ class BrainSettings(BaseSettings):
     )
 
     # --- Kernel HTTP API ---
-    brain_url: str = Field(
-        default="http://localhost:8102",
-        description="Externally-visible URL of the kernel kb-router endpoint.",
+    port_brain_api: int = Field(
+        default=8103,
+        validation_alias=AliasChoices("PORT_BRAIN_API", "BRAIN_PORT_BRAIN_API"),
+        description="Published brain-api port (compose PORT_BRAIN_API).",
     )
+    brain_url: str = Field(
+        default="",
+        description=(
+            "Externally-visible URL of brain-api. Empty derives "
+            "http://localhost:{port_brain_api}, so local stacks need no flag."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _derive_brain_url(self) -> BrainSettings:
+        if not self.brain_url:
+            self.brain_url = f"http://localhost:{self.port_brain_api}"
+        return self
 
     def require_s3(self) -> None:
         """Raise if mode='s3' but bucket is missing."""
