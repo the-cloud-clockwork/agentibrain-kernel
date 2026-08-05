@@ -24,6 +24,7 @@ Usage:
     # Custom inference endpoint
     python3 brain_tick.py --vault /vault --brain-feed /vault/brain-feed --inference-url http://inference-gateway:8080
 """
+
 from __future__ import annotations
 
 import argparse
@@ -222,17 +223,22 @@ def _push_clickhouse(report: dict) -> None:
     )
 
     import base64
+
     parsed_ch = urllib.parse.urlparse(CLICKHOUSE_URL)
     base_url = f"{parsed_ch.scheme}://{parsed_ch.hostname}:{parsed_ch.port or 8123}"
     auth_header = None
     if parsed_ch.username:
-        creds = base64.b64encode(f"{parsed_ch.username}:{parsed_ch.password or ''}".encode()).decode()
+        creds = base64.b64encode(
+            f"{parsed_ch.username}:{parsed_ch.password or ''}".encode()
+        ).decode()
         auth_header = f"Basic {creds}"
 
     for ddl in _BRAIN_SCHEMA_DDL:
         _ch_request(base_url, ddl, auth_header)
     _ch_request(base_url, sql, auth_header)
     print("ClickHouse: tick_health row inserted", file=sys.stderr)
+
+
 INFERENCE_TOKEN_ENV = "INFERENCE_API_KEY"
 BRAIN_BRIEF_MODEL = os.getenv("BRAIN_BRIEF_MODEL", "brain-brief")
 
@@ -244,12 +250,14 @@ def call_llm(prompt: str, inference_url: str = INFERENCE_URL) -> str:
     points at (LiteLLM, OpenAI, Ollama, etc). Model is BRAIN_BRIEF_MODEL.
     Returns the LLM's text response.
     """
-    payload = json.dumps({
-        "model": BRAIN_BRIEF_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 4096,
-        "temperature": 0.3,
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": BRAIN_BRIEF_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 4096,
+            "temperature": 0.3,
+        }
+    ).encode()
 
     headers = {"Content-Type": "application/json"}
     token = os.environ.get(INFERENCE_TOKEN_ENV, "")
@@ -297,9 +305,11 @@ def run_tick(
         "duration_ms": phase1_ms,
         "stats": det_stats,
     }
-    print(f"Phase 1 (deterministic): {phase1_ms}ms — {det_stats.get('arcs_scanned', 0)} arcs, "
-          f"{det_stats.get('signals_collected', 0)} signals, {det_stats.get('lessons_collected', 0)} lessons",
-          file=sys.stderr)
+    print(
+        f"Phase 1 (deterministic): {phase1_ms}ms — {det_stats.get('arcs_scanned', 0)} arcs, "
+        f"{det_stats.get('signals_collected', 0)} signals, {det_stats.get('lessons_collected', 0)} lessons",
+        file=sys.stderr,
+    )
 
     if no_ai:
         report["phases"]["ai"] = {"skipped": True}
@@ -364,8 +374,11 @@ def run_tick(
             "duration_ms": phase5_ms,
             "stats": verify_stats,
         }
-        print(f"Phase 5 (verify): {phase5_ms}ms — {verify_stats.get('arcs_scanned', 0)} arcs, "
-              f"{verify_stats.get('signals_collected', 0)} signals", file=sys.stderr)
+        print(
+            f"Phase 5 (verify): {phase5_ms}ms — {verify_stats.get('arcs_scanned', 0)} arcs, "
+            f"{verify_stats.get('signals_collected', 0)} signals",
+            file=sys.stderr,
+        )
 
     report["total_ms"] = int((time.time() - t0) * 1000)
 
@@ -398,8 +411,9 @@ def main() -> int:
     p.add_argument("--dry-run", action="store_true", help="No writes, no LLM")
     p.add_argument("--no-ai", action="store_true", help="Deterministic only, skip AI")
     p.add_argument("--inference-url", default=INFERENCE_URL, help="Inference gateway URL")
-    p.add_argument("--source", default="brain-cron",
-                   help="Event-bus source label (drain passes 'brain-drain')")
+    p.add_argument(
+        "--source", default="brain-cron", help="Event-bus source label (drain passes 'brain-drain')"
+    )
     args = p.parse_args()
 
     result = run_tick(

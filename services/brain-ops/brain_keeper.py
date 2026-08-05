@@ -9,6 +9,7 @@ Usage:
     python3 brain_keeper.py --vault /vault --brain-feed /vault/brain-feed
     python3 brain_keeper.py --vault /vault --brain-feed /tmp/test --dry-run
 """
+
 from __future__ import annotations
 
 import argparse
@@ -271,10 +272,17 @@ def write_signals_feed(
     (a mitigation arc declares `mitigates: <source>` and is resolved/graduated).
     """
     now = now or datetime.now(timezone.utc)
-    stats = {"written": 0, "tombstoned_stale": 0, "tombstoned_cleared": 0, "tombstoned_mitigated": 0}
+    stats = {
+        "written": 0,
+        "tombstoned_stale": 0,
+        "tombstoned_cleared": 0,
+        "tombstoned_mitigated": 0,
+    }
 
     if not signals_list:
-        path.write_text("---\nid: signals\ntitle: Active Signals\npriority: 8\nttl: 3600\nseverity: warning\n---\n\nNo active signals.\n")
+        path.write_text(
+            "---\nid: signals\ntitle: Active Signals\npriority: 8\nttl: 3600\nseverity: warning\n---\n\nNo active signals.\n"
+        )
         return stats
 
     date_str = now.strftime("%Y-%m-%d")
@@ -366,7 +374,9 @@ def write_inject_feed(path: Path, injects: list[markers.Marker]) -> None:
     now = datetime.now(timezone.utc)
     injects = [i for i in injects if _inject_is_live(i, now)]
     if not injects:
-        path.write_text("---\nid: inject\ntitle: Brain Inject\npriority: 9\nttl: 3600\nseverity: info\n---\n\nNo inject blocks.\n")
+        path.write_text(
+            "---\nid: inject\ntitle: Brain Inject\npriority: 9\nttl: 3600\nseverity: info\n---\n\nNo inject blocks.\n"
+        )
         return
     lines = [
         "---",
@@ -416,15 +426,28 @@ def update_dashboard(date_dir: Path, arcs: list[markers.DocumentMeta]) -> None:
 REGION_DIRS = ("bridge", "left", "right", "frontal-lobe", "pineal", "amygdala")
 
 TAG_REGION_MAP = {
-    "architecture": "left", "infrastructure": "left", "deployment": "left",
-    "code": "left", "bug": "left", "fix": "left", "ci": "left",
-    "database": "left", "api": "left", "security": "left",
-    "research": "left/research", "incident": "left/incidents",
-    "decision": "left/decisions", "reference": "left/reference",
-    "idea": "right/ideas", "strategy": "right/strategy",
-    "creative": "right/creative", "vision": "right",
-    "risk": "right/risk", "life": "right/life",
-    "brain-system": "bridge", "cross-cutting": "bridge",
+    "architecture": "left",
+    "infrastructure": "left",
+    "deployment": "left",
+    "code": "left",
+    "bug": "left",
+    "fix": "left",
+    "ci": "left",
+    "database": "left",
+    "api": "left",
+    "security": "left",
+    "research": "left/research",
+    "incident": "left/incidents",
+    "decision": "left/decisions",
+    "reference": "left/reference",
+    "idea": "right/ideas",
+    "strategy": "right/strategy",
+    "creative": "right/creative",
+    "vision": "right",
+    "risk": "right/risk",
+    "life": "right/life",
+    "brain-system": "bridge",
+    "cross-cutting": "bridge",
 }
 INBOX_DEFAULT_REGION = "left"
 
@@ -455,13 +478,18 @@ def drain_inbox(vault_root: Path, dry_run: bool = False) -> dict:
                 region = TAG_REGION_MAP[tag_lower]
                 break
 
-        region_label = {"left": "left-hemisphere", "right": "right-hemisphere"}.get(region.split("/")[0], region.split("/")[0])
+        region_label = {"left": "left-hemisphere", "right": "right-hemisphere"}.get(
+            region.split("/")[0], region.split("/")[0]
+        )
         target_dir = vault_root / region
         if not dry_run:
             target_dir.mkdir(parents=True, exist_ok=True)
             dest = target_dir / md.name
             if dest.exists():
-                dest = target_dir / f"{md.stem}-{datetime.now(timezone.utc).strftime('%H%M%S')}{md.suffix}"
+                dest = (
+                    target_dir
+                    / f"{md.stem}-{datetime.now(timezone.utc).strftime('%H%M%S')}{md.suffix}"
+                )
             _update_frontmatter_field(md, "region", region_label)
             if not doc.frontmatter.get("status"):
                 _update_frontmatter_field(md, "status", "active")
@@ -471,8 +499,9 @@ def drain_inbox(vault_root: Path, dry_run: bool = False) -> dict:
     return stats
 
 
-def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
-         quick_refresh: bool = False) -> dict:
+def tick(
+    vault_root: Path, brain_feed_dir: Path, dry_run: bool = False, quick_refresh: bool = False
+) -> dict:
     """One maintenance tick. Pure deterministic. Returns stats.
 
     quick_refresh=True skips heat recomputation, promote/demote, and dashboards.
@@ -514,9 +543,9 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
             # canonical_arc_id folds the whole .merged.merged…md chain to one
             # id, so the raw counterpart is suppressed and a runaway chain
             # dedups to a single arc. str.replace stripped only one level.
-            if (not md_file.name.endswith(".merged.md")
-                and markers.canonical_arc_id(md_file.name)
-                    in merged_stems_by_dir.get(md_file.parent, set())):
+            if not md_file.name.endswith(".merged.md") and markers.canonical_arc_id(
+                md_file.name
+            ) in merged_stems_by_dir.get(md_file.parent, set()):
                 continue
             arc_id = markers.canonical_arc_id(md_file.name)
             if arc_id in seen_ids:
@@ -652,12 +681,8 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
                     continue
                 if not dry_run:
                     body = arc.path.read_text(encoding="utf-8")
-                    template_section = (
-                        "\n## Workflow Template\n\n"
-                        f"{format_markdown(steps)}\n"
-                    )
-                    arc.path.write_text(body.rstrip() + "\n" + template_section,
-                                        encoding="utf-8")
+                    template_section = f"\n## Workflow Template\n\n{format_markdown(steps)}\n"
+                    arc.path.write_text(body.rstrip() + "\n" + template_section, encoding="utf-8")
                     arc.frontmatter["workflow_template"] = "true"
                     _update_frontmatter_field(arc.path, "workflow_template", "true")
                 templates_written += 1
@@ -683,8 +708,13 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
             if age_days <= BRAIN_GRADUATE_AGE_DAYS:
                 continue
             region = arc.frontmatter.get("region", "left-hemisphere")
-            region_map = {"left-hemisphere": "left", "right-hemisphere": "right",
-                          "bridge": "bridge", "amygdala": "amygdala", "pineal": "pineal"}
+            region_map = {
+                "left-hemisphere": "left",
+                "right-hemisphere": "right",
+                "bridge": "bridge",
+                "amygdala": "amygdala",
+                "pineal": "pineal",
+            }
             target_dir = vault_root / region_map.get(region, "left")
             dest = target_dir / arc.path.name
             if arc.path.resolve() != dest.resolve():
@@ -763,7 +793,12 @@ def tick(vault_root: Path, brain_feed_dir: Path, dry_run: bool = False,
         key=lambda a: int(a.frontmatter.get("heat", 0)),
         reverse=True,
     )[:10]
-    signal_stats = {"written": 0, "tombstoned_stale": 0, "tombstoned_cleared": 0, "tombstoned_mitigated": 0}
+    signal_stats = {
+        "written": 0,
+        "tombstoned_stale": 0,
+        "tombstoned_cleared": 0,
+        "tombstoned_mitigated": 0,
+    }
     # Auto-verifier: run each signal's verify= command, tag _mitigated=true on
     # signals whose underlying claim has been falsified. write_signals_feed
     # already honors _mitigated for tombstoning, so no further plumbing needed.
@@ -817,9 +852,10 @@ def _update_frontmatter_heat(filepath: Path, new_heat: int) -> None:
     """Update the heat field in a file's YAML frontmatter."""
     text = filepath.read_text(encoding="utf-8")
     import re as _re
+
     updated = _re.sub(
-        r'^(heat:\s*).*$',
-        f'heat: {new_heat}',
+        r"^(heat:\s*).*$",
+        f"heat: {new_heat}",
         text,
         count=1,
         flags=_re.MULTILINE,
@@ -831,30 +867,35 @@ def _update_frontmatter_heat(filepath: Path, new_heat: int) -> None:
 def _update_frontmatter_field(filepath: Path, key: str, value: str) -> None:
     """Set or insert a scalar field in a file's YAML frontmatter."""
     import re as _re
+
     text = filepath.read_text(encoding="utf-8")
-    pat = _re.compile(rf'^({_re.escape(key)}:\s*).*$', _re.MULTILINE)
+    pat = _re.compile(rf"^({_re.escape(key)}:\s*).*$", _re.MULTILINE)
     if pat.search(text):
-        updated = pat.sub(f'{key}: {value}', text, count=1)
+        updated = pat.sub(f"{key}: {value}", text, count=1)
     else:
-        m = _re.match(r'^---\n(.*?)\n---\n', text, _re.DOTALL)
+        m = _re.match(r"^---\n(.*?)\n---\n", text, _re.DOTALL)
         if not m:
             return
         fm_body = m.group(1)
-        new_fm = f'---\n{fm_body}\n{key}: {value}\n---\n'
-        updated = new_fm + text[m.end():]
+        new_fm = f"---\n{fm_body}\n{key}: {value}\n---\n"
+        updated = new_fm + text[m.end() :]
     if updated != text:
         filepath.write_text(updated, encoding="utf-8")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
+
 def main() -> int:
     p = argparse.ArgumentParser(description="Deterministic brain-keeper maintenance tick")
     p.add_argument("--vault", required=True, help="Vault root path (e.g. /vault)")
     p.add_argument("--brain-feed", required=True, help="Brain feed output directory")
     p.add_argument("--dry-run", action="store_true", help="Print what would happen without writing")
-    p.add_argument("--quick-refresh", action="store_true",
-                   help="Skip heat/promote/demote. Only scan + write brain-feed outputs (<5ms)")
+    p.add_argument(
+        "--quick-refresh",
+        action="store_true",
+        help="Skip heat/promote/demote. Only scan + write brain-feed outputs (<5ms)",
+    )
     args = p.parse_args()
 
     vault = Path(args.vault)

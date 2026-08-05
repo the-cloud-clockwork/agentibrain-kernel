@@ -257,9 +257,7 @@ def check_cmd(brain_url: str | None, token: str | None) -> None:
                         console.print(f"    {sub_name}: {sub}")
                         continue
                     sub_mark = "[green]✓[/green]" if sub.get("ok") else "[red]✗[/red]"
-                    sub_detail = " ".join(
-                        f"{k}={v}" for k, v in sub.items() if k != "ok"
-                    )
+                    sub_detail = " ".join(f"{k}={v}" for k, v in sub.items() if k != "ok")
                     console.print(f"    {sub_mark} {sub_name}: {sub_detail}")
                 continue
             console.print(f"    {key}: {value}")

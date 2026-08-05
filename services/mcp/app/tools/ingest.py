@@ -49,7 +49,7 @@ def register(mcp: FastMCP):
         if not content or not content.strip():
             return json.dumps({"error": "content is empty"})
 
-        chunks = [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
+        chunks = [content[i : i + chunk_size] for i in range(0, len(content), chunk_size)]
         label = title or "document"
         results: list[dict] = []
 
@@ -74,15 +74,20 @@ def register(mcp: FastMCP):
                     ) as resp:
                         body = await resp.json()
                         ok = 200 <= resp.status < 300
-                        results.append({"chunk": i + 1, "ok": ok, "status": resp.status, "detail": body})
+                        results.append(
+                            {"chunk": i + 1, "ok": ok, "status": resp.status, "detail": body}
+                        )
             except Exception as exc:
                 results.append({"chunk": i + 1, "ok": False, "error": str(exc)})
 
         ok_count = sum(1 for r in results if r.get("ok"))
-        return json.dumps({
-            "chunks_sent": ok_count,
-            "total_chunks": len(chunks),
-            "title": title or None,
-            "producer": producer,
-            "results": results,
-        }, indent=2)
+        return json.dumps(
+            {
+                "chunks_sent": ok_count,
+                "total_chunks": len(chunks),
+                "title": title or None,
+                "producer": producer,
+                "results": results,
+            },
+            indent=2,
+        )

@@ -18,6 +18,7 @@ Usage:
         --severity critical \
         --reason "edge dedup landed (commit 29f7d83); 422 dups + 66 self-loops removed"
 """
+
 from __future__ import annotations
 
 import argparse

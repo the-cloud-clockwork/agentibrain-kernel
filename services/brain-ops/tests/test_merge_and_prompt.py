@@ -43,6 +43,7 @@ def _write_arc(path: Path, cluster_id: str, body: str, *, heat: int = 5) -> None
 
 # ---------- canonical_arc_id ----------
 
+
 class TestCanonicalArcId:
     def test_collapses_chain(self):
         assert markers.canonical_arc_id("foo.md") == "foo"
@@ -54,6 +55,7 @@ class TestCanonicalArcId:
 
 # ---------- apply_merges guards ----------
 
+
 class TestApplyMerges:
     def _vault(self, tmp_path: Path):
         d = tmp_path / "clusters" / "2026-05-01"
@@ -64,7 +66,9 @@ class TestApplyMerges:
         _write_arc(d / "arc-a.md", "arc-a", "A body")
         _write_arc(d / "arc-b.md", "arc-b", "B body")
         n = brain_apply.apply_merges(
-            vault, [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}], dry_run=False
+            vault,
+            [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}],
+            dry_run=False,
         )
         assert n == 1
         assert (d / "arc-b.merged.md").exists()
@@ -76,7 +80,9 @@ class TestApplyMerges:
         _write_arc(d / "arc-a.md", "arc-a", "A body")
         _write_arc(d / "arc-b.merged.md", "arc-b", "already a tombstone")
         n = brain_apply.apply_merges(
-            vault, [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}], dry_run=False
+            vault,
+            [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}],
+            dry_run=False,
         )
         assert n == 0  # tombstone is never re-merged → no runaway
         assert not (d / "arc-b.merged.merged.md").exists()
@@ -97,11 +103,14 @@ class TestApplyMerges:
         vault, d = self._vault(tmp_path)
         _write_arc(d / "arc-a.md", "arc-a", "A body")
         _write_arc(
-            d / "arc-b.md", "arc-b",
+            d / "arc-b.md",
+            "arc-b",
             "B body\n<!-- @edge type=related target=somewhere -->\n",
         )
         brain_apply.apply_merges(
-            vault, [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}], dry_run=False
+            vault,
+            [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}],
+            dry_run=False,
         )
         merged = (d / "arc-a.md").read_text()
         assert "## Merged from arc-b" in merged
@@ -110,11 +119,13 @@ class TestApplyMerges:
 
 # ---------- build_prompt edge_map dedup + caps ----------
 
+
 class TestBuildPrompt:
     def test_edge_dedup_keeps_strongest_type(self, tmp_path):
         feed = tmp_path / "brain-feed"
         _write_arc(
-            tmp_path / "clusters" / "2026-05-01" / "arc-e.md", "arc-e",
+            tmp_path / "clusters" / "2026-05-01" / "arc-e.md",
+            "arc-e",
             "<!-- @edge type=related target=t1 -->\n<!-- @edge type=parent target=t1 -->\n",
         )
         prompt, _ = brain_tick_prompt.build_prompt(tmp_path, feed)
@@ -133,9 +144,7 @@ class TestBuildPrompt:
 
     def test_prompt_char_budget_drops_edge_map(self, tmp_path, monkeypatch):
         feed = tmp_path / "brain-feed"
-        edges = "".join(
-            f"<!-- @edge type=related target=t{i} -->\n" for i in range(40)
-        )
+        edges = "".join(f"<!-- @edge type=related target=t{i} -->\n" for i in range(40))
         _write_arc(tmp_path / "clusters" / "2026-05-01" / "arc-b.md", "arc-b", edges)
         prompt0, _ = brain_tick_prompt.build_prompt(tmp_path, feed)
         # Force the budget just below the full size — the edge map is the first
@@ -148,6 +157,7 @@ class TestBuildPrompt:
 
 # ---------- vault_cleanup chain collapse ----------
 
+
 class TestVaultCleanup:
     def test_collapses_chain_and_dedupes_edges(self, tmp_path):
         d = tmp_path / "clusters" / "2026-05-01"
@@ -156,7 +166,8 @@ class TestVaultCleanup:
         # Longest = survivor: duplicate edges in the base body (survive the
         # collapse) + a duplicate "## Merged from bar" section (dropped).
         _write_arc(
-            d / "foo.merged.merged.md", "foo",
+            d / "foo.merged.merged.md",
+            "foo",
             "longest body with history\n"
             "<!-- @edge type=related target=x -->\n"
             "<!-- @edge type=parent target=x -->\n"
@@ -226,6 +237,7 @@ def test_merged_title_keeps_frontmatter_parseable(tmp_path):
 def _repair_mod():
     sys.path.insert(0, str(_BRAIN_TOOLS / "scripts"))
     import repair_arc_titles
+
     return repair_arc_titles
 
 

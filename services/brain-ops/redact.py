@@ -75,9 +75,7 @@ def scrub(text: str) -> str:
     if not text:
         return text
     out = SECRET_RE.sub(PLACEHOLDER, text)
-    out = ASSIGNMENT_RE.sub(
-        lambda m: m.group(0).replace(m.group("value"), PLACEHOLDER), out
-    )
+    out = ASSIGNMENT_RE.sub(lambda m: m.group(0).replace(m.group("value"), PLACEHOLDER), out)
     return out
 
 

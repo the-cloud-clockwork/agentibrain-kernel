@@ -28,6 +28,7 @@ Usage:
     python3 scripts/vault_cleanup.py --vault /vault
     python3 scripts/vault_cleanup.py --vault /vault --no-backup
 """
+
 from __future__ import annotations
 
 import argparse
@@ -45,7 +46,7 @@ import dedupe_edges  # noqa: E402  # reuse REGION_DIRS + _process_file
 import markers  # noqa: E402
 
 # Split a body on "## Merged from <id>" headers, capturing the id.
-_MERGE_NOTE_RE = re.compile(r'(?m)^## Merged from (\S+)\s*$')
+_MERGE_NOTE_RE = re.compile(r"(?m)^## Merged from (\S+)\s*$")
 
 
 def _merged_depth(name: str) -> int:
@@ -116,8 +117,12 @@ def _backup(vault: Path, backup_dir: Path) -> Path:
 
 def collapse_chains(vault: Path, dry_run: bool) -> dict:
     """Phase 1 — collapse merge-chain duplicate files per directory."""
-    stats = {"groups_scanned": 0, "chains_collapsed": 0,
-             "files_deleted": 0, "merge_notes_deduped": 0}
+    stats = {
+        "groups_scanned": 0,
+        "chains_collapsed": 0,
+        "files_deleted": 0,
+        "merge_notes_deduped": 0,
+    }
 
     for region in dedupe_edges.REGION_DIRS:
         region_dir = vault / region
@@ -182,8 +187,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="One-time vault merge-chain + edge cleanup")
     ap.add_argument("--vault", required=True, help="Vault root path")
     ap.add_argument("--dry-run", action="store_true", help="Report only; no writes/deletes")
-    ap.add_argument("--backup-dir", default=None,
-                    help="Backup tarball directory (default: <vault>/_backups)")
+    ap.add_argument(
+        "--backup-dir", default=None, help="Backup tarball directory (default: <vault>/_backups)"
+    )
     ap.add_argument("--no-backup", action="store_true", help="Skip the pre-cleanup tar")
     args = ap.parse_args()
 

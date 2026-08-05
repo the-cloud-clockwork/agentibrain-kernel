@@ -12,6 +12,7 @@ in vault → next tick reads its own arcs → triage acts → AI sees the fix.
 Usage:
     python3 reasoner_feedback.py --brain-feed /vault/brain-feed --vault /vault
 """
+
 from __future__ import annotations
 
 import argparse
@@ -93,7 +94,9 @@ def render_arc(actions: dict[str, list[str]], ticks: list[dict], today: str) -> 
         "",
     ]
     if not actions:
-        fm_lines.append("_No actionable patterns detected. Health score may be low for non-obvious reasons — read raw reasons below._")
+        fm_lines.append(
+            "_No actionable patterns detected. Health score may be low for non-obvious reasons — read raw reasons below._"
+        )
     else:
         for action, snippets in actions.items():
             fm_lines.append(f"### `{action}`")
@@ -113,9 +116,13 @@ def render_arc(actions: dict[str, list[str]], ticks: list[dict], today: str) -> 
     fm_lines.append("```")
     fm_lines.append("# Run brain-keeper triage on the actions in this arc")
     fm_lines.append("#   via AgentiBridge (preferred):")
-    fm_lines.append(f'#   dispatch_to_agent --agent brain-keeper --task "triage based on {today}-tick-feedback"')
+    fm_lines.append(
+        f'#   dispatch_to_agent --agent brain-keeper --task "triage based on {today}-tick-feedback"'
+    )
     fm_lines.append("#   via LiteLLM (when brain-keeper is registered as an openai/* model):")
-    fm_lines.append(f'#   curl ${{LITELLM_URL}}/v1/chat/completions -d \'{{"model":"brain-keeper","messages":[{{"role":"user","content":"triage based on {today}-tick-feedback"}}]}}\'')
+    fm_lines.append(
+        f'#   curl ${{LITELLM_URL}}/v1/chat/completions -d \'{{"model":"brain-keeper","messages":[{{"role":"user","content":"triage based on {today}-tick-feedback"}}]}}\''
+    )
     fm_lines.append("```")
     fm_lines.append("")
     return "\n".join(fm_lines)

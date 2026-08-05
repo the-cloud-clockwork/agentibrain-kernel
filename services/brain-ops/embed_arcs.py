@@ -15,6 +15,7 @@ Env:
     EMBEDDINGS_URL  default http://embeddings:8080  (alias: EMBED_API_URL)
     EMBEDDINGS_API_KEY  required unless --dry-run  (alias: EMBED_API_KEY)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -73,9 +74,7 @@ def _clean_section(text: str) -> str:
     unrelated documents came back with the SAME similarity score, so
     brain_search_arcs was returning noise rather than matches.
     """
-    return "\n".join(
-        l for l in _STUB_NOISE_RE.sub("", text).splitlines() if l.strip()
-    ).strip()
+    return "\n".join(l for l in _STUB_NOISE_RE.sub("", text).splitlines() if l.strip()).strip()
 
 
 def _body_excerpt(body: str, limit: int = 800) -> str:
@@ -87,9 +86,7 @@ def _body_excerpt(body: str, limit: int = 800) -> str:
     """
     text = re.sub(r"<!--.*?-->", " ", body, flags=re.DOTALL)
     lines = [
-        ln.strip()
-        for ln in text.splitlines()
-        if ln.strip() and not ln.lstrip().startswith("#")
+        ln.strip() for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")
     ]
     return " ".join(lines)[:limit].strip()
 
@@ -217,20 +214,25 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Embed brain arcs into pgvector")
     ap.add_argument("--vault", required=True, help="vault root path")
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--force-all", action="store_true",
-                    help="re-embed every arc, ignoring state")
-    ap.add_argument("--api-url", default=(
-        os.environ.get("EMBEDDINGS_URL")
-        or os.environ.get("EMBED_API_URL", "http://embeddings:8080")
-    ))
-    ap.add_argument("--api-key", default=(
-        os.environ.get("EMBEDDINGS_API_KEY")
-        or os.environ.get("EMBED_API_KEY", "")
-    ))
-    ap.add_argument("--prune", action="store_true",
-                    help="after embedding, POST /prune with the cluster_id "
-                         "set of every arc seen — deletes orphan rows for "
-                         "arcs that were graduated/renamed/deleted")
+    ap.add_argument("--force-all", action="store_true", help="re-embed every arc, ignoring state")
+    ap.add_argument(
+        "--api-url",
+        default=(
+            os.environ.get("EMBEDDINGS_URL")
+            or os.environ.get("EMBED_API_URL", "http://embeddings:8080")
+        ),
+    )
+    ap.add_argument(
+        "--api-key",
+        default=(os.environ.get("EMBEDDINGS_API_KEY") or os.environ.get("EMBED_API_KEY", "")),
+    )
+    ap.add_argument(
+        "--prune",
+        action="store_true",
+        help="after embedding, POST /prune with the cluster_id "
+        "set of every arc seen — deletes orphan rows for "
+        "arcs that were graduated/renamed/deleted",
+    )
     args = ap.parse_args()
 
     vault = Path(args.vault)
@@ -244,12 +246,10 @@ def main() -> int:
     state = {} if args.force_all else load_state(state_path)
 
     if not args.dry_run and not args.api_key:
-        print("ERROR: EMBED_API_KEY not set (use --dry-run for a preview)",
-              file=sys.stderr)
+        print("ERROR: EMBED_API_KEY not set (use --dry-run for a preview)", file=sys.stderr)
         return 1
 
-    stats = {"scanned": 0, "embedded": 0, "skipped_unchanged": 0,
-             "skipped_noop": 0, "errors": 0}
+    stats = {"scanned": 0, "embedded": 0, "skipped_unchanged": 0, "skipped_noop": 0, "errors": 0}
     # Cluster IDs of every arc we saw on disk — used for the prune call so
     # that pgvector rows whose source file has disappeared get deleted.
     seen_keys: set[str] = set()
@@ -304,8 +304,7 @@ def main() -> int:
         }
 
         if args.dry_run:
-            print(f"DRY: {cluster_id}  heat={payload['metadata']['heat']}  "
-                  f"chars={len(content)}")
+            print(f"DRY: {cluster_id}  heat={payload['metadata']['heat']}  chars={len(content)}")
             stats["embedded"] += 1
             state[rel] = mtime
             continue

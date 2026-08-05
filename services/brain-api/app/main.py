@@ -131,7 +131,10 @@ async def health_deep(_: None = Depends(require_token)) -> dict:
         # Embeddings: delegate to its deep check (DB + live embed + dim match).
         if not EMBEDDINGS_URL or not _EMBEDDINGS_API_KEY:
             ok = False
-            checks["embeddings"] = {"ok": False, "error": "EMBEDDINGS_URL or EMBEDDINGS_API_KEY not configured"}
+            checks["embeddings"] = {
+                "ok": False,
+                "error": "EMBEDDINGS_URL or EMBEDDINGS_API_KEY not configured",
+            }
         else:
             try:
                 resp = await client.get(
@@ -168,7 +171,11 @@ async def health_deep(_: None = Depends(require_token)) -> dict:
                 healthy = resp.status_code == 200
                 if not healthy:
                     ok = False
-                detail: dict[str, Any] = {"ok": healthy, "url": inference_url, "http_status": resp.status_code}
+                detail: dict[str, Any] = {
+                    "ok": healthy,
+                    "url": inference_url,
+                    "http_status": resp.status_code,
+                }
                 if healthy:
                     models = resp.json().get("data", [])
                     detail["model_count"] = len(models)
@@ -196,7 +203,9 @@ async def health_deep(_: None = Depends(require_token)) -> dict:
 @app.get("/vault/list")
 def vault_list(
     prefix: str = Query("", description="Directory prefix to list (relative to vault root)"),
-    extensions: str = Query(".md,.markdown,.txt", description="Comma-separated extensions to include"),
+    extensions: str = Query(
+        ".md,.markdown,.txt", description="Comma-separated extensions to include"
+    ),
     limit: int = Query(500, ge=1, le=5000),
     _: None = Depends(require_token),
 ) -> dict:
@@ -229,7 +238,9 @@ def vault_search(
     _: None = Depends(require_token),
 ) -> dict:
     try:
-        return vault_reader.search_vault(q=q, prefix=prefix, limit=limit, context_lines=context_lines)
+        return vault_reader.search_vault(
+            q=q, prefix=prefix, limit=limit, context_lines=context_lines
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
@@ -246,7 +257,10 @@ def vault_write_inbox(
     ref_list = [r.strip() for r in artifact_refs.split(",") if r.strip()]
     try:
         return vault_reader.write_inbox(
-            title=title, content=content, tags=tag_list, artifact_refs=ref_list,
+            title=title,
+            content=content,
+            tags=tag_list,
+            artifact_refs=ref_list,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
@@ -279,6 +293,7 @@ async def ingest_with_files(
     as text notes, then the message is classified and ingested normally.
     """
     from .router import _slugify
+
     pre_paths: list[str] = []
     errors: list[str] = []
 
@@ -308,9 +323,7 @@ async def ingest_with_files(
 # ── /index_artifact — sole brain-side write surface for artifact embeddings ──
 
 EMBEDDINGS_URL = os.getenv("EMBEDDINGS_URL", "")
-_EMBEDDINGS_API_KEY = (
-    os.environ.get("EMBEDDINGS_API_KEY") or ""
-)
+_EMBEDDINGS_API_KEY = os.environ.get("EMBEDDINGS_API_KEY") or ""
 
 
 @app.post("/index_artifact")
@@ -340,6 +353,7 @@ async def index_artifact(
     }
 
     import httpx
+
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(

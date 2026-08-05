@@ -14,9 +14,7 @@ COMPOSE = Path(__file__).resolve().parents[2] / "compose.yml"
 
 VAULT_SERVICES = ("brain-api", "tick-cron", "tick-drain", "amygdala")
 VAULT_MOUNT = "${VAULT_ROOT_HOST:-~/agentibrain-vault}:/vault"
-PROJECTS_MOUNT = (
-    "${CLAUDE_PROJECTS_HOST:-~/.claude/projects}:/shared/.claude/projects:ro"
-)
+PROJECTS_MOUNT = "${CLAUDE_PROJECTS_HOST:-~/.claude/projects}:/shared/.claude/projects:ro"
 
 
 def _services() -> dict:
