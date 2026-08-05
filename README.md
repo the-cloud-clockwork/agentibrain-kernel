@@ -130,7 +130,7 @@ The `tick-drain` service polls `brain-feed/ticks/requested/` every 30s, coalesce
 **Verify the whole stack in one command:**
 
 ```bash
-agentibrain check --brain-url http://127.0.0.1:8103   # exit 0 = healthy, 1 = degraded
+agentibrain check          # exit 0 = healthy, 1 = degraded (targets localhost:8103 by default)
 ```
 
 Deep check: real vault write, embeddings → Postgres round-trip with dimension

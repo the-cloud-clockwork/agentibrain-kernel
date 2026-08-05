@@ -33,8 +33,13 @@ agentibrain --version
 ## Testing a running brain
 
 ```bash
-agentibrain check --brain-url http://127.0.0.1:8103   # exit 0 = healthy, 1 = degraded
+agentibrain check          # exit 0 = healthy, 1 = degraded
 ```
+
+No URL needed locally — the CLI targets `http://localhost:8103` (brain-api's
+published port) by default; override the port with `PORT_BRAIN_API` in
+`~/.agentibrain/.env` or point at a remote brain with `--brain-url` /
+`$BRAIN_URL`.
 
 `check` calls `GET /health/deep`, which round-trips a real vault write, makes
 the embeddings service hit Postgres and run an actual embedding call
