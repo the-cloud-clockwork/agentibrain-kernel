@@ -119,7 +119,7 @@ Content lands in the vault at `raw/inbox/` (`~/agentibrain-vault` by default). T
 **Force a tick on demand** (don't wait for the 2h scheduled cycle):
 
 ```bash
-pip install -e .                          # one-time, installs the `brain` CLI
+pip install -e .                          # one-time, installs the `agentibrain` CLI
 agentibrain tick --no-ai --wait                 # deterministic-only, blocks until done
 agentibrain tick --wait                         # full AI tick
 agentibrain tick --dry-run --wait               # read-only verify, no writes

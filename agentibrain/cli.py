@@ -1,4 +1,4 @@
-"""``brain`` CLI entry point."""
+"""``agentibrain`` CLI entry point."""
 
 from __future__ import annotations
 
