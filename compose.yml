@@ -208,6 +208,17 @@ services:
       BRAIN_DECAY_START_DAYS: ${BRAIN_DECAY_START_DAYS:-2}
       BRAIN_DECAY_INTERVAL_DAYS: ${BRAIN_DECAY_INTERVAL_DAYS:-2}
       BRAIN_STALE_SIGNAL_DAYS: ${BRAIN_STALE_SIGNAL_DAYS:-3}
+      # Heat thresholds govern which arcs sit in frontal-lobe/conscious. Unset
+      # here they fell through to the code defaults (promote 5 / demote 3),
+      # which are stricter than a long-lived deployment usually wants — the
+      # demotion branch tests `heat < max(DEMOTE, PROMOTE)`, so a higher
+      # PROMOTE_HEAT silently evicts arcs from conscious/ on the next tick.
+      # Surfaced so a vault carrying its own tuning can restore it.
+      BRAIN_PROMOTE_HEAT: ${BRAIN_PROMOTE_HEAT:-5}
+      BRAIN_DEMOTE_HEAT: ${BRAIN_DEMOTE_HEAT:-3}
+      BRAIN_GRADUATE_HEAT: ${BRAIN_GRADUATE_HEAT:-1}
+      BRAIN_GRADUATE_AGE_DAYS: ${BRAIN_GRADUATE_AGE_DAYS:-14}
+      BRAIN_MAX_SYNTH_ARCS: ${BRAIN_MAX_SYNTH_ARCS:-60}
       EXTRACT_HOUR: "${EXTRACT_HOUR:-04}"
       EXTRACT_SINCE: ${EXTRACT_SINCE:-26h}
       EXTRACT_MIN_TURNS: "${EXTRACT_MIN_TURNS:-5}"
@@ -342,6 +353,13 @@ services:
       BRAIN_DECAY_START_DAYS: ${BRAIN_DECAY_START_DAYS:-2}
       BRAIN_DECAY_INTERVAL_DAYS: ${BRAIN_DECAY_INTERVAL_DAYS:-2}
       BRAIN_STALE_SIGNAL_DAYS: ${BRAIN_STALE_SIGNAL_DAYS:-3}
+      # Same reason these must mirror tick-cron: a drain-triggered tick that
+      # promoted/demoted on different thresholds would fight the scheduled one.
+      BRAIN_PROMOTE_HEAT: ${BRAIN_PROMOTE_HEAT:-5}
+      BRAIN_DEMOTE_HEAT: ${BRAIN_DEMOTE_HEAT:-3}
+      BRAIN_GRADUATE_HEAT: ${BRAIN_GRADUATE_HEAT:-1}
+      BRAIN_GRADUATE_AGE_DAYS: ${BRAIN_GRADUATE_AGE_DAYS:-14}
+      BRAIN_MAX_SYNTH_ARCS: ${BRAIN_MAX_SYNTH_ARCS:-60}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - ${VAULT_ROOT_HOST:-~/agentibrain-vault}:/vault
