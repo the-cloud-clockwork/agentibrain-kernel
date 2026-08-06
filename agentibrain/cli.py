@@ -601,8 +601,12 @@ def sync_cmd(wait: bool, check: bool, brain_url: str | None, token: str | None) 
                     for k, v in status.items()
                     if k not in {"status", "job_id"} and v not in (None, "", {})
                 }
+                error_tail = detail.pop("error_tail", None)
                 if detail:
                     console.print(f"  tick detail: {detail}")
+                if error_tail:
+                    console.print("[red]tick error tail:[/red]")
+                    console.print(error_tail)
                 console.print(
                     f"[bold]sync summary[/bold]: replayed={totals['drained']} "
                     f"quarantined={totals['quarantined']} "

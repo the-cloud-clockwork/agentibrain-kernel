@@ -280,14 +280,19 @@ services:
               n=$$(echo $$kind_files | wc -w)
               ticks=$$((ticks+1))
               echo "[tick-drain] coalescing $$n request(s) into one tick [flags='$$kind_flags']"
+              # Capture the tick's combined output: on failure it is stamped
+              # into each failed request file (error_tail) so GET /tick/{id}
+              # answers "why" without a trip to the container logs.
+              TLOG=/tmp/tick-last.log
               if python3 /app/brain_tick.py \
                   --vault /vault --brain-feed /vault/brain-feed \
                   --inference-url "$${INFERENCE_URL:-}" \
-                  --source brain-drain $$kind_flags; then
+                  --source brain-drain $$kind_flags > "$$TLOG" 2>&1; then
                 dest="$$DONE"; ok=$$((ok+n))
               else
                 dest="$$FAIL"; ko=$$((ko+n))
               fi
+              cat "$$TLOG"
               # A failed mv must NOT abort the batch. By this point the tick has
               # already run and mutated the vault, and other buckets are still
               # queued; dying here under `set -e` would discard completed work,
@@ -298,6 +303,8 @@ services:
                 if ! mv "$$f" "$$dest/$$(basename "$$f")"; then
                   stuck=$$((stuck+1))
                   echo "[tick-drain] WARN: could not move $$(basename "$$f") to $$dest — retrying next pass"
+                elif [ "$$dest" = "$$FAIL" ]; then
+                  python3 /app/annotate_fail.py "$$dest/$$(basename "$$f")" "$$TLOG" || true
                 fi
               done
               # Never let the loop's last exit status become the function's, or

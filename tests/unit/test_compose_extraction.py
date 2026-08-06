@@ -81,3 +81,9 @@ def test_raw_index_refreshes_in_both_tick_paths():
     services = _services()
     for name in ("tick-cron", "tick-drain"):
         assert "embed_raw.py --vault /vault --prune" in services[name]["command"][0], name
+
+
+def test_tick_drain_annotates_failed_requests():
+    cmd = _services()["tick-drain"]["command"][0]
+    assert "annotate_fail.py" in cmd
+    assert '> "$${TLOG}" 2>&1' in cmd or '> "$$TLOG" 2>&1' in cmd
