@@ -60,3 +60,24 @@ def test_extraction_env_defaults_present():
     assert env["EXTRACT_ON_BOOT"] == "${EXTRACT_ON_BOOT:-0}"
     assert env["EXTRACT_BOOT_SINCE"] == "${EXTRACT_BOOT_SINCE:-90d}"
     assert env["EXTRACT_PROJECTS_DIR"] == "/shared/.claude/projects"
+
+
+SYNC_MOUNT = "${AGENTIHOOKS_HOME_HOST:-~/.agentihooks}:/agentihooks"
+
+
+def test_tick_cron_mounts_agentihooks_buffers():
+    assert SYNC_MOUNT in _services()["tick-cron"]["volumes"]
+
+
+def test_tick_cron_drains_outbox_each_pass():
+    svc = _services()["tick-cron"]
+    cmd = svc["command"][0]
+    assert "outbox_drain.py --outbox /agentihooks/brain-outbox" in cmd
+    assert svc["environment"]["BRAIN_API_URL"] == "http://brain-api:8080"
+    assert "KB_ROUTER_TOKEN" in svc["environment"]
+
+
+def test_raw_index_refreshes_in_both_tick_paths():
+    services = _services()
+    for name in ("tick-cron", "tick-drain"):
+        assert "embed_raw.py --vault /vault --prune" in services[name]["command"][0], name

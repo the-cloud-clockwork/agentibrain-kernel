@@ -172,6 +172,14 @@ services:
             run_extraction "$${EXTRACT_SINCE:-26h}"
           fi
 
+          # Drain agentihooks marker buffers (outbox + -backlog) over HTTP.
+          # Replaces host crons: compose owns the schedule when compose runs
+          # the brain. No-op when the mount is empty or absent.
+          if [ -n "$${KB_ROUTER_TOKEN}" ] && [ -d /agentihooks/brain-outbox ]; then
+            python3 /app/outbox_drain.py --outbox /agentihooks/brain-outbox \
+              || echo "[tick-cron] outbox_drain failed (non-fatal)"
+          fi
+
           # Hybrid agentibrain tick
           python3 /app/brain_tick.py \
             --vault /vault \
@@ -179,10 +187,12 @@ services:
             $${FLAGS} \
             || echo "[tick-cron] brain_tick failed (continuing)"
 
-          # Refresh arc embeddings + prune orphans
+          # Refresh arc + raw-ingest embeddings, prune orphans
           if [ -n "$${EMBEDDINGS_API_KEY}" ]; then
             python3 /app/embed_arcs.py --vault /vault --prune \
               || echo "[tick-cron] embed_arcs failed (non-fatal)"
+            python3 /app/embed_raw.py --vault /vault --prune \
+              || echo "[tick-cron] embed_raw failed (non-fatal)"
           fi
 
           echo "[tick-cron] sleeping $${INTERVAL}s until next tick"
@@ -204,10 +214,15 @@ services:
       EXTRACT_PROJECTS_DIR: /shared/.claude/projects
       EXTRACT_ON_BOOT: "${EXTRACT_ON_BOOT:-0}"
       EXTRACT_BOOT_SINCE: ${EXTRACT_BOOT_SINCE:-90d}
+      BRAIN_API_URL: http://brain-api:8080
+      KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - ${VAULT_ROOT_HOST:-~/agentibrain-vault}:/vault
       - ${CLAUDE_PROJECTS_HOST:-~/.claude/projects}:/shared/.claude/projects:ro
+      # Marker buffers written by agentihooks sessions on this host; tick-cron
+      # drains them into brain-api so no host cron is ever needed.
+      - ${AGENTIHOOKS_HOME_HOST:-~/.agentihooks}:/agentihooks
 
   tick-drain:
     build:
@@ -303,6 +318,8 @@ services:
               echo "[tick-drain] refreshing embeddings after $$ok processed request(s)"
               python3 /app/embed_arcs.py --vault /vault --prune \
                 || echo "[tick-drain] embed_arcs failed (non-fatal)"
+              python3 /app/embed_raw.py --vault /vault --prune \
+                || echo "[tick-drain] embed_raw failed (non-fatal)"
             fi
           fi
           sleep "$$INTERVAL"

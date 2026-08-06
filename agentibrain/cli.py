@@ -393,6 +393,164 @@ def tick_cmd(
     sys.exit(2)
 
 
+def _drain_marker_dir(directory: Path, base: str, headers: dict) -> dict[str, int]:
+    """Replay buffered marker files as POST /marker; delete each on success.
+
+    Idempotency-key parity with agentihooks (uuid5 of session-type-content) so
+    replays dedupe server-side; the original `ts` rides in attrs so brain-api
+    backdates the marker into its original dated files. Unparseable or
+    server-rejected (4xx) files quarantine as .bad; transient failures stay put.
+    """
+    import json as _json
+    import uuid as _uuid
+
+    stats = {"drained": 0, "quarantined": 0, "failed": 0}
+    if not directory.is_dir():
+        return stats
+    for f in sorted(directory.glob("*.json")):
+        try:
+            entry = _json.loads(f.read_text(encoding="utf-8"))
+            session_id = entry.get("session_id") or ""
+            content = (entry.get("content") or "")[:4096]
+            marker_type = entry.get("type") or ""
+            if not marker_type or not content.strip():
+                raise ValueError("missing type/content")
+        except (ValueError, OSError, TypeError):
+            try:
+                f.rename(f.with_suffix(".bad"))
+                stats["quarantined"] += 1
+            except OSError:
+                pass
+            continue
+
+        attrs = dict(entry.get("attrs") or {})
+        attrs.setdefault("session_id", session_id)
+        attrs.setdefault("source", entry.get("agent_name") or attrs.get("source") or "sync")
+        if entry.get("project"):
+            attrs.setdefault("project", entry["project"])
+        if entry.get("ts"):
+            attrs.setdefault("ts", entry["ts"])
+        idem = _uuid.uuid5(_uuid.NAMESPACE_URL, f"{session_id}-{marker_type}-{content}").hex[:32]
+
+        try:
+            r = httpx.post(
+                f"{base}/marker",
+                headers={**headers, "X-Idempotency-Key": idem},
+                json={"type": marker_type, "content": content, "attrs": attrs},
+                timeout=15.0,
+            )
+        except httpx.HTTPError:
+            stats["failed"] += 1
+            continue
+        if r.status_code >= 500:
+            stats["failed"] += 1
+            continue
+        if r.status_code >= 400:
+            try:
+                f.rename(f.with_suffix(".bad"))
+                stats["quarantined"] += 1
+            except OSError:
+                pass
+            continue
+
+        try:
+            f.unlink()
+        except FileNotFoundError:
+            pass  # a concurrent drain won this file
+        stats["drained"] += 1
+    return stats
+
+
+@main.command("sync")
+@click.option("--wait", is_flag=True, help="Poll until the follow-up tick completes.")
+@click.option("--brain-url", envvar="BRAIN_URL", help="Override brain-api base URL.")
+@click.option(
+    "--token",
+    envvar="KB_ROUTER_TOKEN",
+    help="Bearer token (defaults to env / settings).",
+)
+def sync_cmd(wait: bool, brain_url: str | None, token: str | None) -> None:
+    """Re-ingest everything into the brain.
+
+    Replays the agentihooks marker buffers (brain-outbox and its -backlog
+    sibling) over POST /marker, then requests a tick so replayed markers
+    cluster and the raw/ ingest index refreshes. Fully idempotent — safe to
+    run any time.
+    """
+    import os as _os
+
+    settings = _load_settings()
+    base = (brain_url or settings.brain_url).rstrip("/")
+
+    if not token:
+        env_path = settings.config_dir.expanduser() / ".env"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if line.startswith("KB_ROUTER_TOKEN="):
+                    token = line.split("=", 1)[1].strip()
+                    break
+    if not token:
+        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
+        sys.exit(2)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    outbox = Path(
+        _os.environ.get(
+            "BRAIN_WRITER_OUTBOX",
+            str(Path.home() / ".agentihooks" / "brain-outbox"),
+        )
+    ).expanduser()
+    backlog = outbox.with_name(outbox.name + "-backlog")
+
+    totals = {"drained": 0, "quarantined": 0, "failed": 0}
+    for d in (outbox, backlog):
+        st = _drain_marker_dir(d, base, headers)
+        for k, v in st.items():
+            totals[k] += v
+        console.print(
+            f"  {d.name}: drained={st['drained']} "
+            f"quarantined={st['quarantined']} failed={st['failed']}"
+        )
+    if totals["failed"]:
+        console.print(
+            f"[yellow]{totals['failed']} marker(s) could not be delivered — "
+            "left in place for the next sync[/yellow]"
+        )
+
+    try:
+        r = httpx.post(f"{base}/tick", headers=headers, params={"source": "sync"}, timeout=10.0)
+        r.raise_for_status()
+    except httpx.HTTPError as e:
+        console.print(f"[red]POST /tick failed: {e}[/red]")
+        sys.exit(1)
+    job_id = r.json().get("job_id", "?")
+    console.print(f"[green]✓[/green] sync tick enqueued — job_id={job_id}")
+
+    if not wait:
+        sys.exit(1 if totals["failed"] else 0)
+
+    console.print("  waiting (≤5 min)…")
+    import time as _time
+
+    deadline = _time.time() + 300
+    while _time.time() < deadline:
+        try:
+            s = httpx.get(f"{base}/tick/{job_id}", headers=headers, timeout=10.0)
+            s.raise_for_status()
+            status = s.json()
+        except httpx.HTTPError:
+            _time.sleep(2)
+            continue
+        state = status.get("status")
+        if state in {"completed", "failed"}:
+            console.print(f"  [bold]{state}[/bold]")
+            sys.exit(0 if state == "completed" and not totals["failed"] else 1)
+        _time.sleep(3)
+
+    console.print("[yellow]timeout — job still running. Check tick-drain logs.[/yellow]")
+    sys.exit(2)
+
+
 @main.command("scaffold")
 @click.argument("vault_path", type=click.Path(), required=False)
 @click.option("--force-upgrade", is_flag=True, help="Overwrite existing .brain-schema.")

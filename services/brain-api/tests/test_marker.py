@@ -106,3 +106,29 @@ def test_marker_content_size_limit(client):
     body = {"type": "lesson", "content": "x" * 5000, "attrs": {}}
     resp = client.post("/marker", json=body)
     assert resp.status_code == 400
+
+
+def test_marker_backdates_from_attrs_ts(vault: Path, client):
+    """A replayed marker (outbox sync) lands in its ORIGINAL dated file."""
+    body = {
+        "type": "lesson",
+        "content": "Replayed from the backlog months later.",
+        "attrs": {"source": "sync", "ts": "2026-05-12T19:27:10.967339+00:00"},
+    }
+    resp = client.post("/marker", json=body)
+    assert resp.status_code == 201
+    assert resp.json()["vault_path"] == "left/reference/lessons-2026-05-12.md"
+    written = (vault / "left/reference/lessons-2026-05-12.md").read_text()
+    assert "2026-05-12T19:27:10+00:00" in written
+
+
+def test_marker_unparseable_ts_falls_back_to_now(vault: Path, client):
+    body = {
+        "type": "lesson",
+        "content": "Garbage timestamp must not 500.",
+        "attrs": {"source": "sync", "ts": "not-a-date"},
+    }
+    resp = client.post("/marker", json=body)
+    assert resp.status_code == 201
+    today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
+    assert resp.json()["vault_path"] == f"left/reference/lessons-{today}.md"

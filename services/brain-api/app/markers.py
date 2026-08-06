@@ -91,9 +91,27 @@ def _write_new(path: Path, body: str) -> None:
     path.write_text(body + ("\n" if not body.endswith("\n") else ""), encoding="utf-8")
 
 
-def _format_timestamp_utc() -> tuple[str, str]:
-    now = datetime.now(tz=timezone.utc)
-    return now.strftime("%Y-%m-%d"), now.strftime("%Y%m%dT%H%M%SZ")
+def _format_timestamp_utc(override_ts: str | None = None) -> tuple[str, str, str]:
+    """Return (date_part, stamp, ts_iso), backdated when the marker carries one.
+
+    A replayed marker (outbox/backlog sync) sends its original emission time in
+    `attrs.ts`; honouring it keeps lessons/milestones in their original dated
+    files and arc dating truthful. Anything unparseable falls back to now.
+    """
+    moment = datetime.now(tz=timezone.utc)
+    if override_ts:
+        try:
+            parsed = datetime.fromisoformat(str(override_ts).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            moment = parsed.astimezone(timezone.utc)
+        except ValueError:
+            pass
+    return (
+        moment.strftime("%Y-%m-%d"),
+        moment.strftime("%Y%m%dT%H%M%SZ"),
+        moment.isoformat(timespec="seconds"),
+    )
 
 
 def _build_lesson_entry(content: str, attrs: dict[str, Any], ts_iso: str) -> str:
@@ -171,8 +189,7 @@ def write_marker(
     attrs = attrs or {}
     root = Path(vault_root) if vault_root else VAULT_ROOT
     root.mkdir(parents=True, exist_ok=True)
-    date_part, stamp = _format_timestamp_utc()
-    ts_iso = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+    date_part, stamp, ts_iso = _format_timestamp_utc(attrs.get("ts"))
 
     if marker_type == "lesson":
         rel = f"left/reference/lessons-{date_part}.md"
