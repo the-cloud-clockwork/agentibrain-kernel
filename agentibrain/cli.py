@@ -393,7 +393,9 @@ def tick_cmd(
     sys.exit(2)
 
 
-def _drain_marker_dir(directory: Path, base: str, headers: dict) -> dict[str, int]:
+def _drain_marker_dir(
+    directory: Path, base: str, headers: dict, verbose: bool = False
+) -> dict[str, int]:
     """Replay buffered marker files as POST /marker; delete each on success.
 
     Idempotency-key parity with agentihooks (uuid5 of session-type-content) so
@@ -408,7 +410,16 @@ def _drain_marker_dir(directory: Path, base: str, headers: dict) -> dict[str, in
     stats = {"drained": 0, "quarantined": 0, "failed": 0}
     if not directory.is_dir():
         return stats
-    for f in sorted(directory.glob("*.json")):
+    files = sorted(directory.glob("*.json"))
+    if verbose and files:
+        console.print(f"  {directory.name}: {len(files)} buffered file(s) to replay")
+    for i, f in enumerate(files):
+        if verbose and i and i % 100 == 0:
+            console.print(
+                f"  {directory.name}: {i}/{len(files)} — "
+                f"drained={stats['drained']} quarantined={stats['quarantined']} "
+                f"failed={stats['failed']}"
+            )
         try:
             entry = _json.loads(f.read_text(encoding="utf-8"))
             session_id = entry.get("session_id") or ""
@@ -467,13 +478,19 @@ def _drain_marker_dir(directory: Path, base: str, headers: dict) -> dict[str, in
 
 @main.command("sync")
 @click.option("--wait", is_flag=True, help="Poll until the follow-up tick completes.")
+@click.option(
+    "--check",
+    "check",
+    is_flag=True,
+    help="Like --wait, but narrates progress: drain counters, tick state changes, final verdict.",
+)
 @click.option("--brain-url", envvar="BRAIN_URL", help="Override brain-api base URL.")
 @click.option(
     "--token",
     envvar="KB_ROUTER_TOKEN",
     help="Bearer token (defaults to env / settings).",
 )
-def sync_cmd(wait: bool, brain_url: str | None, token: str | None) -> None:
+def sync_cmd(wait: bool, check: bool, brain_url: str | None, token: str | None) -> None:
     """Re-ingest everything into the brain.
 
     Replays the agentihooks marker buffers (brain-outbox and its -backlog
@@ -483,6 +500,7 @@ def sync_cmd(wait: bool, brain_url: str | None, token: str | None) -> None:
     """
     import os as _os
 
+    wait = wait or check
     settings = _load_settings()
     base = (brain_url or settings.brain_url).rstrip("/")
 
@@ -511,7 +529,7 @@ def sync_cmd(wait: bool, brain_url: str | None, token: str | None) -> None:
     # append-only targets (BLOCKS.md) keep arrival order — replaying oldest
     # first keeps them chronological.
     for d in (backlog, outbox):
-        st = _drain_marker_dir(d, base, headers)
+        st = _drain_marker_dir(d, base, headers, verbose=check)
         for k, v in st.items():
             totals[k] += v
         console.print(
@@ -542,6 +560,7 @@ def sync_cmd(wait: bool, brain_url: str | None, token: str | None) -> None:
     import time as _time
 
     deadline = _time.time() + 300
+    last_state = ""
     while _time.time() < deadline:
         try:
             s = httpx.get(f"{base}/tick/{job_id}", headers=headers, timeout=10.0)
@@ -551,8 +570,22 @@ def sync_cmd(wait: bool, brain_url: str | None, token: str | None) -> None:
             _time.sleep(2)
             continue
         state = status.get("status")
+        if check and state and state != last_state:
+            console.print(f"  tick {job_id}: [bold]{state}[/bold]")
+            last_state = state
         if state in {"completed", "failed"}:
-            console.print(f"  [bold]{state}[/bold]")
+            if not check:
+                console.print(f"  [bold]{state}[/bold]")
+            if check:
+                console.print(
+                    f"[bold]sync summary[/bold]: replayed={totals['drained']} "
+                    f"quarantined={totals['quarantined']} "
+                    f"still-buffered={totals['failed']} tick={state}"
+                )
+                remaining = sum(
+                    1 for d in (backlog, outbox) if d.is_dir() for _ in d.glob("*.json")
+                )
+                console.print(f"  buffers now hold {remaining} file(s)")
             if state != "completed":
                 sys.exit(1)
             sys.exit(2 if totals["failed"] else 0)

@@ -22,7 +22,7 @@ agentibrain --version
 | `agentibrain status` | `docker compose ps` (init stacks) + shallow `GET /health`. |
 | `agentibrain check` | **Deep verification** — see below. |
 | `agentibrain tick [--dry-run] [--no-ai] [--wait]` | Enqueue a brain tick; `--wait` blocks until it completes. |
-| `agentibrain sync [--wait]` | **Re-ingest everything** — replay buffered markers (`~/.agentihooks/brain-outbox` + `-backlog`) into `POST /marker`, then enqueue a tick so replays cluster and the `raw/` index refreshes. Idempotent; original timestamps preserved. |
+| `agentibrain sync [--wait\|--check]` | **Re-ingest everything** — replay buffered markers (`~/.agentihooks/brain-outbox` + `-backlog`) into `POST /marker`, then enqueue a tick so replays cluster and the `raw/` index refreshes. Idempotent; original timestamps preserved. `--wait` blocks until the tick completes; `--check` does the same but narrates: per-buffer progress counters, tick state changes, and a final summary with remaining buffered files. Exit: 0 clean, 1 hard failure, 2 degraded. |
 | `agentibrain scaffold [PATH]` | Write/repair the vault layout schema. Authoritative writer of `.brain-schema`. |
 | `agentibrain version` | Print version. |
 
@@ -80,7 +80,7 @@ curl -H "Authorization: Bearer $TOK" http://127.0.0.1:8103/feed | jq '.hot_arcs'
 agentibrain tick --no-ai --wait     # deterministic tick, blocks until done
 agentibrain tick --wait             # full AI tick
 agentibrain tick --dry-run --wait   # read-only verify, no writes
-agentibrain sync --wait             # replay marker buffers + reingest raw/
+agentibrain sync --check            # replay marker buffers + reingest raw/, narrated
 ```
 
 No host crons, ever: when the stack runs under compose, `tick-cron` drains

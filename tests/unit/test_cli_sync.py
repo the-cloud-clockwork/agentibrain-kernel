@@ -89,3 +89,19 @@ def test_drain_retries_on_credential_rejection(tmp_path, monkeypatch):
     stats = cli._drain_marker_dir(tmp_path, "http://b", {})
     assert stats == {"drained": 0, "quarantined": 0, "failed": 1}
     assert (tmp_path / "a.json").exists()
+
+
+def test_drain_verbose_announces_buffer_size(tmp_path, monkeypatch, capsys):
+    _entry(tmp_path, "a.json")
+    monkeypatch.setattr(cli.httpx, "post", lambda url, **kw: _Resp(201))
+    cli._drain_marker_dir(tmp_path, "http://b", {}, verbose=True)
+    assert "1 buffered file(s) to replay" in capsys.readouterr().out
+
+
+def test_sync_help_offers_check_flag():
+    from click.testing import CliRunner
+
+    result = CliRunner().invoke(cli.main, ["sync", "--help"])
+    assert result.exit_code == 0
+    assert "--check" in result.output
+    assert "--wait" in result.output

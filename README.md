@@ -28,7 +28,7 @@ agentibrain check               # deep verify: vault write, hello-embedding, pon
 agentibrain status              # compose ps + shallow health
 agentibrain logs <service> -f   # e.g. tick-cron, brain-api
 agentibrain build               # after any git pull / code change
-agentibrain sync --wait         # re-ingest everything: marker buffers + vault raw/
+agentibrain sync --check        # re-ingest everything: buffers + raw/, narrated progress
 ```
 
 - `build`/`up`/`down`/`logs`/`status` auto-locate the stack (checkout you're
