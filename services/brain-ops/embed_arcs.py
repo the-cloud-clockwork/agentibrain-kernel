@@ -188,6 +188,25 @@ def _scan_dir(d: Path, recurse: bool = False):
         yield md
 
 
+def arc_id(md: Path, fm: dict | None = None) -> str:
+    """The pgvector key for an arc file: frontmatter cluster_id, else the stem.
+
+    ``.merged`` must come off the stem. scan_arcs already strips it when
+    deduplicating, so a file without a cluster_id was scanned as ``X`` and
+    stored as ``X.merged`` — two names for one arc. Nothing reconciles them:
+    the incremental-embed state can never match the stored key, so the arc is
+    re-embedded on every run and never recognised as current, and --prune's
+    keep_keys never contains it, so the row is a permanent orphan. The symptom
+    is invisible — search still finds it — while the index drifts further from
+    the vault on every tick.
+    """
+    if fm:
+        cid = fm.get("cluster_id")
+        if cid:
+            return cid
+    return md.stem.replace(".merged", "")
+
+
 def scan_arcs(vault: Path):
     seen_ids: set[str] = set()
 
@@ -263,7 +282,7 @@ def main() -> int:
             # Still record the cluster_id so prune doesn't delete unchanged arcs.
             try:
                 fm_only, _ = parse_frontmatter(md.read_text(encoding="utf-8"))
-                seen_keys.add(fm_only.get("cluster_id") or md.stem)
+                seen_keys.add(arc_id(md, fm_only))
             except OSError:
                 pass
             stats["skipped_unchanged"] += 1
@@ -279,11 +298,11 @@ def main() -> int:
             continue
 
         if len(content) < 50:
-            seen_keys.add(fm.get("cluster_id") or md.stem)
+            seen_keys.add(arc_id(md, fm))
             stats["skipped_noop"] += 1
             continue
 
-        cluster_id = fm.get("cluster_id") or md.stem
+        cluster_id = arc_id(md, fm)
         seen_keys.add(cluster_id)
         payload = {
             "key": cluster_id,
