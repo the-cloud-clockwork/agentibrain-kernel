@@ -374,22 +374,18 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
+    # The DB override lives in amygdala.py (--db / AMYGDALA_DB), not in a shell
+    # rewrite here: `${URL%/*}/11` turns a legal `redis://host:6379` into
+    # `redis://11` and connects to a host named "11".
     command:
-      - |
-        set -eu
-        # The amygdala consumes the canonical event bus on Redis DB
-        # AMYGDALA_DB (default 11). Most consumers' REDIS_URL ends in /0
-        # because they default to DB 0 — hand that URL straight to the
-        # amygdala and it subscribes to the cache, finds no streams, and
-        # reports a clean "no signals" heartbeat forever. Silence here is
-        # indistinguishable from a quiet fleet, so rewrite the trailing DB
-        # segment rather than trusting the caller to have set it. The
-        # Kubernetes CronJob did exactly this; the port to compose dropped it.
-        BASE="$${REDIS_URL:-redis://redis:6379/11}"
-        exec python3 /app/amygdala.py --continuous --poll-interval 5 \
-          --redis-url "$${BASE%/*}/$${AMYGDALA_DB:-11}" \
-          --vault /vault --brain-feed /vault/brain-feed
+      - /app/amygdala.py
+      - --continuous
+      - --poll-interval
+      - "5"
+      - --vault
+      - /vault
+      - --brain-feed
+      - /vault/brain-feed
     environment:
       # Interpolated from the host env / .env, then DB-corrected in the command
       # above. Without this line the container has no REDIS_URL at all and the

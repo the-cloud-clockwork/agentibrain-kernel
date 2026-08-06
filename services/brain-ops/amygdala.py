@@ -343,6 +343,30 @@ def replay(redis_url: str, count: int = 100, severity_filter: str | None = None)
     }
 
 
+def normalize_redis_db(url: str, db: str | int) -> str:
+    """Force `url` onto database `db`, whatever DB it currently names.
+
+    The amygdala reads the event bus, which lives on its own database. Most
+    callers hand it a REDIS_URL aimed at the cache instead, because DB 0 is
+    what everything else defaults to; subscribing there finds no streams and
+    produces an indefinite "no signals" heartbeat that is indistinguishable
+    from a quiet fleet.
+
+    Doing this as shell string surgery (`${url%/*}/11`) looks equivalent and
+    is not: a URL with no explicit database — `redis://host:6379`, which is
+    legal and means DB 0 — has no trailing slash to strip, so the host is
+    eaten and the result is `redis://11`, i.e. a connection to a host called
+    "11". Only strip a path component that is actually a database number.
+    """
+    trimmed = url.rstrip("/")
+    head, sep, tail = trimmed.rpartition("/")
+    # A DB suffix is digits after the LAST slash, and only when that slash is
+    # not the one in "scheme://" — `redis://host` must not lose "host".
+    if sep and tail.isdigit() and not head.endswith(":/"):
+        trimmed = head
+    return f"{trimmed}/{db}"
+
+
 def _redact_redis_url(url: str) -> str:
     """Strip the password out of a redis:// URL before it reaches a log.
 
@@ -360,7 +384,10 @@ def run_continuous(redis_url: str, vault_root: Path, brain_feed_dir: Path, poll_
     sys.stdout.reconfigure(line_buffering=True)
     sys.stderr.reconfigure(line_buffering=True)
     print(f"Amygdala continuous mode: polling every {poll_interval}s", flush=True)
-    print(f"  redis={_redact_redis_url(redis_url)} vault={vault_root} feed={brain_feed_dir}", flush=True)
+    print(
+        f"  redis={_redact_redis_url(redis_url)} vault={vault_root} feed={brain_feed_dir}",
+        flush=True,
+    )
     cycle = 0
     while True:
         try:
@@ -384,6 +411,12 @@ def run_continuous(redis_url: str, vault_root: Path, brain_feed_dir: Path, poll_
 def main() -> int:
     p = argparse.ArgumentParser(description="Amygdala — Redis Streams emergency signal consumer")
     p.add_argument("--redis-url", default=os.getenv("REDIS_URL", "redis://redis:6379/11"))
+    p.add_argument(
+        "--db",
+        default=os.getenv("AMYGDALA_DB", "11"),
+        help="Redis database holding the event bus. Overrides whatever DB "
+        "--redis-url names, because that URL is usually the shared cache one.",
+    )
     p.add_argument("--vault", help="Vault root path (required unless --replay)")
     p.add_argument("--brain-feed", help="Brain feed directory (required unless --replay)")
     p.add_argument("--dry-run", action="store_true")
@@ -407,6 +440,10 @@ def main() -> int:
         help="Filter replay by severity",
     )
     args = p.parse_args()
+    # Applied before any code path uses the URL, replay included — a replay
+    # against the cache DB reports an empty history just as convincingly as a
+    # consume against it reports no signals.
+    args.redis_url = normalize_redis_db(args.redis_url, args.db)
 
     if args.replay:
         count = max(1, min(args.last, 1000))
