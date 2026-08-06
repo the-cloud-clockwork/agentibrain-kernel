@@ -393,6 +393,238 @@ def tick_cmd(
     sys.exit(2)
 
 
+def _drain_marker_dir(
+    directory: Path, base: str, headers: dict, verbose: bool = False
+) -> dict[str, int]:
+    """Replay buffered marker files as POST /marker; delete each on success.
+
+    Idempotency-key parity with agentihooks (uuid5 of session-type-content) so
+    replays dedupe server-side; the original `ts` rides in attrs so brain-api
+    backdates the marker into its original dated files. Unparseable or
+    payload-rejected (400/404/422) files quarantine as .bad; transient
+    failures (network, 5xx, 401/403/429) stay put for the next sync.
+    """
+    import json as _json
+    import uuid as _uuid
+
+    stats = {"drained": 0, "quarantined": 0, "failed": 0}
+    if not directory.is_dir():
+        return stats
+    files = sorted(directory.glob("*.json"))
+    if verbose and files:
+        console.print(f"  {directory.name}: {len(files)} buffered file(s) to replay")
+    for i, f in enumerate(files):
+        if verbose and i and i % 100 == 0:
+            console.print(
+                f"  {directory.name}: {i}/{len(files)} — "
+                f"drained={stats['drained']} quarantined={stats['quarantined']} "
+                f"failed={stats['failed']}"
+            )
+        try:
+            entry = _json.loads(f.read_text(encoding="utf-8"))
+            session_id = entry.get("session_id") or ""
+            content = (entry.get("content") or "")[:4096]
+            marker_type = entry.get("type") or ""
+            if not marker_type or not content.strip():
+                raise ValueError("missing type/content")
+        except (ValueError, OSError, TypeError):
+            try:
+                f.rename(f.with_suffix(".bad"))
+                stats["quarantined"] += 1
+            except OSError:
+                pass
+            continue
+
+        attrs = dict(entry.get("attrs") or {})
+        attrs.setdefault("session_id", session_id)
+        attrs.setdefault("source", entry.get("agent_name") or attrs.get("source") or "sync")
+        if entry.get("project"):
+            attrs.setdefault("project", entry["project"])
+        if entry.get("ts"):
+            attrs.setdefault("ts", entry["ts"])
+        idem = _uuid.uuid5(_uuid.NAMESPACE_URL, f"{session_id}-{marker_type}-{content}").hex[:32]
+
+        try:
+            r = httpx.post(
+                f"{base}/marker",
+                headers={**headers, "X-Idempotency-Key": idem},
+                json={"type": marker_type, "content": content, "attrs": attrs},
+                timeout=15.0,
+            )
+        except httpx.HTTPError:
+            stats["failed"] += 1
+            continue
+        if r.status_code in (400, 404, 422):
+            # Payload-level rejection — permanent. 401/403/429 (stale token,
+            # rate limit) must stay retry-eligible or a misconfigured token
+            # destroys the entire queue in one pass.
+            try:
+                f.rename(f.with_suffix(".bad"))
+                stats["quarantined"] += 1
+            except OSError:
+                pass
+            continue
+        if r.status_code >= 400:
+            stats["failed"] += 1
+            continue
+
+        try:
+            f.unlink()
+        except FileNotFoundError:
+            pass  # a concurrent drain won this file
+        stats["drained"] += 1
+    return stats
+
+
+@main.command("sync")
+@click.option("--wait", is_flag=True, help="Poll until the follow-up tick completes.")
+@click.option(
+    "--check",
+    "check",
+    is_flag=True,
+    help="Like --wait, but narrates progress: drain counters, tick state changes, final verdict.",
+)
+@click.option("--brain-url", envvar="BRAIN_URL", help="Override brain-api base URL.")
+@click.option(
+    "--token",
+    envvar="KB_ROUTER_TOKEN",
+    help="Bearer token (defaults to env / settings).",
+)
+def sync_cmd(wait: bool, check: bool, brain_url: str | None, token: str | None) -> None:
+    """Re-ingest everything into the brain.
+
+    Replays the agentihooks marker buffers (brain-outbox and its -backlog
+    sibling) over POST /marker, then requests a tick so replayed markers
+    cluster and the raw/ ingest index refreshes. Fully idempotent — safe to
+    run any time.
+    """
+    import os as _os
+
+    wait = wait or check
+    settings = _load_settings()
+    base = (brain_url or settings.brain_url).rstrip("/")
+
+    if not token:
+        env_path = settings.config_dir.expanduser() / ".env"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if line.startswith("KB_ROUTER_TOKEN="):
+                    token = line.split("=", 1)[1].strip()
+                    break
+    if not token:
+        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
+        sys.exit(2)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    outbox = Path(
+        _os.environ.get(
+            "BRAIN_WRITER_OUTBOX",
+            str(Path.home() / ".agentihooks" / "brain-outbox"),
+        )
+    ).expanduser()
+    backlog = outbox.with_name(outbox.name + "-backlog")
+
+    totals = {"drained": 0, "quarantined": 0, "failed": 0}
+    # Backlog first: its files are months older than the live outbox, and
+    # append-only targets (BLOCKS.md) keep arrival order — replaying oldest
+    # first keeps them chronological.
+    for d in (backlog, outbox):
+        n_buffered = len(list(d.glob("*.json"))) if d.is_dir() else 0
+        if n_buffered == 0:
+            console.print(f"  {d.name}: empty — nothing to replay")
+            continue
+        st = _drain_marker_dir(d, base, headers, verbose=check)
+        for k, v in st.items():
+            totals[k] += v
+        console.print(
+            f"  {d.name}: drained={st['drained']} "
+            f"quarantined={st['quarantined']} failed={st['failed']}"
+        )
+    if totals["failed"]:
+        console.print(
+            f"[yellow]{totals['failed']} marker(s) could not be delivered — "
+            "left in place for the next sync[/yellow]"
+        )
+
+    try:
+        r = httpx.post(f"{base}/tick", headers=headers, params={"source": "sync"}, timeout=10.0)
+        r.raise_for_status()
+    except httpx.HTTPError as e:
+        console.print(f"[red]POST /tick failed: {e}[/red]")
+        sys.exit(1)
+    job_id = r.json().get("job_id", "?")
+    console.print(f"[green]✓[/green] sync tick enqueued — job_id={job_id}")
+
+    # Exit contract: 0 = clean, 1 = hard failure (tick unreachable/failed),
+    # 2 = degraded (some markers still buffered — rerun sync later).
+    if not wait:
+        sys.exit(2 if totals["failed"] else 0)
+
+    console.print("  waiting (≤5 min)…")
+    import time as _time
+
+    deadline = _time.time() + 300
+    started = _time.time()
+    last_state = ""
+    stall_hinted = False
+    while _time.time() < deadline:
+        try:
+            s = httpx.get(f"{base}/tick/{job_id}", headers=headers, timeout=10.0)
+            s.raise_for_status()
+            status = s.json()
+        except httpx.HTTPError:
+            _time.sleep(2)
+            continue
+        state = status.get("status")
+        if check and state and state != last_state:
+            console.print(f"  tick {job_id}: [bold]{state}[/bold]")
+            last_state = state
+        if (
+            check
+            and not stall_hinted
+            and state in {"pending", "requested", None}
+            and (_time.time() - started) > 75
+        ):
+            stall_hinted = True
+            console.print(
+                "  [yellow]still pending after 75s — tick-drain normally picks jobs up "
+                "within ~30s. Is the stack current and running? Try "
+                "`agentibrain status` and `agentibrain logs tick-drain --since 5m`; "
+                "an old image needs `agentibrain build`.[/yellow]"
+            )
+        if state in {"completed", "failed"}:
+            if not check:
+                console.print(f"  [bold]{state}[/bold]")
+            if check:
+                detail = {
+                    k: v
+                    for k, v in status.items()
+                    if k not in {"status", "job_id"} and v not in (None, "", {})
+                }
+                error_tail = detail.pop("error_tail", None)
+                if detail:
+                    console.print(f"  tick detail: {detail}")
+                if error_tail:
+                    console.print("[red]tick error tail:[/red]")
+                    console.print(error_tail)
+                console.print(
+                    f"[bold]sync summary[/bold]: replayed={totals['drained']} "
+                    f"quarantined={totals['quarantined']} "
+                    f"still-buffered={totals['failed']} tick={state}"
+                )
+                remaining = sum(
+                    1 for d in (backlog, outbox) if d.is_dir() for _ in d.glob("*.json")
+                )
+                console.print(f"  buffers now hold {remaining} file(s)")
+            if state != "completed":
+                sys.exit(1)
+            sys.exit(2 if totals["failed"] else 0)
+        _time.sleep(3)
+
+    console.print("[yellow]timeout — job still running. Check tick-drain logs.[/yellow]")
+    sys.exit(2)
+
+
 @main.command("scaffold")
 @click.argument("vault_path", type=click.Path(), required=False)
 @click.option("--force-upgrade", is_flag=True, help="Overwrite existing .brain-schema.")

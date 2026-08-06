@@ -20,7 +20,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
+from uuid import uuid4
 
 VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "/vault")).resolve()
 
@@ -91,9 +91,27 @@ def _write_new(path: Path, body: str) -> None:
     path.write_text(body + ("\n" if not body.endswith("\n") else ""), encoding="utf-8")
 
 
-def _format_timestamp_utc() -> tuple[str, str]:
-    now = datetime.now(tz=timezone.utc)
-    return now.strftime("%Y-%m-%d"), now.strftime("%Y%m%dT%H%M%SZ")
+def _format_timestamp_utc(override_ts: str | None = None) -> tuple[str, str, str]:
+    """Return (date_part, stamp, ts_iso), backdated when the marker carries one.
+
+    A replayed marker (outbox/backlog sync) sends its original emission time in
+    `attrs.ts`; honouring it keeps lessons/milestones in their original dated
+    files and arc dating truthful. Anything unparseable falls back to now.
+    """
+    moment = datetime.now(tz=timezone.utc)
+    if override_ts:
+        try:
+            parsed = datetime.fromisoformat(str(override_ts).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            moment = parsed.astimezone(timezone.utc)
+        except ValueError:
+            pass
+    return (
+        moment.strftime("%Y-%m-%d"),
+        moment.strftime("%Y%m%dT%H%M%SZ"),
+        moment.isoformat(timespec="seconds"),
+    )
 
 
 def _build_lesson_entry(content: str, attrs: dict[str, Any], ts_iso: str) -> str:
@@ -171,8 +189,7 @@ def write_marker(
     attrs = attrs or {}
     root = Path(vault_root) if vault_root else VAULT_ROOT
     root.mkdir(parents=True, exist_ok=True)
-    date_part, stamp = _format_timestamp_utc()
-    ts_iso = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+    date_part, stamp, ts_iso = _format_timestamp_utc(attrs.get("ts"))
 
     if marker_type == "lesson":
         rel = f"left/reference/lessons-{date_part}.md"
@@ -203,6 +220,13 @@ def write_marker(
         slug = _slugify(attrs.get("title") or content, max_len=60)
         rel = f"amygdala/{stamp}-{severity}-{slug}.md"
         target = _resolve_inside_vault(rel, root)
+        # Second-resolution stamps collide under alert bursts (crash loop
+        # firing same-title signals within one second). A DIFFERENT signal
+        # must never be refused for a filename clash — true duplicates are
+        # already caught by the HTTP idempotency layer before reaching here.
+        if target.exists():
+            rel = f"amygdala/{stamp}-{severity}-{slug}-{uuid4().hex[:6]}.md"
+            target = _resolve_inside_vault(rel, root)
         body = _build_signal_file(content, attrs, ts_iso, slug)
         _write_new(target, body)
         action = "created"
@@ -212,6 +236,10 @@ def write_marker(
         slug = _slugify(attrs.get("title") or content, max_len=60)
         rel = f"left/decisions/ADR-{adr_number:04d}-{slug}.md"
         target = _resolve_inside_vault(rel, root)
+        if target.exists():
+            adr_number += 1
+            rel = f"left/decisions/ADR-{adr_number:04d}-{slug}.md"
+            target = _resolve_inside_vault(rel, root)
         body = _build_decision_file(content, attrs, ts_iso, adr_number)
         _write_new(target, body)
         action = "created"

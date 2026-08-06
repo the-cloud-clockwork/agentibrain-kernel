@@ -172,6 +172,14 @@ services:
             run_extraction "$${EXTRACT_SINCE:-26h}"
           fi
 
+          # Drain agentihooks marker buffers (outbox + -backlog) over HTTP.
+          # Replaces host crons: compose owns the schedule when compose runs
+          # the brain. No-op when the mount is empty or absent.
+          if [ -n "$${KB_ROUTER_TOKEN}" ] && [ -d /agentihooks/brain-outbox ]; then
+            python3 /app/outbox_drain.py --outbox /agentihooks/brain-outbox \
+              || echo "[tick-cron] outbox_drain failed (non-fatal)"
+          fi
+
           # Hybrid agentibrain tick
           python3 /app/brain_tick.py \
             --vault /vault \
@@ -179,10 +187,12 @@ services:
             $${FLAGS} \
             || echo "[tick-cron] brain_tick failed (continuing)"
 
-          # Refresh arc embeddings + prune orphans
+          # Refresh arc + raw-ingest embeddings, prune orphans
           if [ -n "$${EMBEDDINGS_API_KEY}" ]; then
             python3 /app/embed_arcs.py --vault /vault --prune \
               || echo "[tick-cron] embed_arcs failed (non-fatal)"
+            python3 /app/embed_raw.py --vault /vault --prune \
+              || echo "[tick-cron] embed_raw failed (non-fatal)"
           fi
 
           echo "[tick-cron] sleeping $${INTERVAL}s until next tick"
@@ -198,16 +208,32 @@ services:
       BRAIN_DECAY_START_DAYS: ${BRAIN_DECAY_START_DAYS:-2}
       BRAIN_DECAY_INTERVAL_DAYS: ${BRAIN_DECAY_INTERVAL_DAYS:-2}
       BRAIN_STALE_SIGNAL_DAYS: ${BRAIN_STALE_SIGNAL_DAYS:-3}
+      # Heat thresholds govern which arcs sit in frontal-lobe/conscious. Unset
+      # here they fell through to the code defaults (promote 5 / demote 3),
+      # which are stricter than a long-lived deployment usually wants — the
+      # demotion branch tests `heat < max(DEMOTE, PROMOTE)`, so a higher
+      # PROMOTE_HEAT silently evicts arcs from conscious/ on the next tick.
+      # Surfaced so a vault carrying its own tuning can restore it.
+      BRAIN_PROMOTE_HEAT: ${BRAIN_PROMOTE_HEAT:-5}
+      BRAIN_DEMOTE_HEAT: ${BRAIN_DEMOTE_HEAT:-3}
+      BRAIN_GRADUATE_HEAT: ${BRAIN_GRADUATE_HEAT:-1}
+      BRAIN_GRADUATE_AGE_DAYS: ${BRAIN_GRADUATE_AGE_DAYS:-14}
+      BRAIN_MAX_SYNTH_ARCS: ${BRAIN_MAX_SYNTH_ARCS:-60}
       EXTRACT_HOUR: "${EXTRACT_HOUR:-04}"
       EXTRACT_SINCE: ${EXTRACT_SINCE:-26h}
       EXTRACT_MIN_TURNS: "${EXTRACT_MIN_TURNS:-5}"
       EXTRACT_PROJECTS_DIR: /shared/.claude/projects
       EXTRACT_ON_BOOT: "${EXTRACT_ON_BOOT:-0}"
       EXTRACT_BOOT_SINCE: ${EXTRACT_BOOT_SINCE:-90d}
+      BRAIN_API_URL: http://brain-api:8080
+      KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - ${VAULT_ROOT_HOST:-~/agentibrain-vault}:/vault
       - ${CLAUDE_PROJECTS_HOST:-~/.claude/projects}:/shared/.claude/projects:ro
+      # Marker buffers written by agentihooks sessions on this host; tick-cron
+      # drains them into brain-api so no host cron is ever needed.
+      - ${AGENTIHOOKS_HOME_HOST:-~/.agentihooks}:/agentihooks
 
   tick-drain:
     build:
@@ -265,14 +291,19 @@ services:
               n=$$(echo $$kind_files | wc -w)
               ticks=$$((ticks+1))
               echo "[tick-drain] coalescing $$n request(s) into one tick [flags='$$kind_flags']"
+              # Capture the tick's combined output: on failure it is stamped
+              # into each failed request file (error_tail) so GET /tick/{id}
+              # answers "why" without a trip to the container logs.
+              TLOG=/tmp/tick-last.log
               if python3 /app/brain_tick.py \
                   --vault /vault --brain-feed /vault/brain-feed \
                   --inference-url "$${INFERENCE_URL:-}" \
-                  --source brain-drain $$kind_flags; then
+                  --source brain-drain $$kind_flags > "$$TLOG" 2>&1; then
                 dest="$$DONE"; ok=$$((ok+n))
               else
                 dest="$$FAIL"; ko=$$((ko+n))
               fi
+              cat "$$TLOG"
               # A failed mv must NOT abort the batch. By this point the tick has
               # already run and mutated the vault, and other buckets are still
               # queued; dying here under `set -e` would discard completed work,
@@ -283,6 +314,8 @@ services:
                 if ! mv "$$f" "$$dest/$$(basename "$$f")"; then
                   stuck=$$((stuck+1))
                   echo "[tick-drain] WARN: could not move $$(basename "$$f") to $$dest — retrying next pass"
+                elif [ "$$dest" = "$$FAIL" ]; then
+                  python3 /app/annotate_fail.py "$$dest/$$(basename "$$f")" "$$TLOG" || true
                 fi
               done
               # Never let the loop's last exit status become the function's, or
@@ -303,6 +336,8 @@ services:
               echo "[tick-drain] refreshing embeddings after $$ok processed request(s)"
               python3 /app/embed_arcs.py --vault /vault --prune \
                 || echo "[tick-drain] embed_arcs failed (non-fatal)"
+              python3 /app/embed_raw.py --vault /vault --prune \
+                || echo "[tick-drain] embed_raw failed (non-fatal)"
             fi
           fi
           sleep "$$INTERVAL"
@@ -318,6 +353,13 @@ services:
       BRAIN_DECAY_START_DAYS: ${BRAIN_DECAY_START_DAYS:-2}
       BRAIN_DECAY_INTERVAL_DAYS: ${BRAIN_DECAY_INTERVAL_DAYS:-2}
       BRAIN_STALE_SIGNAL_DAYS: ${BRAIN_STALE_SIGNAL_DAYS:-3}
+      # Same reason these must mirror tick-cron: a drain-triggered tick that
+      # promoted/demoted on different thresholds would fight the scheduled one.
+      BRAIN_PROMOTE_HEAT: ${BRAIN_PROMOTE_HEAT:-5}
+      BRAIN_DEMOTE_HEAT: ${BRAIN_DEMOTE_HEAT:-3}
+      BRAIN_GRADUATE_HEAT: ${BRAIN_GRADUATE_HEAT:-1}
+      BRAIN_GRADUATE_AGE_DAYS: ${BRAIN_GRADUATE_AGE_DAYS:-14}
+      BRAIN_MAX_SYNTH_ARCS: ${BRAIN_MAX_SYNTH_ARCS:-60}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - ${VAULT_ROOT_HOST:-~/agentibrain-vault}:/vault
