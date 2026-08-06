@@ -18,9 +18,7 @@ from mcp.server.fastmcp import FastMCP
 
 
 EMBEDDINGS_URL = os.getenv("EMBEDDINGS_URL", "http://agentibrain-embeddings:8080")
-EMBEDDINGS_API_KEY = (
-    os.environ.get("EMBEDDINGS_API_KEY") or ""
-)
+EMBEDDINGS_API_KEY = os.environ.get("EMBEDDINGS_API_KEY") or ""
 BRAIN_API_URL = os.getenv(
     "BRAIN_API_URL",
     os.getenv("OBSIDIAN_READER_URL", "http://agentibrain-brain-api:8080"),
@@ -59,16 +57,18 @@ async def _search_embeddings(query: str, limit: int, min_score: float) -> list[d
         hits = data.get("results", []) if isinstance(data, dict) else []
         out = []
         for h in hits:
-            out.append({
-                "source": "artifact",
-                "ref": h.get("key") or "",
-                "title": (h.get("key") or "").split("/")[-1] or h.get("key", ""),
-                "score": float(h.get("score", 0.0)),
-                "preview": h.get("text_preview") or "",
-                "producer": h.get("producer"),
-                "content_type": h.get("content_type"),
-                "metadata": h.get("metadata") or {},
-            })
+            out.append(
+                {
+                    "source": "artifact",
+                    "ref": h.get("key") or "",
+                    "title": (h.get("key") or "").split("/")[-1] or h.get("key", ""),
+                    "score": float(h.get("score", 0.0)),
+                    "preview": h.get("text_preview") or "",
+                    "producer": h.get("producer"),
+                    "content_type": h.get("content_type"),
+                    "metadata": h.get("metadata") or {},
+                }
+            )
         return out
     except Exception:
         return []
@@ -98,15 +98,17 @@ async def _search_vault(query: str, limit: int) -> list[dict]:
         for h in hits:
             snippets = h.get("snippets") or []
             preview = "\n---\n".join(s.get("snippet", "") for s in snippets[:2]) if snippets else ""
-            out.append({
-                "source": "obsidian",
-                "ref": h.get("path") or "",
-                "title": h.get("title") or (h.get("path") or "").split("/")[-1],
-                "score": float(h.get("score", 0)),
-                "preview": preview[:500],
-                "match_count": h.get("match_count", 0),
-                "metadata": {},
-            })
+            out.append(
+                {
+                    "source": "obsidian",
+                    "ref": h.get("path") or "",
+                    "title": h.get("title") or (h.get("path") or "").split("/")[-1],
+                    "score": float(h.get("score", 0)),
+                    "preview": preview[:500],
+                    "match_count": h.get("match_count", 0),
+                    "metadata": {},
+                }
+            )
         return out
     except Exception:
         return []
@@ -193,15 +195,17 @@ def register(mcp: FastMCP):
         merged.sort(key=lambda r: -r.get("normalized_score", 0))
         merged = merged[: limit * 2]
 
-        return json.dumps({
-            "query": query,
-            "count": len(merged),
-            "results": merged,
-            "sources_searched": (
-                (["artifact"] if include_artifact else [])
-                + (["obsidian"] if include_obsidian else [])
-            ),
-        })
+        return json.dumps(
+            {
+                "query": query,
+                "count": len(merged),
+                "results": merged,
+                "sources_searched": (
+                    (["artifact"] if include_artifact else [])
+                    + (["obsidian"] if include_obsidian else [])
+                ),
+            }
+        )
 
     @mcp.tool()
     async def kb_brief(
@@ -226,12 +230,14 @@ def register(mcp: FastMCP):
 
         hits = search_payload.get("results", [])[:limit]
         if not hits:
-            return json.dumps({
-                "query": query,
-                "hits": [],
-                "brief": "Nothing found in the knowledge base for this query.",
-                "candidate_refs": [],
-            })
+            return json.dumps(
+                {
+                    "query": query,
+                    "hits": [],
+                    "brief": "Nothing found in the knowledge base for this query.",
+                    "candidate_refs": [],
+                }
+            )
 
         lines = []
         for i, h in enumerate(hits):
@@ -239,7 +245,7 @@ def register(mcp: FastMCP):
             ref = h.get("ref", "")
             title = h.get("title", "")
             preview = (h.get("preview") or "")[:400].replace("\n", " ")
-            lines.append(f"[{i+1}] {src}://{ref} - {title}\n    {preview}")
+            lines.append(f"[{i + 1}] {src}://{ref} - {title}\n    {preview}")
         digest = "\n\n".join(lines)
 
         system_prompt = (
@@ -248,20 +254,22 @@ def register(mcp: FastMCP):
             "and 'obsidian' (vault). Write a 3-5 line brief of what's available, "
             "with specific references to items by their [number]. End by listing 2-4 of the most "
             "relevant refs as a JSON array in this exact format on the final line:\n"
-            "CANDIDATE_REFS: [\"source://ref\", ...]"
+            'CANDIDATE_REFS: ["source://ref", ...]'
         )
         user_prompt = f"Query: {query}\n\nSearch hits:\n{digest}"
 
         chosen_model = model or BRAIN_BRIEF_MODEL
         brief_content = await _inference_chat(system_prompt, user_prompt, chosen_model)
         if not brief_content:
-            return json.dumps({
-                "query": query,
-                "hits": hits,
-                "brief": "[LLM unavailable - returning raw hits]",
-                "candidate_refs": [f"{h.get('source')}://{h.get('ref')}" for h in hits[:3]],
-                "model": chosen_model,
-            })
+            return json.dumps(
+                {
+                    "query": query,
+                    "hits": hits,
+                    "brief": "[LLM unavailable - returning raw hits]",
+                    "candidate_refs": [f"{h.get('source')}://{h.get('ref')}" for h in hits[:3]],
+                    "model": chosen_model,
+                }
+            )
 
         candidate_refs: list[str] = []
         brief_clean = brief_content
@@ -278,10 +286,12 @@ def register(mcp: FastMCP):
         if not candidate_refs:
             candidate_refs = [f"{h.get('source')}://{h.get('ref')}" for h in hits[:3]]
 
-        return json.dumps({
-            "query": query,
-            "hits": hits,
-            "brief": brief_clean,
-            "candidate_refs": candidate_refs,
-            "model": chosen_model,
-        })
+        return json.dumps(
+            {
+                "query": query,
+                "hits": hits,
+                "brief": brief_clean,
+                "candidate_refs": candidate_refs,
+                "model": chosen_model,
+            }
+        )

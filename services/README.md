@@ -24,7 +24,7 @@ docker compose up --build
 ```
 
 For the full stack (all services + Postgres + Redis + optional MinIO), use
-the unified compose rendered by `brain up` (Phase 5).
+the unified compose rendered by `agentibrain up` (Phase 5).
 
 ## Env var convention
 

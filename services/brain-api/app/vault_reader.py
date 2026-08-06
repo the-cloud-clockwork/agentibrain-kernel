@@ -62,7 +62,12 @@ def list_files(
             rel = Path(dirpath, fn).relative_to(VAULT_ROOT)
             hits.append(str(rel))
             if len(hits) >= limit:
-                return {"prefix": prefix, "count": len(hits), "files": sorted(hits), "truncated": True}
+                return {
+                    "prefix": prefix,
+                    "count": len(hits),
+                    "files": sorted(hits),
+                    "truncated": True,
+                }
     hits.sort()
     return {"prefix": prefix, "count": len(hits), "files": hits}
 
@@ -152,16 +157,18 @@ def search_vault(
                 + (10 * filename_token_hits)
                 + (20 if all_tokens_matched else 0)
             )
-            results.append({
-                "path": rel,
-                "score": score,
-                "match_count": len(hit_indices),
-                "tokens_matched": len(tokens_found),
-                "tokens_total": len(tokens),
-                "filename_match": filename_token_hits > 0,
-                "snippets": snippets,
-                "title": Path(fn).stem,
-            })
+            results.append(
+                {
+                    "path": rel,
+                    "score": score,
+                    "match_count": len(hit_indices),
+                    "tokens_matched": len(tokens_found),
+                    "tokens_total": len(tokens),
+                    "filename_match": filename_token_hits > 0,
+                    "snippets": snippets,
+                    "title": Path(fn).stem,
+                }
+            )
 
     results.sort(key=lambda r: (-r["score"], r["path"]))
     results = results[:limit]
@@ -195,6 +202,7 @@ def write_inbox(
         target.open("x").close()
     except FileExistsError:
         from uuid import uuid4
+
         rel_path = f"{RAW_INBOX_PREFIX}/{date_part}-{slug}-{uuid4().hex[:6]}.md"
         target = resolve_inside_vault(rel_path)
 

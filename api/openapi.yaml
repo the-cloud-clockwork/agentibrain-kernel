@@ -11,7 +11,7 @@ info:
     - Humans + other agents for ingest and retrieval.
 
     **Auth:** bearer token via `Authorization: Bearer $KB_ROUTER_TOKEN`. The
-    token is issued at `brain init` time and stored in `~/.agentibrain/.env`.
+    token is issued at `agentibrain init` time and stored in `~/.agentibrain/.env`.
 
     **Status:** v0.1.0 ships `/health`, `/ingest`, `/search`, `/brief`,
     `/dispatch`. The fleet-facing endpoints (`/feed`, `/signal`, `/marker`,
@@ -19,7 +19,7 @@ info:
 
 servers:
   - url: http://localhost:8102
-    description: Default local brain-api port (brain init default).
+    description: Default local brain-api port (agentibrain init default).
 
 components:
   securitySchemes:
@@ -120,6 +120,32 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/HealthResponse" }
+
+  /health/deep:
+    get:
+      summary: >-
+        Deep readiness probe. Round-trips a vault write, delegates to the
+        embeddings service's own deep check (DB + live embedding call + schema
+        dimension match), and verifies the inference gateway accepts the
+        configured key. Returns status "ok" or "degraded" with a per-dependency
+        checks map.
+      responses:
+        "200":
+          description: Aggregated readiness with per-dependency detail.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, checks]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded]
+                  service:
+                    type: string
+                  checks:
+                    type: object
+                    additionalProperties: true
 
   /ingest:
     post:

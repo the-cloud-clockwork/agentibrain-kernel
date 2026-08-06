@@ -1,4 +1,4 @@
-"""``brain`` CLI entry point."""
+"""``agentibrain`` CLI entry point."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def _load_settings() -> BrainSettings:
 
 
 @click.group()
-@click.version_option(__version__, prog_name="brain")
+@click.version_option(__version__, prog_name="agentibrain")
 def main() -> None:
     """agentibrain — standalone brain + KB kernel."""
 
@@ -91,29 +91,90 @@ def init(
     console.print(f"  {token}")
     console.print()
     console.print(
-        "Next: [cyan]brain up[/cyan] to start the stack, then [cyan]brain scaffold[/cyan]."
+        "Next: [cyan]agentibrain up[/cyan] to start the stack, then [cyan]agentibrain scaffold[/cyan]."
     )
+
+
+def _find_deployment_or_exit() -> tuple[str, Path, BrainSettings]:
+    """Detect the compose deployment (any mode, any cwd) or exit 2."""
+    settings = _load_settings()
+    dep = bootstrap.find_deployment(settings)
+    if dep is None:
+        console.print(
+            "[red]no agentibrain deployment found — run ./local/bootstrap.sh "
+            "in the repo, or `agentibrain init`[/red]"
+        )
+        sys.exit(2)
+    mode, compose_dir = dep
+    return mode, compose_dir, settings
 
 
 @main.command("up")
 def up_cmd() -> None:
-    """Start the brain stack (docker compose up -d + migrations)."""
-    settings = _load_settings()
-    proc = bootstrap.compose_up(settings)
-    if proc.returncode != 0:
-        console.print(f"[red]compose up failed[/red]\n{proc.stderr}")
-        sys.exit(proc.returncode)
-    console.print(proc.stdout or "[green]compose up ok[/green]")
-    console.print("\nRunning migrations…")
-    for line in bootstrap.run_migrations(settings):
-        console.print(f"  {line}")
+    """Start the brain stack wherever it lives (docker compose up -d)."""
+    mode, compose_dir, settings = _find_deployment_or_exit()
+    if mode == "init":
+        proc = bootstrap.compose_up(settings)
+        if proc.returncode != 0:
+            console.print(f"[red]compose up failed[/red]\n{proc.stderr}")
+            sys.exit(proc.returncode)
+        console.print(proc.stdout or "[green]compose up ok[/green]")
+        console.print("\nRunning migrations…")
+        for line in bootstrap.run_migrations(settings):
+            console.print(f"  {line}")
+        return
+    console.print(f"[bold]starting[/bold] ({mode} @ {compose_dir})")
+    rc = bootstrap.compose_stream(["up", "-d"], compose_dir)
+    if rc != 0:
+        sys.exit(rc)
+
+
+@main.command("build")
+@click.argument("services", nargs=-1)
+def build_cmd(services: tuple[str, ...]) -> None:
+    """Rebuild + restart the stack (docker compose up -d --build [SERVICES]).
+
+    The one command that makes a code change take effect: finds the compose
+    deployment, rebuilds changed images, recreates their containers, then
+    shows the resulting ps.
+    """
+    _, compose_dir, _ = _find_deployment_or_exit()
+    console.print(f"[bold]build + up[/bold] @ {compose_dir}")
+    rc = bootstrap.compose_stream(["up", "-d", "--build", *services], compose_dir)
+    if rc != 0:
+        sys.exit(rc)
+    ps = bootstrap._docker_compose(["ps"], compose_dir)
+    console.print(ps.stdout)
+
+
+@main.command("logs")
+@click.argument("service", required=False)
+@click.option("-f", "--follow", is_flag=True, help="Stream logs until Ctrl-C.")
+@click.option("--since", default=None, help="Only logs newer than this (e.g. 10m, 2h).")
+@click.option("--tail", default=None, type=int, help="Number of trailing lines per service.")
+def logs_cmd(service: str | None, follow: bool, since: str | None, tail: int | None) -> None:
+    """Show service logs (docker compose logs passthrough)."""
+    _, compose_dir, _ = _find_deployment_or_exit()
+    args = ["logs"]
+    if follow:
+        args.append("-f")
+    if since:
+        args += ["--since", since]
+    if tail is not None:
+        args += ["--tail", str(tail)]
+    if service:
+        args.append(service)
+    sys.exit(bootstrap.compose_stream(args, compose_dir))
 
 
 @main.command("down")
 def down_cmd() -> None:
-    """Stop the brain stack (docker compose down)."""
-    settings = _load_settings()
-    proc = bootstrap.compose_down(settings)
+    """Stop the brain stack (docker compose down — volumes survive)."""
+    mode, compose_dir, settings = _find_deployment_or_exit()
+    if mode == "init":
+        proc = bootstrap.compose_down(settings)
+    else:
+        proc = bootstrap._docker_compose(["down"], compose_dir)
     if proc.returncode != 0:
         console.print(f"[red]compose down failed[/red]\n{proc.stderr}")
         sys.exit(proc.returncode)
@@ -124,9 +185,18 @@ def down_cmd() -> None:
 def status_cmd() -> None:
     """Show health of all services."""
     settings = _load_settings()
-    ps = bootstrap.compose_ps(settings)
-    console.print("[bold]docker compose ps[/bold]")
-    console.print(ps.stdout)
+    dep = bootstrap.find_deployment(settings)
+    if dep:
+        mode, compose_dir = dep
+        ps = bootstrap._docker_compose(["ps"], compose_dir)
+        console.print(f"[bold]docker compose ps[/bold] ({mode} @ {compose_dir})")
+        console.print(ps.stdout)
+    else:
+        # The HTTP health check below still runs.
+        console.print(
+            "[yellow]no deployment found — run ./local/bootstrap.sh in the repo, "
+            "or `agentibrain init`[/yellow]"
+        )
 
     token_path = settings.config_dir.expanduser() / ".env"
     token = None
@@ -137,7 +207,7 @@ def status_cmd() -> None:
                 break
 
     if not token:
-        console.print("[yellow]no KB_ROUTER_TOKEN — run `brain init` first[/yellow]")
+        console.print("[yellow]no KB_ROUTER_TOKEN — run `agentibrain init` first[/yellow]")
         return
 
     try:
@@ -151,6 +221,96 @@ def status_cmd() -> None:
             console.print(r.json())
     except httpx.HTTPError as e:
         console.print(f"[red]health check failed: {e}[/red]")
+
+
+@main.command("check")
+@click.option("--brain-url", envvar="BRAIN_URL", help="Override brain-api base URL.")
+@click.option(
+    "--token",
+    envvar="KB_ROUTER_TOKEN",
+    help="Bearer token (defaults to env / settings).",
+)
+def check_cmd(brain_url: str | None, token: str | None) -> None:
+    """Deep sanity check — verify every dependency actually works.
+
+    Calls brain-api /health/deep, which round-trips a vault write, asks the
+    embeddings service to hit its DB and run a real embedding call (checking
+    the model's output dimension against the pgvector schema), and verifies
+    the inference gateway accepts the configured key.
+
+    Exit 0 when everything passes, 1 when any check is degraded.
+    """
+    settings = _load_settings()
+    base = (brain_url or settings.brain_url).rstrip("/")
+
+    if not token:
+        env_path = settings.config_dir.expanduser() / ".env"
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if line.startswith("KB_ROUTER_TOKEN="):
+                    token = line.split("=", 1)[1].strip()
+                    break
+    if not token:
+        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
+        sys.exit(2)
+
+    try:
+        r = httpx.get(
+            f"{base}/health/deep",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=60.0,
+        )
+        r.raise_for_status()
+    except httpx.HTTPError as e:
+        # A degraded endpoint returns 500-with-JSON in some deployments; try to
+        # render its body before giving up so the operator sees the reason.
+        body = None
+        resp = getattr(e, "response", None)
+        if resp is not None:
+            try:
+                body = resp.json()
+            except ValueError:
+                body = None
+        console.print(f"[red]GET {base}/health/deep failed: {e}[/red]")
+        if isinstance(body, dict) and body.get("detail"):
+            console.print(f"[red]  {body['detail']}[/red]")
+        sys.exit(1)
+
+    try:
+        payload = r.json()
+    except ValueError:
+        console.print(f"[red]non-JSON response from {base}/health/deep:[/red]")
+        console.print(r.text[:500])
+        sys.exit(1)
+
+    overall = payload.get("status", "unknown")
+    checks = payload.get("checks", {})
+
+    for name, detail in checks.items():
+        if not isinstance(detail, dict):
+            console.print(f"[red]✗[/red] [bold]{name}[/bold]: {detail}")
+            continue
+        mark = "[green]✓[/green]" if detail.get("ok") else "[red]✗[/red]"
+        console.print(f"{mark} [bold]{name}[/bold]")
+        for key, value in detail.items():
+            if key == "ok":
+                continue
+            if key == "checks" and isinstance(value, dict):
+                for sub_name, sub in value.items():
+                    if not isinstance(sub, dict):
+                        console.print(f"    {sub_name}: {sub}")
+                        continue
+                    sub_mark = "[green]✓[/green]" if sub.get("ok") else "[red]✗[/red]"
+                    sub_detail = " ".join(f"{k}={v}" for k, v in sub.items() if k != "ok")
+                    console.print(f"    {sub_mark} {sub_name}: {sub_detail}")
+                continue
+            console.print(f"    {key}: {value}")
+
+    if overall == "ok":
+        console.print("[green]all checks passed[/green]")
+        sys.exit(0)
+    console.print(f"[red]status: {overall}[/red]")
+    sys.exit(1)
 
 
 @main.command("tick")
@@ -170,7 +330,7 @@ def tick_cmd(
     brain_url: str | None,
     token: str | None,
 ) -> None:
-    """Trigger a manual brain tick via the /tick endpoint.
+    """Trigger a manual agentibrain tick via the /tick endpoint.
 
     Enqueues a request file in brain-feed/ticks/requested/ which the
     tick-cron drains within ~2 minutes. Use --wait to block until completion.
@@ -186,7 +346,7 @@ def tick_cmd(
                     token = line.split("=", 1)[1].strip()
                     break
     if not token:
-        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `brain init`[/red]")
+        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
         sys.exit(2)
 
     headers = {"Authorization": f"Bearer {token}"}

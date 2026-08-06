@@ -20,6 +20,7 @@ Usage:
     python3 dedupe_edges.py --vault /vault
     python3 dedupe_edges.py --vault /vault --dry-run
 """
+
 from __future__ import annotations
 
 import argparse

@@ -107,12 +107,19 @@ def read_feed(vault_root: Path | None = None) -> list[FeedEntry]:
 def feed_payload(vault_root: Path | None = None) -> dict:
     """Build the full /feed response payload."""
     entries = read_feed(vault_root)
-    hot_arcs = [e.to_dict() for e in entries if e.id.startswith("hot-arcs") or "hot" in e.id.lower()]
+    hot_arcs = [
+        e.to_dict() for e in entries if e.id.startswith("hot-arcs") or "hot" in e.id.lower()
+    ]
     inject_blocks = [e.to_dict() for e in entries if e.id == "inject" or "inject" in e.id.lower()]
     other = [
         e.to_dict()
         for e in entries
-        if not (e.id.startswith("hot-arcs") or e.id == "inject" or "hot" in e.id.lower() or "inject" in e.id.lower())
+        if not (
+            e.id.startswith("hot-arcs")
+            or e.id == "inject"
+            or "hot" in e.id.lower()
+            or "inject" in e.id.lower()
+        )
     ]
     now = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
     raw = "|".join(e.id + ":" + str(e.priority) + ":" + e.content[:32] for e in entries)

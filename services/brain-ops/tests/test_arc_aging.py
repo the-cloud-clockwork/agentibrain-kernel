@@ -31,7 +31,10 @@ if str(_BRAIN_TOOLS) not in sys.path:
 import brain_keeper  # noqa: E402
 import markers  # noqa: E402
 
-NOW = datetime(2026, 7, 14, tzinfo=timezone.utc)
+# Real clock, not a pinned date: brain_keeper.tick() reads wall-clock time,
+# so a pinned NOW rots — "fresh" arcs age past the decay threshold and the
+# idempotency test starts failing. All offsets below are relative.
+NOW = datetime.now(timezone.utc)
 
 
 def _doc(name: str, fm: dict, path: Path | None = None) -> markers.DocumentMeta:
@@ -39,9 +42,7 @@ def _doc(name: str, fm: dict, path: Path | None = None) -> markers.DocumentMeta:
 
 
 def test_resolve_created_prefers_frontmatter():
-    dt, derived = brain_keeper.resolve_created(
-        _doc("2026-01-01-x.md", {"created": "2026-07-01"})
-    )
+    dt, derived = brain_keeper.resolve_created(_doc("2026-01-01-x.md", {"created": "2026-07-01"}))
     assert dt == datetime(2026, 7, 1, tzinfo=timezone.utc)
     assert derived is False
 
@@ -67,9 +68,7 @@ def test_resolve_created_falls_back_to_mtime(tmp_path):
 
 def test_malformed_created_does_not_freeze_the_arc():
     # A garbage date must fall through to derivation, not silently disable decay.
-    dt, derived = brain_keeper.resolve_created(
-        _doc("2026-01-05-x.md", {"created": "not-a-date"})
-    )
+    dt, derived = brain_keeper.resolve_created(_doc("2026-01-05-x.md", {"created": "not-a-date"}))
     assert dt == datetime(2026, 1, 5, tzinfo=timezone.utc)
     assert derived is True
 
@@ -136,6 +135,7 @@ def test_standing_bridge_doc_is_never_relocated_or_stamped(tmp_path):
     vision = bridge / "vision.md"
     vision.write_text("---\ntitle: Vision\n---\n\nthe long game\n")
     import os
+
     ancient = (NOW - timedelta(days=400)).timestamp()
     os.utime(vision, (ancient, ancient))
 

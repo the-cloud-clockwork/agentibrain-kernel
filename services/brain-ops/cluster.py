@@ -27,6 +27,7 @@ Usage:
     python3 extract.py --since 7d > bundle.json
     python3 cluster.py --bundle bundle.json --out-dir vault/clusters/2026-04-09
 """
+
 from __future__ import annotations
 
 import argparse
@@ -88,9 +89,7 @@ def group_sessions(sessions: list[dict]) -> list[list[dict]]:
         prev_end = parse_ts(prev["end"])
         this_start = parse_ts(sess["start"])
         gap_min = (this_start - prev_end).total_seconds() / 60.0
-        has_compaction = (sess.get("compactions", 0) > 0) or (
-            prev.get("compactions", 0) > 0
-        )
+        has_compaction = (sess.get("compactions", 0) > 0) or (prev.get("compactions", 0) > 0)
 
         if same_project and gap_min <= TIME_WINDOW_MIN and not has_compaction:
             current.append(sess)
@@ -210,9 +209,7 @@ def find_sibling_arcs(
 def write_stub(cluster: dict, out_dir: Path, clusters_root: Path | None = None) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True, mode=0o777)
     path = out_dir / f"{cluster['cluster_id']}.md"
-    siblings = find_sibling_arcs(
-        cluster["sessions"], clusters_root, cluster["cluster_id"]
-    )
+    siblings = find_sibling_arcs(cluster["sessions"], clusters_root, cluster["cluster_id"])
 
     group = cluster["sessions"]
     total_user = sum(s.get("num_user_turns", 0) for s in group)

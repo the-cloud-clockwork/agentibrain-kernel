@@ -1,4 +1,4 @@
-# Unified compose for the agentibrain kernel, rendered by `brain up`.
+# Unified compose for the agentibrain kernel, rendered by `agentibrain up`.
 #
 # Two variants controlled by the Jinja context:
 #   storage_mode: "s3"    → use AWS S3, no MinIO
@@ -117,7 +117,7 @@ services:
     volumes:
       - "{{ vault_path }}:/vault:rw"
     ports:
-      - "{{ brain_api_port | default(8102) }}:8080"
+      - "{{ brain_api_port | default(8103) }}:8080"
     networks: [agentibrain_net]
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]

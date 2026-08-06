@@ -10,6 +10,7 @@ Usage:
 
 Output: JSON to stdout. Warnings to stderr.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -184,9 +185,7 @@ def process_session(jsonl_path: Path, since: datetime, until: datetime) -> dict 
         "num_tool_calls": num_tool,
         "first_user_prompt": (first_user_text or "")[:300],
         "last_user_prompt": (last_user_text or "")[:300],
-        "top_tools": [
-            {"name": n, "count": c} for n, c in tool_counter.most_common(10)
-        ],
+        "top_tools": [{"name": n, "count": c} for n, c in tool_counter.most_common(10)],
         "compactions": compactions,
         "joy_markers": joy_hits,
         "error_markers": error_hits,

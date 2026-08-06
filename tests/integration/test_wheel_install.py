@@ -41,12 +41,12 @@ def test_wheel_ships_migrations(tmp_path):
 
     # Confirm the CLI console-script works.
     r = subprocess.run(
-        [str(venv / "bin" / "brain"), "--version"],
+        [str(venv / "bin" / "agentibrain"), "--version"],
         check=True,
         capture_output=True,
         text=True,
     )
-    assert "brain" in r.stdout.lower()
+    assert "agentibrain" in r.stdout.lower()
 
     # Confirm migrations ship with the wheel.
     r = subprocess.run(

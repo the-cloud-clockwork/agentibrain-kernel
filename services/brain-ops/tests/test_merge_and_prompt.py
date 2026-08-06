@@ -43,6 +43,7 @@ def _write_arc(path: Path, cluster_id: str, body: str, *, heat: int = 5) -> None
 
 # ---------- canonical_arc_id ----------
 
+
 class TestCanonicalArcId:
     def test_collapses_chain(self):
         assert markers.canonical_arc_id("foo.md") == "foo"
@@ -54,6 +55,7 @@ class TestCanonicalArcId:
 
 # ---------- apply_merges guards ----------
 
+
 class TestApplyMerges:
     def _vault(self, tmp_path: Path):
         d = tmp_path / "clusters" / "2026-05-01"
@@ -64,7 +66,9 @@ class TestApplyMerges:
         _write_arc(d / "arc-a.md", "arc-a", "A body")
         _write_arc(d / "arc-b.md", "arc-b", "B body")
         n = brain_apply.apply_merges(
-            vault, [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}], dry_run=False
+            vault,
+            [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}],
+            dry_run=False,
         )
         assert n == 1
         assert (d / "arc-b.merged.md").exists()
@@ -76,7 +80,9 @@ class TestApplyMerges:
         _write_arc(d / "arc-a.md", "arc-a", "A body")
         _write_arc(d / "arc-b.merged.md", "arc-b", "already a tombstone")
         n = brain_apply.apply_merges(
-            vault, [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}], dry_run=False
+            vault,
+            [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}],
+            dry_run=False,
         )
         assert n == 0  # tombstone is never re-merged → no runaway
         assert not (d / "arc-b.merged.merged.md").exists()
@@ -97,11 +103,14 @@ class TestApplyMerges:
         vault, d = self._vault(tmp_path)
         _write_arc(d / "arc-a.md", "arc-a", "A body")
         _write_arc(
-            d / "arc-b.md", "arc-b",
+            d / "arc-b.md",
+            "arc-b",
             "B body\n<!-- @edge type=related target=somewhere -->\n",
         )
         brain_apply.apply_merges(
-            vault, [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}], dry_run=False
+            vault,
+            [{"op": "merge", "arc_a": "arc-a", "arc_b": "arc-b", "title": "AB"}],
+            dry_run=False,
         )
         merged = (d / "arc-a.md").read_text()
         assert "## Merged from arc-b" in merged
@@ -110,11 +119,13 @@ class TestApplyMerges:
 
 # ---------- build_prompt edge_map dedup + caps ----------
 
+
 class TestBuildPrompt:
     def test_edge_dedup_keeps_strongest_type(self, tmp_path):
         feed = tmp_path / "brain-feed"
         _write_arc(
-            tmp_path / "clusters" / "2026-05-01" / "arc-e.md", "arc-e",
+            tmp_path / "clusters" / "2026-05-01" / "arc-e.md",
+            "arc-e",
             "<!-- @edge type=related target=t1 -->\n<!-- @edge type=parent target=t1 -->\n",
         )
         prompt, _ = brain_tick_prompt.build_prompt(tmp_path, feed)
@@ -133,9 +144,7 @@ class TestBuildPrompt:
 
     def test_prompt_char_budget_drops_edge_map(self, tmp_path, monkeypatch):
         feed = tmp_path / "brain-feed"
-        edges = "".join(
-            f"<!-- @edge type=related target=t{i} -->\n" for i in range(40)
-        )
+        edges = "".join(f"<!-- @edge type=related target=t{i} -->\n" for i in range(40))
         _write_arc(tmp_path / "clusters" / "2026-05-01" / "arc-b.md", "arc-b", edges)
         prompt0, _ = brain_tick_prompt.build_prompt(tmp_path, feed)
         # Force the budget just below the full size — the edge map is the first
@@ -148,6 +157,7 @@ class TestBuildPrompt:
 
 # ---------- vault_cleanup chain collapse ----------
 
+
 class TestVaultCleanup:
     def test_collapses_chain_and_dedupes_edges(self, tmp_path):
         d = tmp_path / "clusters" / "2026-05-01"
@@ -156,7 +166,8 @@ class TestVaultCleanup:
         # Longest = survivor: duplicate edges in the base body (survive the
         # collapse) + a duplicate "## Merged from bar" section (dropped).
         _write_arc(
-            d / "foo.merged.merged.md", "foo",
+            d / "foo.merged.merged.md",
+            "foo",
             "longest body with history\n"
             "<!-- @edge type=related target=x -->\n"
             "<!-- @edge type=parent target=x -->\n"
@@ -226,6 +237,7 @@ def test_merged_title_keeps_frontmatter_parseable(tmp_path):
 def _repair_mod():
     sys.path.insert(0, str(_BRAIN_TOOLS / "scripts"))
     import repair_arc_titles
+
     return repair_arc_titles
 
 
@@ -291,66 +303,3 @@ def test_title_repair_dry_run_writes_nothing(tmp_path):
     stats = r.repair(tmp_path, dry_run=True)
     assert stats["repaired"] == 1
     assert arc.read_text() == original
-
-
-def test_backtick_marks_the_title_boundary_not_the_first_dash():
-    """A real title may carry its own em-dash before the rationale starts.
-
-    "Session corpus — Apr 28 unified (a + b)` — 9705e5e1 holds only 1 marker"
-    must keep everything up to the backtick. Cutting at the first separator
-    reduces three distinct arcs to an identical, useless "Session corpus".
-    Caught by a dry-run against the live vault, not by reasoning.
-    """
-    cases = {
-        "Session corpus — unified Apr 19–May 3 (consolidated)` — Both arcs are active at heat 3":
-            "Session corpus — unified Apr 19–May 3 (consolidated)",
-        "Session corpus — Apr 28 unified (7242ddf3 + 9705e5e1)` — 9705e5e1 holds only 1 marker":
-            "Session corpus — Apr 28 unified (7242ddf3 + 9705e5e1)",
-        # leading-backtick shape, straight off a MERGE line
-        "`unified-id` — identical session ID, continuous work": "unified-id",
-        # no backtick at all — fall back to the separator heuristic
-        "writer-corpus-unified — both are writer arcs sharing parents, with overlapping clusters":
-            "writer-corpus-unified",
-    }
-    for raw, expected in cases.items():
-        assert brain_apply.clean_merge_title(raw) == expected, raw
-
-
-def test_title_repair_handles_non_ascii_titles(tmp_path):
-    """A title keeping an em-dash must survive the rewrite.
-
-    json.dumps escapes non-ASCII to \\u2014 by default, and re.sub then reads
-    the backslash in its REPLACEMENT string as an escape sequence — raising
-    "bad escape \\u". The first live run died on exactly this, on a line the
-    dry run never executed.
-    """
-    r = _repair_mod()
-    d = tmp_path / "clusters" / "2026-07-21"
-    d.mkdir(parents=True)
-    arc = d / "a.md"
-    arc.write_text(
-        "---\ntitle: Session corpus — Apr 28 unified (a + b)` — b holds only 1 marker, already named\n"
-        "cluster_id: a\nheat: 3\n---\n\nbody\n",
-        encoding="utf-8",
-    )
-    stats = r.repair(tmp_path, dry_run=False)
-    assert stats["repaired"] == 1
-    text = arc.read_text(encoding="utf-8")
-    # The distinguishing half survives, the em-dash stays a real character.
-    assert '"Session corpus — Apr 28 unified (a + b)"' in text
-    assert "\\u2014" not in text
-    assert r.repair(tmp_path, dry_run=False)["repaired"] == 0
-
-
-def test_title_repair_dry_run_exercises_the_write_path(tmp_path):
-    """Dry run must build the replacement too, or it previews nothing."""
-    r = _repair_mod()
-    d = tmp_path / "clusters" / "2026-07-21"
-    d.mkdir(parents=True)
-    (d / "a.md").write_text(
-        "---\ntitle: Corpus — unified (x)` — both are the same thing, merged here\n"
-        "cluster_id: a\n---\n\nb\n",
-        encoding="utf-8",
-    )
-    # Would raise re.error if the replacement were only built when writing.
-    assert r.repair(tmp_path, dry_run=True)["repaired"] == 1

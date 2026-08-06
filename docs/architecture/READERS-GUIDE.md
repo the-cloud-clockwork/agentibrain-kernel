@@ -281,7 +281,7 @@ Commands (send as task prompt):
 - `triage` — merge redundant arcs, graduate stale ones
 - `heal` — 7-point drift audit
 - `replay <arc-slug>` — re-execute an arc's workflow
-- `tick` — manually fire a brain tick now (bypass cron schedule)
+- `tick` — manually fire a agentibrain tick now (bypass cron schedule)
 - `extract` — run the day's session extraction manually
 
 ---

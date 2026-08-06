@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'anton' }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:

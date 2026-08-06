@@ -42,7 +42,7 @@ def register(mcp: FastMCP):
         timeout: int = 45,
         source: str = "mcp-agent",
     ) -> str:
-        """Force a brain tick now so new content becomes retrievable.
+        """Force an agentibrain tick now so new content becomes retrievable.
 
         Use after brain_ingest, or after writing @lesson/@milestone/@signal/
         @decision markers, when you need the content searchable immediately

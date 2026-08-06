@@ -23,15 +23,9 @@ from uuid import uuid4
 
 
 VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "/vault")).resolve()
-TICK_REQUESTS_DIR = os.environ.get(
-    "TICK_REQUESTS_DIR", "brain-feed/ticks/requested"
-).strip("/")
-TICK_COMPLETED_DIR = os.environ.get(
-    "TICK_COMPLETED_DIR", "brain-feed/ticks/completed"
-).strip("/")
-TICK_FAILED_DIR = os.environ.get(
-    "TICK_FAILED_DIR", "brain-feed/ticks/failed"
-).strip("/")
+TICK_REQUESTS_DIR = os.environ.get("TICK_REQUESTS_DIR", "brain-feed/ticks/requested").strip("/")
+TICK_COMPLETED_DIR = os.environ.get("TICK_COMPLETED_DIR", "brain-feed/ticks/completed").strip("/")
+TICK_FAILED_DIR = os.environ.get("TICK_FAILED_DIR", "brain-feed/ticks/failed").strip("/")
 
 
 def _now_iso() -> str:

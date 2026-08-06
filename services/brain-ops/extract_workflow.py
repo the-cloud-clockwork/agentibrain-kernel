@@ -11,6 +11,7 @@ Usage:
 
 Output: JSON to stdout by default; markdown table with --format markdown.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -24,7 +25,9 @@ from typing import Any
 # Same knob as the CronJob extraction step (helm env EXTRACT_PROJECTS_DIR).
 # Default preserves local/dev behavior; in-cluster the operator overlay points
 # it at the mounted transcripts share.
-PROJECTS_DIR = Path(os.environ.get("EXTRACT_PROJECTS_DIR", str(Path.home() / ".claude" / "projects")))
+PROJECTS_DIR = Path(
+    os.environ.get("EXTRACT_PROJECTS_DIR", str(Path.home() / ".claude" / "projects"))
+)
 
 CORRECTION_RE = re.compile(
     r"\b(no|stop|wrong|actually|revert|undo|that'?s not|don'?t)\b",
@@ -70,9 +73,7 @@ def extract_text(msg: dict) -> str:
         return content
     if isinstance(content, list):
         return " ".join(
-            c.get("text", "")
-            for c in content
-            if isinstance(c, dict) and c.get("type") == "text"
+            c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"
         )
     return ""
 

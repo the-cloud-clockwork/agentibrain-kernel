@@ -28,6 +28,7 @@ htmlcov/
 .nox/
 coverage.xml
 *.cover
+.claude/**
 
 # Linters + type checkers
 .mypy_cache/

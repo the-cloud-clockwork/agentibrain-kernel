@@ -72,6 +72,11 @@ def write_config(settings: BrainSettings) -> Path:
         # postgres_url / redis_url are NOT written here — they may contain
         # passwords. If operators override them via flags, they come from env.
     }
+    # brain_url auto-derives from port_brain_api when unset. Persisting the
+    # derived literal would freeze it in config.yaml and silently mask any
+    # later PORT_BRAIN_API override — keep only an explicit operator URL.
+    if settings.brain_url == f"http://localhost:{settings.port_brain_api}":
+        payload.pop("brain_url")
     cfg_path = cfg_dir / "config.yaml"
     cfg_path.write_text(yaml.safe_dump(payload, sort_keys=False))
     return cfg_path
@@ -114,6 +119,82 @@ def write_compose(settings: BrainSettings, rendered: str) -> Path:
     path = cfg_dir / "compose.yml"
     path.write_text(rendered)
     return path
+
+
+# Any kernel root-compose file names this container; used to recognise a
+# checkout when walking up from cwd.
+COMPOSE_MARKER = "agentibrain_brain_api"
+
+
+def _read_env_value(env_path: Path, key: str) -> str:
+    if not env_path.exists():
+        return ""
+    for line in env_path.read_text().splitlines():
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
+def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[str, Path] | None:
+    """Locate the compose deployment the CLI should drive.
+
+    Returns ``(mode, compose_dir)`` — mode is ``"root-compose"`` (repo
+    checkout managed by local/bootstrap.sh) or ``"init"`` (stack rendered by
+    ``agentibrain init``) — or None when no deployment exists.
+
+    Order: the checkout you are standing in wins — running a command from
+    inside checkout B must never target checkout A that an old bootstrap
+    pinned. The AGENTIBRAIN_REPO pin (written by local/bootstrap.sh into
+    ~/.agentibrain/.env) covers every other cwd; the init-rendered stack
+    comes last.
+    """
+    cfg_dir = settings.config_dir.expanduser()
+
+    start = (cwd or Path.cwd()).resolve()
+    for candidate in (start, *start.parents):
+        compose = candidate / "compose.yml"
+        try:
+            if compose.is_file() and COMPOSE_MARKER in compose.read_text():
+                return ("root-compose", candidate)
+        except OSError:
+            continue
+
+    repo = _read_env_value(cfg_dir / ".env", "AGENTIBRAIN_REPO")
+    if repo:
+        repo_dir = Path(repo).expanduser()
+        if (repo_dir / "compose.yml").is_file():
+            return ("root-compose", repo_dir)
+
+    if (cfg_dir / "compose.yml").is_file():
+        return ("init", cfg_dir)
+    return None
+
+
+def _compose_binargs() -> list[str]:
+    """Pick `docker compose` vs legacy `docker-compose`, probing the plugin.
+
+    `docker compose` on a plugin-less install exits 1 (not 127), so a
+    which("docker") test alone would pick a broken invocation while the
+    legacy binary sits unused — the same fallback _docker_compose does
+    reactively, done proactively here for streaming commands.
+    """
+    if shutil.which("docker"):
+        probe = subprocess.run(
+            ["docker", "compose", "version"],
+            check=False,
+            capture_output=True,
+        )
+        if probe.returncode == 0:
+            return ["docker", "compose"]
+    if shutil.which("docker-compose"):
+        return ["docker-compose"]
+    return ["docker", "compose"]  # fail loudly with docker's own message
+
+
+def compose_stream(cmd: list[str], cwd: Path) -> int:
+    """Run ``docker compose`` with inherited stdio for long/streaming commands
+    (build, logs -f) so output reaches the terminal live."""
+    return subprocess.run([*_compose_binargs(), *cmd], cwd=cwd, check=False).returncode
 
 
 def _docker_compose(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:

@@ -74,8 +74,14 @@ def _append(path: Path, body: str) -> None:
             existing = path.read_text(encoding="utf-8")
         except OSError:
             existing = ""
-    sep = "" if not existing or existing.endswith("\n\n") else ("\n" if existing.endswith("\n") else "\n\n")
-    path.write_text(existing + sep + body + ("\n" if not body.endswith("\n") else ""), encoding="utf-8")
+    sep = (
+        ""
+        if not existing or existing.endswith("\n\n")
+        else ("\n" if existing.endswith("\n") else "\n\n")
+    )
+    path.write_text(
+        existing + sep + body + ("\n" if not body.endswith("\n") else ""), encoding="utf-8"
+    )
 
 
 def _write_new(path: Path, body: str) -> None:
@@ -112,9 +118,7 @@ def _build_milestone_entry(content: str, attrs: dict[str, Any], ts_iso: str) -> 
     return f"{header}\n  {content.strip()}\n"
 
 
-def _build_signal_file(
-    content: str, attrs: dict[str, Any], ts_iso: str, slug: str
-) -> str:
+def _build_signal_file(content: str, attrs: dict[str, Any], ts_iso: str, slug: str) -> str:
     severity = (attrs.get("severity") or "warning").lower()
     if severity not in _VALID_SEVERITIES:
         severity = "warning"
@@ -131,9 +135,7 @@ def _build_signal_file(
     )
 
 
-def _build_decision_file(
-    content: str, attrs: dict[str, Any], ts_iso: str, adr_number: int
-) -> str:
+def _build_decision_file(content: str, attrs: dict[str, Any], ts_iso: str, adr_number: int) -> str:
     title = (attrs.get("title") or content[:80].strip()) or f"ADR {adr_number}"
     source = attrs.get("source") or "unknown"
     return (

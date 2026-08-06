@@ -67,8 +67,12 @@ def verify_signal(sig: markers.Marker, timeout_s: int = DEFAULT_TIMEOUT_S) -> st
         )
         if result.returncode == 0:
             return PASS_STATUS
-        log.debug("signal verify FAIL source=%s rc=%s stderr=%s",
-                  sig.attr("source", "?"), result.returncode, result.stderr[:200])
+        log.debug(
+            "signal verify FAIL source=%s rc=%s stderr=%s",
+            sig.attr("source", "?"),
+            result.returncode,
+            result.stderr[:200],
+        )
         return FAIL_STATUS
     except subprocess.TimeoutExpired:
         log.warning("signal verify TIMEOUT source=%s cmd=%s", sig.attr("source", "?"), cmd[:80])

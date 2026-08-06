@@ -8,7 +8,7 @@ Endpoints:
   GET  /feed                           — hot arcs + inject blocks + intent
   GET  /signal                         — current amygdala signal (single file)
   POST /marker                         — emit lesson/milestone/signal/decision
-  POST /tick                           — request a manual brain tick
+  POST /tick                           — request a manual agentibrain tick
   GET  /tick/{job_id}                  — look up tick status
   GET  /vault/list                     — list vault files
   GET  /vault/read                     — read a single vault file
@@ -96,6 +96,146 @@ def health() -> dict:
     }
 
 
+@app.get("/health/deep")
+async def health_deep(_: None = Depends(require_token)) -> dict:
+    """End-to-end readiness across the whole kernel.
+
+    Verifies what liveness /health cannot: the vault is actually writable,
+    the embeddings service can reach both its DB and the embedding model
+    (via its own /health/deep), and the inference gateway accepts our key.
+    """
+    import httpx
+    import uuid
+
+    checks: dict[str, Any] = {}
+    ok = True
+
+    # Vault: prove a real write round-trips, not just that the mount exists.
+    # The probe name is unique per call so concurrent /health/deep requests
+    # never write or unlink each other's file (a shared name races: the second
+    # unlink hits a missing path and falsely reports the vault unwritable).
+    probe = VAULT_ROOT / f".healthcheck.{os.getpid()}.{uuid.uuid4().hex}"
+    try:
+        probe.write_text(str(time.time()))
+        checks["vault"] = {"ok": True, "root": str(VAULT_ROOT), "writable": True}
+    except OSError as exc:
+        ok = False
+        checks["vault"] = {"ok": False, "root": str(VAULT_ROOT), "error": str(exc)[:300]}
+    finally:
+        try:
+            probe.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Embeddings: delegate to its deep check (DB + live embed + dim match).
+        if not EMBEDDINGS_URL or not _EMBEDDINGS_API_KEY:
+            ok = False
+            checks["embeddings"] = {
+                "ok": False,
+                "error": "EMBEDDINGS_URL or EMBEDDINGS_API_KEY not configured",
+            }
+        else:
+            try:
+                resp = await client.get(
+                    f"{EMBEDDINGS_URL.rstrip('/')}/health/deep",
+                    headers={"Authorization": f"Bearer {_EMBEDDINGS_API_KEY}"},
+                )
+                body = resp.json() if resp.status_code == 200 else {"error": resp.text[:300]}
+                healthy = resp.status_code == 200 and body.get("status") == "ok"
+                if not healthy:
+                    ok = False
+                checks["embeddings"] = {"ok": healthy, "url": EMBEDDINGS_URL, **body}
+            except Exception as exc:
+                ok = False
+                checks["embeddings"] = {"ok": False, "url": EMBEDDINGS_URL, "error": str(exc)[:300]}
+
+        # Inference: the gateway answers /models with our key, the classify
+        # model is in the catalogue, AND a real one-token completion round-
+        # trips ("ping" → "pong"). The completion is the proof a listed model
+        # actually serves — catalogue presence alone hides quota exhaustion
+        # and broken deployments. Deep health is on-demand only (see the
+        # embeddings docstring), so the spend is one tiny completion per call.
+        inference_url = os.getenv("INFERENCE_URL", "")
+        inference_key = os.getenv("INFERENCE_API_KEY", "")
+        if not inference_url:
+            ok = False
+            checks["inference"] = {"ok": False, "error": "INFERENCE_URL not configured"}
+        else:
+            try:
+                resp = await client.get(
+                    f"{inference_url.rstrip('/')}/models",
+                    headers={"Authorization": f"Bearer {inference_key}"},
+                )
+                healthy = resp.status_code == 200
+                if not healthy:
+                    ok = False
+                detail: dict[str, Any] = {
+                    "ok": healthy,
+                    "url": inference_url,
+                    "http_status": resp.status_code,
+                }
+                if healthy:
+                    models = resp.json().get("data", [])
+                    detail["model_count"] = len(models)
+                    classify_model = os.getenv("BRAIN_CLASSIFY_MODEL", "")
+                    if classify_model:
+                        detail["classify_model"] = classify_model
+                        # Informational only: wildcard/passthrough routing can
+                        # serve models /models never enumerates, so absence
+                        # from the catalogue must not degrade health. The
+                        # completion below is the arbiter.
+                        detail["classify_model_available"] = any(
+                            m.get("id") == classify_model for m in models
+                        )
+                        try:
+                            t0 = time.monotonic()
+                            comp = await client.post(
+                                f"{inference_url.rstrip('/')}/chat/completions",
+                                headers={"Authorization": f"Bearer {inference_key}"},
+                                json={
+                                    "model": classify_model,
+                                    "messages": [
+                                        {
+                                            "role": "user",
+                                            "content": "Reply with exactly one word: pong",
+                                        }
+                                    ],
+                                    "max_tokens": 5,
+                                    "temperature": 0,
+                                },
+                            )
+                            comp.raise_for_status()
+                            text = (
+                                comp.json()["choices"][0]["message"]["content"] or ""
+                            ).strip()
+                            pong = "pong" in text.lower()
+                            if not pong:
+                                ok = False
+                                detail["ok"] = False
+                            detail["completion"] = {
+                                "ok": pong,
+                                "probe": "ping",
+                                "response": text[:80],
+                                "latency_ms": round((time.monotonic() - t0) * 1000),
+                            }
+                        except Exception as exc:
+                            ok = False
+                            detail["ok"] = False
+                            detail["completion"] = {
+                                "ok": False,
+                                "error": str(exc)[:300],
+                            }
+                else:
+                    detail["error"] = resp.text[:300]
+                checks["inference"] = detail
+            except Exception as exc:
+                ok = False
+                checks["inference"] = {"ok": False, "url": inference_url, "error": str(exc)[:300]}
+
+    return {"status": "ok" if ok else "degraded", "service": "brain-api", "checks": checks}
+
+
 # ---------------------------------------------------------------------------
 # Vault read/write — absorbed from the former obsidian-reader microservice
 # ---------------------------------------------------------------------------
@@ -104,7 +244,9 @@ def health() -> dict:
 @app.get("/vault/list")
 def vault_list(
     prefix: str = Query("", description="Directory prefix to list (relative to vault root)"),
-    extensions: str = Query(".md,.markdown,.txt", description="Comma-separated extensions to include"),
+    extensions: str = Query(
+        ".md,.markdown,.txt", description="Comma-separated extensions to include"
+    ),
     limit: int = Query(500, ge=1, le=5000),
     _: None = Depends(require_token),
 ) -> dict:
@@ -137,7 +279,9 @@ def vault_search(
     _: None = Depends(require_token),
 ) -> dict:
     try:
-        return vault_reader.search_vault(q=q, prefix=prefix, limit=limit, context_lines=context_lines)
+        return vault_reader.search_vault(
+            q=q, prefix=prefix, limit=limit, context_lines=context_lines
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
@@ -154,7 +298,10 @@ def vault_write_inbox(
     ref_list = [r.strip() for r in artifact_refs.split(",") if r.strip()]
     try:
         return vault_reader.write_inbox(
-            title=title, content=content, tags=tag_list, artifact_refs=ref_list,
+            title=title,
+            content=content,
+            tags=tag_list,
+            artifact_refs=ref_list,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
@@ -187,6 +334,7 @@ async def ingest_with_files(
     as text notes, then the message is classified and ingested normally.
     """
     from .router import _slugify
+
     pre_paths: list[str] = []
     errors: list[str] = []
 
@@ -216,9 +364,7 @@ async def ingest_with_files(
 # ── /index_artifact — sole brain-side write surface for artifact embeddings ──
 
 EMBEDDINGS_URL = os.getenv("EMBEDDINGS_URL", "")
-_EMBEDDINGS_API_KEY = (
-    os.environ.get("EMBEDDINGS_API_KEY") or ""
-)
+_EMBEDDINGS_API_KEY = os.environ.get("EMBEDDINGS_API_KEY") or ""
 
 
 @app.post("/index_artifact")
@@ -248,6 +394,7 @@ async def index_artifact(
     }
 
     import httpx
+
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(
@@ -359,7 +506,7 @@ def post_tick(
     source: str = Query("brain-api"),
     _: None = Depends(require_token),
 ) -> dict:
-    """Request a manual brain tick. Returns 202 with a job_id.
+    """Request a manual agentibrain tick. Returns 202 with a job_id.
 
     Writes a request file to brain-feed/ticks/requested/. The tick-engine
     CronJob picks this up and moves it to completed/ or failed/ when done.
