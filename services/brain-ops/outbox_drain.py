@@ -27,6 +27,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -68,11 +69,21 @@ def _post_marker(brain_url: str, token: str, body: dict, idem: str) -> None:
         pass
 
 
-def drain_dir(directory: Path, brain_url: str, token: str) -> dict[str, int]:
-    stats = {"drained": 0, "quarantined": 0, "failed": 0}
+def drain_dir(
+    directory: Path, brain_url: str, token: str, deadline: float | None = None
+) -> dict[str, int]:
+    stats = {"drained": 0, "quarantined": 0, "failed": 0, "deferred": 0}
     if not directory.is_dir():
         return stats
-    for f in sorted(directory.glob("*.json")):
+    files = sorted(directory.glob("*.json"))
+    for i, f in enumerate(files):
+        # A huge backlog must not starve the caller's loop (tick-cron runs the
+        # drain synchronously before brain_tick). Past the budget, leave the
+        # rest for the next pass — the queue is durable.
+        if deadline is not None and time.monotonic() > deadline:
+            stats["deferred"] = len(files) - i
+            print(f"DEFER: budget exhausted, {stats['deferred']} file(s) left for next pass")
+            break
         try:
             entry = json.loads(f.read_text(encoding="utf-8"))
             body, idem = _marker_request(entry)
@@ -90,8 +101,11 @@ def drain_dir(directory: Path, brain_url: str, token: str) -> dict[str, int]:
         try:
             _post_marker(brain_url, token, body, idem)
         except urllib.error.HTTPError as exc:
-            if 400 <= exc.code < 500:
+            if exc.code in (400, 404, 422):
                 # Server rejected the payload itself — retrying is futile.
+                # 401/403/429 are caller-credential or rate conditions:
+                # quarantining on those would destroy the whole queue over a
+                # stale token, so they stay retry-eligible.
                 try:
                     f.rename(f.with_suffix(".bad"))
                     stats["quarantined"] += 1
@@ -118,17 +132,26 @@ def main() -> int:
     ap.add_argument("--outbox", required=True, help="outbox dir; -backlog sibling is implied")
     ap.add_argument("--brain-url", default=os.environ.get("BRAIN_API_URL", "http://brain-api:8080"))
     ap.add_argument("--token", default=os.environ.get("KB_ROUTER_TOKEN", ""))
+    ap.add_argument(
+        "--max-seconds",
+        type=float,
+        default=float(os.environ.get("OUTBOX_DRAIN_MAX_SECONDS", "600")),
+        help="wall-clock budget per run; remaining files defer to the next pass (0 = unbounded)",
+    )
     args = ap.parse_args()
 
     if not args.token:
         print("ERROR: no token (set KB_ROUTER_TOKEN or --token)", file=sys.stderr)
         return 1
 
+    deadline = time.monotonic() + args.max_seconds if args.max_seconds > 0 else None
     outbox = Path(args.outbox)
     backlog = outbox.with_name(outbox.name + "-backlog")
-    totals = {"drained": 0, "quarantined": 0, "failed": 0}
-    for d in (outbox, backlog):
-        st = drain_dir(d, args.brain_url, args.token)
+    totals = {"drained": 0, "quarantined": 0, "failed": 0, "deferred": 0}
+    # Backlog first — months older than the live outbox; append-only vault
+    # targets keep arrival order, so oldest-first stays chronological.
+    for d in (backlog, outbox):
+        st = drain_dir(d, args.brain_url, args.token, deadline=deadline)
         for k, v in st.items():
             totals[k] += v
 

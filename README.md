@@ -39,6 +39,8 @@ agentibrain sync --wait         # re-ingest everything: marker buffers + vault r
 - No host crons: `tick-cron` drains `~/.agentihooks/brain-outbox` (and any
   `-backlog` pile) and re-indexes vault `raw/` on its own every tick interval.
   `sync` just does it now instead of at the next interval.
+- `~/.agentihooks` must exist before the first `up` (bootstrap.sh creates it);
+  otherwise Docker auto-creates it root-owned and agentihooks can't write to it.
 
 After the one-time block, `agentibrain build` / `check` / `logs` are the whole
 workflow. Full CLI reference: [`docs/CLI.md`](docs/CLI.md).

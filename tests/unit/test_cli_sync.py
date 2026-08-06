@@ -80,3 +80,12 @@ def test_drain_quarantines_rejects_and_garbage(tmp_path, monkeypatch):
 def test_drain_missing_dir_noop(tmp_path):
     stats = cli._drain_marker_dir(tmp_path / "absent", "http://b", {})
     assert stats == {"drained": 0, "quarantined": 0, "failed": 0}
+
+
+def test_drain_retries_on_credential_rejection(tmp_path, monkeypatch):
+    """A stale token (401) must leave the queue intact, not quarantine it."""
+    _entry(tmp_path, "a.json")
+    monkeypatch.setattr(cli.httpx, "post", lambda url, **kw: _Resp(401))
+    stats = cli._drain_marker_dir(tmp_path, "http://b", {})
+    assert stats == {"drained": 0, "quarantined": 0, "failed": 1}
+    assert (tmp_path / "a.json").exists()

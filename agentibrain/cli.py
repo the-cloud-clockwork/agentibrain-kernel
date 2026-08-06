@@ -399,7 +399,8 @@ def _drain_marker_dir(directory: Path, base: str, headers: dict) -> dict[str, in
     Idempotency-key parity with agentihooks (uuid5 of session-type-content) so
     replays dedupe server-side; the original `ts` rides in attrs so brain-api
     backdates the marker into its original dated files. Unparseable or
-    server-rejected (4xx) files quarantine as .bad; transient failures stay put.
+    payload-rejected (400/404/422) files quarantine as .bad; transient
+    failures (network, 5xx, 401/403/429) stay put for the next sync.
     """
     import json as _json
     import uuid as _uuid
@@ -442,15 +443,18 @@ def _drain_marker_dir(directory: Path, base: str, headers: dict) -> dict[str, in
         except httpx.HTTPError:
             stats["failed"] += 1
             continue
-        if r.status_code >= 500:
-            stats["failed"] += 1
-            continue
-        if r.status_code >= 400:
+        if r.status_code in (400, 404, 422):
+            # Payload-level rejection — permanent. 401/403/429 (stale token,
+            # rate limit) must stay retry-eligible or a misconfigured token
+            # destroys the entire queue in one pass.
             try:
                 f.rename(f.with_suffix(".bad"))
                 stats["quarantined"] += 1
             except OSError:
                 pass
+            continue
+        if r.status_code >= 400:
+            stats["failed"] += 1
             continue
 
         try:
@@ -503,7 +507,10 @@ def sync_cmd(wait: bool, brain_url: str | None, token: str | None) -> None:
     backlog = outbox.with_name(outbox.name + "-backlog")
 
     totals = {"drained": 0, "quarantined": 0, "failed": 0}
-    for d in (outbox, backlog):
+    # Backlog first: its files are months older than the live outbox, and
+    # append-only targets (BLOCKS.md) keep arrival order — replaying oldest
+    # first keeps them chronological.
+    for d in (backlog, outbox):
         st = _drain_marker_dir(d, base, headers)
         for k, v in st.items():
             totals[k] += v
@@ -526,8 +533,10 @@ def sync_cmd(wait: bool, brain_url: str | None, token: str | None) -> None:
     job_id = r.json().get("job_id", "?")
     console.print(f"[green]✓[/green] sync tick enqueued — job_id={job_id}")
 
+    # Exit contract: 0 = clean, 1 = hard failure (tick unreachable/failed),
+    # 2 = degraded (some markers still buffered — rerun sync later).
     if not wait:
-        sys.exit(1 if totals["failed"] else 0)
+        sys.exit(2 if totals["failed"] else 0)
 
     console.print("  waiting (≤5 min)…")
     import time as _time
@@ -544,7 +553,9 @@ def sync_cmd(wait: bool, brain_url: str | None, token: str | None) -> None:
         state = status.get("status")
         if state in {"completed", "failed"}:
             console.print(f"  [bold]{state}[/bold]")
-            sys.exit(0 if state == "completed" and not totals["failed"] else 1)
+            if state != "completed":
+                sys.exit(1)
+            sys.exit(2 if totals["failed"] else 0)
         _time.sleep(3)
 
     console.print("[yellow]timeout — job still running. Check tick-drain logs.[/yellow]")

@@ -58,3 +58,18 @@ def test_main_embeds_and_records_state(tmp_path, monkeypatch, capsys):
     calls.clear()
     assert embed_raw.main() == 0
     assert calls == []
+
+
+def test_prune_skipped_when_raw_dir_absent(tmp_path, monkeypatch, capsys):
+    """Missing raw/ (fresh vault, transient mount) must NOT prune — an empty
+    keep_keys would delete every brain-raw row server-side."""
+    pruned = []
+    monkeypatch.setattr(
+        embed_raw.urllib.request, "urlopen", lambda *a, **k: pruned.append(a) or None
+    )
+    monkeypatch.setattr(
+        sys, "argv", ["embed_raw", "--vault", str(tmp_path), "--api-key", "k", "--prune"]
+    )
+    assert embed_raw.main() == 0
+    assert pruned == []
+    assert "PRUNE: skipped" in capsys.readouterr().out

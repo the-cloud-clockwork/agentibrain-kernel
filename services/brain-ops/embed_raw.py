@@ -144,7 +144,14 @@ def main() -> int:
     if not args.dry_run:
         save_state(state_path, state)
 
-    if args.prune and not args.dry_run:
+    # Prune only when raw/ is verifiably present. An absent directory (fresh
+    # vault, transient NFS/bind-mount hiccup) yields an empty keep_keys, and
+    # POSTing that would delete EVERY brain-raw row server-side. An existing
+    # but empty raw/ is a legitimate "operator deleted everything" state and
+    # prunes normally.
+    if args.prune and not args.dry_run and not (vault / "raw").is_dir():
+        print("PRUNE: skipped — raw/ absent (fresh vault or transient mount)")
+    elif args.prune and not args.dry_run:
         try:
             req = urllib.request.Request(
                 f"{args.api_url.rstrip('/')}/prune",

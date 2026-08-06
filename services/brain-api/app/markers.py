@@ -20,7 +20,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
+from uuid import uuid4
 
 VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "/vault")).resolve()
 
@@ -220,6 +220,13 @@ def write_marker(
         slug = _slugify(attrs.get("title") or content, max_len=60)
         rel = f"amygdala/{stamp}-{severity}-{slug}.md"
         target = _resolve_inside_vault(rel, root)
+        # Second-resolution stamps collide under alert bursts (crash loop
+        # firing same-title signals within one second). A DIFFERENT signal
+        # must never be refused for a filename clash — true duplicates are
+        # already caught by the HTTP idempotency layer before reaching here.
+        if target.exists():
+            rel = f"amygdala/{stamp}-{severity}-{slug}-{uuid4().hex[:6]}.md"
+            target = _resolve_inside_vault(rel, root)
         body = _build_signal_file(content, attrs, ts_iso, slug)
         _write_new(target, body)
         action = "created"
@@ -229,6 +236,10 @@ def write_marker(
         slug = _slugify(attrs.get("title") or content, max_len=60)
         rel = f"left/decisions/ADR-{adr_number:04d}-{slug}.md"
         target = _resolve_inside_vault(rel, root)
+        if target.exists():
+            adr_number += 1
+            rel = f"left/decisions/ADR-{adr_number:04d}-{slug}.md"
+            target = _resolve_inside_vault(rel, root)
         body = _build_decision_file(content, attrs, ts_iso, adr_number)
         _write_new(target, body)
         action = "created"

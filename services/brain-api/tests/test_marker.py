@@ -132,3 +132,26 @@ def test_marker_unparseable_ts_falls_back_to_now(vault: Path, client):
     assert resp.status_code == 201
     today = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
     assert resp.json()["vault_path"] == f"left/reference/lessons-{today}.md"
+
+
+def test_signal_same_second_collision_disambiguates(vault: Path, client):
+    """Two DIFFERENT signals in the same second must both persist — a
+    filename clash may not masquerade as a rejection (true duplicates are
+    already stopped by the idempotency layer upstream)."""
+    body = {"type": "signal", "content": "burst one", "attrs": {"title": "auth down"}}
+    body2 = {"type": "signal", "content": "burst two", "attrs": {"title": "auth down"}}
+    r1 = client.post("/marker", json=body)
+    r2 = client.post("/marker", json=body2)
+    assert r1.status_code == 201 and r2.status_code == 201
+    p1, p2 = r1.json()["vault_path"], r2.json()["vault_path"]
+    assert p1 != p2
+    assert (vault / p1).exists() and (vault / p2).exists()
+
+
+def test_decision_same_second_collision_bumps_adr(vault: Path, client):
+    body = {"type": "decision", "content": "pick postgres", "attrs": {"title": "same title"}}
+    body2 = {"type": "decision", "content": "pick redis", "attrs": {"title": "same title"}}
+    r1 = client.post("/marker", json=body)
+    r2 = client.post("/marker", json=body2)
+    assert r1.status_code == 201 and r2.status_code == 201
+    assert r1.json()["vault_path"] != r2.json()["vault_path"]
