@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -342,12 +343,24 @@ def replay(redis_url: str, count: int = 100, severity_filter: str | None = None)
     }
 
 
+def _redact_redis_url(url: str) -> str:
+    """Strip the password out of a redis:// URL before it reaches a log.
+
+    Truncating the URL is not redaction: `redis://:<pw>@host` puts the secret
+    in the first 40 characters, so a prefix slice prints it in full and the
+    host — the only useful part — is what gets cut off. Container logs are
+    collected, shipped and indexed, so this lands the credential in every one
+    of those systems.
+    """
+    return re.sub(r"(?<=://)[^@/]*@", "***@", url)
+
+
 def run_continuous(redis_url: str, vault_root: Path, brain_feed_dir: Path, poll_interval: int = 5):
     """Continuous consumer loop. Blocks on XREADGROUP, checks every poll_interval seconds."""
     sys.stdout.reconfigure(line_buffering=True)
     sys.stderr.reconfigure(line_buffering=True)
     print(f"Amygdala continuous mode: polling every {poll_interval}s", flush=True)
-    print(f"  redis={redis_url[:40]}... vault={vault_root} feed={brain_feed_dir}", flush=True)
+    print(f"  redis={_redact_redis_url(redis_url)} vault={vault_root} feed={brain_feed_dir}", flush=True)
     cycle = 0
     while True:
         try:
