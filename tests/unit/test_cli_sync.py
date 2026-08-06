@@ -105,3 +105,28 @@ def test_sync_help_offers_check_flag():
     assert result.exit_code == 0
     assert "--check" in result.output
     assert "--wait" in result.output
+
+
+def test_sync_reports_empty_buffers(tmp_path, monkeypatch, capsys):
+    """Empty buffers must say so, not print meaningless zero counters."""
+    import click.testing
+
+    outbox = tmp_path / "brain-outbox"
+    outbox.mkdir()
+    monkeypatch.setenv("BRAIN_WRITER_OUTBOX", str(outbox))
+    monkeypatch.setenv("KB_ROUTER_TOKEN", "t")
+
+    class _TickResp:
+        status_code = 202
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"job_id": "j1"}
+
+    monkeypatch.setattr(cli.httpx, "post", lambda url, **kw: _TickResp())
+    result = click.testing.CliRunner().invoke(cli.main, ["sync"])
+    assert result.exit_code == 0, result.output
+    assert "empty — nothing to replay" in result.output
+    assert "drained=0" not in result.output

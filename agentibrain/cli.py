@@ -529,6 +529,10 @@ def sync_cmd(wait: bool, check: bool, brain_url: str | None, token: str | None) 
     # append-only targets (BLOCKS.md) keep arrival order — replaying oldest
     # first keeps them chronological.
     for d in (backlog, outbox):
+        n_buffered = len(list(d.glob("*.json"))) if d.is_dir() else 0
+        if n_buffered == 0:
+            console.print(f"  {d.name}: empty — nothing to replay")
+            continue
         st = _drain_marker_dir(d, base, headers, verbose=check)
         for k, v in st.items():
             totals[k] += v
@@ -560,7 +564,9 @@ def sync_cmd(wait: bool, check: bool, brain_url: str | None, token: str | None) 
     import time as _time
 
     deadline = _time.time() + 300
+    started = _time.time()
     last_state = ""
+    stall_hinted = False
     while _time.time() < deadline:
         try:
             s = httpx.get(f"{base}/tick/{job_id}", headers=headers, timeout=10.0)
@@ -573,10 +579,30 @@ def sync_cmd(wait: bool, check: bool, brain_url: str | None, token: str | None) 
         if check and state and state != last_state:
             console.print(f"  tick {job_id}: [bold]{state}[/bold]")
             last_state = state
+        if (
+            check
+            and not stall_hinted
+            and state in {"pending", "requested", None}
+            and (_time.time() - started) > 75
+        ):
+            stall_hinted = True
+            console.print(
+                "  [yellow]still pending after 75s — tick-drain normally picks jobs up "
+                "within ~30s. Is the stack current and running? Try "
+                "`agentibrain status` and `agentibrain logs tick-drain --since 5m`; "
+                "an old image needs `agentibrain build`.[/yellow]"
+            )
         if state in {"completed", "failed"}:
             if not check:
                 console.print(f"  [bold]{state}[/bold]")
             if check:
+                detail = {
+                    k: v
+                    for k, v in status.items()
+                    if k not in {"status", "job_id"} and v not in (None, "", {})
+                }
+                if detail:
+                    console.print(f"  tick detail: {detail}")
                 console.print(
                     f"[bold]sync summary[/bold]: replayed={totals['drained']} "
                     f"quarantined={totals['quarantined']} "
