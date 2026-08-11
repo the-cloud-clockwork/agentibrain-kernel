@@ -15,6 +15,7 @@ module focuses on file routing + writing.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from datetime import datetime, timezone
@@ -27,6 +28,13 @@ VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "/vault")).resolve()
 _VALID_TYPES = frozenset({"lesson", "milestone", "signal", "decision"})
 _VALID_SEVERITIES = frozenset({"nuclear", "critical", "warning", "info"})
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+# Entry boundary inside a lesson log. The timestamp is required: a bare `^## `
+# also matches a markdown heading written inside a lesson's own prose, which
+# splits one entry in two and makes the dedup below miss. Kept in sync with
+# `services/brain-ops/markers.py` LESSON_ENTRY_SPLIT_RE / LESSON_ENTRY_HEADER_RE
+# — different services, no shared import.
+_LESSON_ENTRY_SPLIT_RE = re.compile(r"(?m)^(?=##\s+\d{4}-\d{2}-\d{2}T)")
+_LESSON_ENTRY_HEADER_RE = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2}T\S*)")
 _ADR_PATH_RE = re.compile(r"^ADR-(\d+)-", re.IGNORECASE)
 
 
@@ -114,6 +122,88 @@ def _format_timestamp_utc(override_ts: str | None = None) -> tuple[str, str, str
     )
 
 
+def _content_hash(text: str) -> str:
+    """Repo-standard content hash, matching brain-ops' recipe exactly.
+
+    Newlines are normalized first because the two sides of the dedup comparison
+    take different routes: the incoming lesson is hashed as submitted, while the
+    on-disk copy has been through `read_text`, whose universal-newline handling
+    silently rewrites `\\r\\n` to `\\n`. Without this, a lesson pasted from a
+    Windows source never matches itself on resubmission — precisely the repeat
+    the dedup exists to stop.
+    """
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.strip().encode("utf-8")).hexdigest()[:16]
+
+
+def _lesson_frontmatter(date_part: str) -> str:
+    """Frontmatter seeded when a day's lesson log is first created.
+
+    Without it these files embed as `Title: untitled` with no region, which is
+    indistinguishable from a dead session arc in the index.
+
+    Kept byte-identical to `services/brain-ops/lesson_reconcile.build_frontmatter`.
+    The two live in separate services and cannot share an import, so they agree
+    by convention — if this changes, that must too, or the tick's reconcile pass
+    will rewrite every log on every tick instead of being a no-op.
+    """
+    return (
+        "---\n"
+        f"id: lessons-{date_part}\n"
+        f"title: Lessons — {date_part}\n"
+        "type: lesson-log\n"
+        f"created: {date_part}\n"
+        "---\n"
+    )
+
+
+def _append_lesson(path: Path, entry: str, content: str, date_part: str) -> str:
+    """Append a lesson entry, seeding frontmatter and skipping duplicates.
+
+    Returns "appended" or "duplicate".
+
+    Dedup hashes the lesson *content* only, never the rendered entry: the
+    header carries a fresh timestamp and session id every time, so a
+    header-inclusive hash matches nothing. Agents re-emit the same lesson
+    across sessions, and the HTTP idempotency cache only covers an exact replay
+    within its TTL — which is how one log came to hold the same lesson four
+    times.
+
+    The index is the target file itself, so no side-car state can drift out of
+    sync with the vault, and a legacy file with no frontmatter is handled the
+    same as a fresh one. Repetition on a *different* day is left alone: a
+    lesson re-learned weeks later is signal.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = ""
+    if path.exists():
+        try:
+            existing = path.read_text(encoding="utf-8")
+        except OSError:
+            existing = ""
+
+    incoming = _content_hash(content)
+    for block in _LESSON_ENTRY_SPLIT_RE.split(existing):
+        lines = block.splitlines()
+        if not lines or not _LESSON_ENTRY_HEADER_RE.match(lines[0].strip()):
+            continue
+        block_body = "\n".join(lines[1:]).strip()
+        if block_body and _content_hash(block_body) == incoming:
+            return "duplicate"
+
+    # Seed frontmatter only when the file is new. Written here rather than via
+    # _append, which re-reads from disk and so would drop the seeded header.
+    if not existing:
+        existing = _lesson_frontmatter(date_part)
+
+    sep = "" if existing.endswith("\n\n") else ("\n" if existing.endswith("\n") else "\n\n")
+    path.write_text(
+        existing + sep + entry + ("\n" if not entry.endswith("\n") else ""),
+        encoding="utf-8",
+    )
+    return "appended"
+
+
 def _build_lesson_entry(content: str, attrs: dict[str, Any], ts_iso: str) -> str:
     source = attrs.get("source") or "unknown"
     session_id = attrs.get("session_id") or ""
@@ -195,8 +285,7 @@ def write_marker(
         rel = f"left/reference/lessons-{date_part}.md"
         target = _resolve_inside_vault(rel, root)
         body = _build_lesson_entry(content, attrs, ts_iso)
-        _append(target, body)
-        action = "appended"
+        action = _append_lesson(target, body, content, date_part)
     elif marker_type == "milestone":
         source = attrs.get("source") or ""
         project_rel = ""
