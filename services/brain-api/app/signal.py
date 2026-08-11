@@ -17,9 +17,14 @@ from .feed import _parse_frontmatter
 
 
 VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "/vault")).resolve()
-AMYGDALA_SIGNAL_PATH = os.environ.get(
-    "AMYGDALA_SIGNAL_PATH", "brain-feed/amygdala-active.md"
-).lstrip("/")
+# An absolute override is honoured as absolute. Stripping the leading slash
+# turned `/home/me/vault/brain-feed/amygdala-active.md` into a relative path
+# resolved *under* VAULT_ROOT, so the reader looked somewhere that does not
+# exist and reported "no active signal" — silence indistinguishable from calm.
+# Left un-stripped deliberately: `root / path` already resolves an absolute
+# right-hand side to itself, so keeping the slash is what makes an absolute
+# override work.
+AMYGDALA_SIGNAL_PATH = os.environ.get("AMYGDALA_SIGNAL_PATH", "brain-feed/amygdala-active.md")
 
 _VALID_SEVERITIES = {"nuclear", "critical", "warning", "info", "resolved"}
 

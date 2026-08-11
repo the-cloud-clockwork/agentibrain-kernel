@@ -151,6 +151,14 @@ def main() -> int:
     # prunes normally.
     if args.prune and not args.dry_run and not (vault / "raw").is_dir():
         print("PRUNE: skipped — raw/ absent (fresh vault or transient mount)")
+    elif args.prune and not args.dry_run and not seen_keys:
+        # An empty scan is not proof the operator emptied raw/. A partial or
+        # slow mount presents an existing-but-empty directory just as readily,
+        # and the wipe would be permanent: the state file above still records
+        # every note as embedded, so the next run skips them all and nothing
+        # rebuilds short of --force-all. Emptying a producer on purpose is what
+        # --force-all is for.
+        print("PRUNE: skipped — no raw notes scanned, refusing to empty the producer")
     elif args.prune and not args.dry_run:
         try:
             req = urllib.request.Request(

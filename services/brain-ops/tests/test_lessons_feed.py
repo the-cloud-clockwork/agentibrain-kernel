@@ -57,7 +57,7 @@ def test_empty_vault_writes_placeholder(tmp_path: Path):
 
 def test_newest_first_and_capped(tmp_path: Path):
     entries = [
-        (NOW - timedelta(hours=i), f"Lesson number {i}.")
+        (NOW - timedelta(hours=i), f"Lesson number {i}, written long enough to clear the feed floor.")
         for i in range(brain_keeper.BRAIN_LESSON_FEED_MAX + 4)
     ]
     vault = _vault_with(tmp_path, entries)
@@ -67,18 +67,18 @@ def test_newest_first_and_capped(tmp_path: Path):
 
     assert stats["written"] == brain_keeper.BRAIN_LESSON_FEED_MAX
     text = out.read_text()
-    assert "Lesson number 0." in text
+    assert "Lesson number 0," in text
     # The oldest entries fall off the cap.
-    assert f"Lesson number {brain_keeper.BRAIN_LESSON_FEED_MAX + 3}." not in text
+    assert f"Lesson number {brain_keeper.BRAIN_LESSON_FEED_MAX + 3}," not in text
     # Newest first: entry 0 precedes entry 1 in the rendered feed.
-    assert text.index("Lesson number 0.") < text.index("Lesson number 1.")
+    assert text.index("Lesson number 0,") < text.index("Lesson number 1,")
 
 
 def test_stale_entries_are_swept(tmp_path: Path):
-    fresh = (NOW - timedelta(days=1), "Fresh lesson.")
+    fresh = (NOW - timedelta(days=1), "Fresh lesson with enough substance to earn a slot.")
     stale = (
         NOW - timedelta(days=brain_keeper.BRAIN_STALE_LESSON_DAYS + 5),
-        "Ancient lesson.",
+        "Ancient lesson with enough substance to earn a slot.",
     )
     vault = _vault_with(tmp_path, [fresh, stale])
     out = tmp_path / "lessons.md"
@@ -87,13 +87,13 @@ def test_stale_entries_are_swept(tmp_path: Path):
 
     assert stats["tombstoned_stale"] == 1
     text = out.read_text()
-    assert "Fresh lesson." in text
-    assert "Ancient lesson." not in text
+    assert "Fresh lesson with enough substance to earn a slot." in text
+    assert "Ancient lesson with enough substance to earn a slot." not in text
 
 
 def test_id_does_not_collide_with_feed_buckets(tmp_path: Path):
     """brain-api buckets feed entries by id substring — 'hot'/'inject' misroute."""
-    vault = _vault_with(tmp_path, [(NOW, "A lesson.")])
+    vault = _vault_with(tmp_path, [(NOW, "A lesson with enough substance to earn a slot.")])
     out = tmp_path / "lessons.md"
 
     brain_keeper.write_lessons_feed(out, vault, now=NOW)
@@ -143,12 +143,36 @@ def test_orders_chronologically_not_by_string(tmp_path: Path):
     # because its wall-clock reads smaller under a negative offset.
     shifted = later.astimezone(timezone(timedelta(hours=-5)))
     (ref / f"lessons-{today}.md").write_text(
-        f"## {earlier.isoformat()}\n\nOlder lesson.\n\n"
-        f"## {shifted.isoformat()}\n\nNewer lesson.\n\n"
+        f"## {earlier.isoformat()}\n\nOlder lesson with enough substance to earn a slot.\n\n"
+        f"## {shifted.isoformat()}\n\nNewer lesson with enough substance to earn a slot.\n\n"
     )
     out = tmp_path / "lessons.md"
 
     brain_keeper.write_lessons_feed(out, vault, now=NOW)
 
     text = out.read_text()
-    assert text.index("Newer lesson.") < text.index("Older lesson.")
+    assert text.index("Newer lesson with enough substance to earn a slot.") < text.index("Older lesson with enough substance to earn a slot.")
+
+
+def test_thin_entries_do_not_take_an_injected_slot(tmp_path: Path):
+    """Smoke-test debris must not ride into every session.
+
+    Filters the feed only — the entry stays in the vault and stays searchable.
+    """
+    vault = _vault_with(
+        tmp_path,
+        [
+            (NOW, "content"),
+            (NOW - timedelta(minutes=1), "codex smoke test marker"),
+            (NOW - timedelta(minutes=2), "A real lesson, long enough to earn its slot in the feed."),
+        ],
+    )
+    out = tmp_path / "lessons.md"
+
+    stats = brain_keeper.write_lessons_feed(out, vault, now=NOW)
+
+    assert stats["skipped_thin"] == 2
+    assert stats["written"] == 1
+    text = out.read_text()
+    assert "A real lesson" in text
+    assert "codex smoke test marker" not in text

@@ -53,6 +53,14 @@ BRAIN_DECAY_INTERVAL_DAYS = max(1, int(os.getenv("BRAIN_DECAY_INTERVAL_DAYS", "4
 # nuclear/critical get filtered out of signals.md. Prevents broadcast pollution
 # from old stress-test debris and orphan signals.
 BRAIN_STALE_SIGNAL_DAYS = int(os.getenv("BRAIN_STALE_SIGNAL_DAYS", "3"))
+# Nuclear/critical signals used to skip the age sweep entirely and broadcast
+# forever. They now get a longer window instead of an exemption — long enough
+# that a real credential event cannot quietly lapse, short enough that a
+# cancelled CI run stops shouting days later. Five days is one working week: a
+# nuclear signal nobody has acted on in that time has already failed as a
+# signal, and repeating it only costs every agent's attention. A signal can
+# override this with `ttl_days=`, the same knob @inject blocks already honour.
+BRAIN_STALE_CRITICAL_DAYS = int(os.getenv("BRAIN_STALE_CRITICAL_DAYS", "5"))
 # @inject blocks ride every session for their parent arc's lifetime. Without a
 # cap an April note was still being injected in July. Longer than the signal
 # window because injects are standing guidance, not incidents. 0 disables.
@@ -63,6 +71,12 @@ BRAIN_STALE_INJECT_DAYS = int(os.getenv("BRAIN_STALE_INJECT_DAYS", "30"))
 # permanent advice.
 BRAIN_STALE_LESSON_DAYS = int(os.getenv("BRAIN_STALE_LESSON_DAYS", "14"))
 BRAIN_LESSON_FEED_MAX = int(os.getenv("BRAIN_LESSON_FEED_MAX", "6"))
+# Floor on what earns one of the injected slots. Smoke-test debris ("content",
+# "codex smoke test marker") is real in the vault and was taking two of six.
+# This filters the FEED only — nothing is deleted, and every lesson stays in
+# the vault and searchable. A lesson too short to clear this is also too short
+# to meet the marker standard ("be specific — 'fixed the bug' teaches nobody").
+BRAIN_LESSON_MIN_CHARS = int(os.getenv("BRAIN_LESSON_MIN_CHARS", "40"))
 # Below signals (8) and inject (9): lessons are context, not an alarm.
 LESSON_FEED_PRIORITY = 7
 BRAIN_STALE_SIGNAL_KEEP_SEVERITIES = {"nuclear", "critical"}
@@ -314,7 +328,6 @@ def write_signals_feed(
         f"## Signals — {date_str}",
         "",
     ]
-    cutoff = now - timedelta(days=BRAIN_STALE_SIGNAL_DAYS)
     for sig in signals_list:
         sev = sig.attr("severity", "info")
         src = sig.attr("source", "unknown")
@@ -332,20 +345,35 @@ def write_signals_feed(
             stats["tombstoned_mitigated"] += 1
             continue
 
-        # Stale sweep: filter signals whose parent arc is too old, unless
-        # the severity is protected (nuclear/critical always broadcast).
-        if sev not in BRAIN_STALE_SIGNAL_KEEP_SEVERITIES:
-            parent_created = sig.attr("_parent_arc_created", "")
-            if parent_created:
-                try:
-                    pc = datetime.fromisoformat(parent_created.replace("Z", "+00:00"))
-                    if pc.tzinfo is None:
-                        pc = pc.replace(tzinfo=timezone.utc)
-                    if pc < cutoff:
-                        stats["tombstoned_stale"] += 1
-                        continue
-                except (ValueError, TypeError):
-                    pass
+        # Stale sweep. Protected severities get a longer window, not an
+        # exemption. Exempting them meant a nuclear signal broadcast forever
+        # unless an agent performed one of two exact rituals, and in practice
+        # that never happened: a cancelled CI run from 2026-08-05 was still
+        # firing six days later, and forty vault files had accumulated
+        # complaining about it — the brain raising alarm about its own
+        # inability to clear alarm. An alert nobody has acted on in a week is
+        # not made more actionable by broadcasting it in week two.
+        max_age = (
+            BRAIN_STALE_CRITICAL_DAYS
+            if sev in BRAIN_STALE_SIGNAL_KEEP_SEVERITIES
+            else BRAIN_STALE_SIGNAL_DAYS
+        )
+        # Per-signal override, same knob @inject blocks already honour.
+        try:
+            max_age = int(sig.attr("ttl_days", "") or max_age)
+        except (ValueError, TypeError):
+            pass
+        parent_created = sig.attr("_parent_arc_created", "")
+        if parent_created:
+            try:
+                pc = datetime.fromisoformat(parent_created.replace("Z", "+00:00"))
+                if pc.tzinfo is None:
+                    pc = pc.replace(tzinfo=timezone.utc)
+                if pc < now - timedelta(days=max_age):
+                    stats["tombstoned_stale"] += 1
+                    continue
+            except (ValueError, TypeError):
+                pass
 
         lines.append(f"- **[{sev}]** ({src}) {content_line}")
         stats["written"] += 1
@@ -402,7 +430,13 @@ def write_lessons_feed(path: Path, vault_root: Path, now: datetime | None = None
     picks it up with no change on its side.
     """
     now = now or datetime.now(timezone.utc)
-    stats = {"scanned_files": 0, "entries_found": 0, "written": 0, "tombstoned_stale": 0}
+    stats = {
+        "scanned_files": 0,
+        "entries_found": 0,
+        "written": 0,
+        "tombstoned_stale": 0,
+        "skipped_thin": 0,
+    }
     header = (
         "---\nid: lessons\ntitle: Recent Lessons\n"
         f"priority: {LESSON_FEED_PRIORITY}\nttl: 3600\nseverity: info\n---\n"
@@ -420,8 +454,11 @@ def write_lessons_feed(path: Path, vault_root: Path, now: datetime | None = None
             except OSError:
                 continue
             for entry in lesson_reconcile.split_entries(text):
-                entries.append(entry)
                 stats["entries_found"] += 1
+                if len(entry[1].strip()) < BRAIN_LESSON_MIN_CHARS:
+                    stats["skipped_thin"] += 1
+                    continue
+                entries.append(entry)
 
     cutoff = now - timedelta(days=BRAIN_STALE_LESSON_DAYS)
     # Carry the parsed datetime so ordering is chronological. Sorting the raw
@@ -902,6 +939,7 @@ def tick(
         "entries_found": 0,
         "written": 0,
         "tombstoned_stale": 0,
+        "skipped_thin": 0,
     }
     # Auto-verifier: run each signal's verify= command, tag _mitigated=true on
     # signals whose underlying claim has been falsified. write_signals_feed

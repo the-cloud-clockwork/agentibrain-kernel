@@ -209,7 +209,9 @@ services:
       BRAIN_DECAY_INTERVAL_DAYS: ${BRAIN_DECAY_INTERVAL_DAYS:-2}
       BRAIN_STALE_SIGNAL_DAYS: ${BRAIN_STALE_SIGNAL_DAYS:-3}
       BRAIN_STALE_INJECT_DAYS: ${BRAIN_STALE_INJECT_DAYS:-30}
+      BRAIN_STALE_CRITICAL_DAYS: ${BRAIN_STALE_CRITICAL_DAYS:-5}
       BRAIN_STALE_LESSON_DAYS: ${BRAIN_STALE_LESSON_DAYS:-14}
+      BRAIN_LESSON_MIN_CHARS: ${BRAIN_LESSON_MIN_CHARS:-40}
       BRAIN_LESSON_FEED_MAX: ${BRAIN_LESSON_FEED_MAX:-6}
       # Heat thresholds govern which arcs sit in frontal-lobe/conscious. Unset
       # here they fell through to the code defaults (promote 5 / demote 3),
@@ -357,7 +359,9 @@ services:
       BRAIN_DECAY_INTERVAL_DAYS: ${BRAIN_DECAY_INTERVAL_DAYS:-2}
       BRAIN_STALE_SIGNAL_DAYS: ${BRAIN_STALE_SIGNAL_DAYS:-3}
       BRAIN_STALE_INJECT_DAYS: ${BRAIN_STALE_INJECT_DAYS:-30}
+      BRAIN_STALE_CRITICAL_DAYS: ${BRAIN_STALE_CRITICAL_DAYS:-5}
       BRAIN_STALE_LESSON_DAYS: ${BRAIN_STALE_LESSON_DAYS:-14}
+      BRAIN_LESSON_MIN_CHARS: ${BRAIN_LESSON_MIN_CHARS:-40}
       BRAIN_LESSON_FEED_MAX: ${BRAIN_LESSON_FEED_MAX:-6}
       # Same reason these must mirror tick-cron: a drain-triggered tick that
       # promoted/demoted on different thresholds would fight the scheduled one.
