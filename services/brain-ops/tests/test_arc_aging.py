@@ -173,7 +173,7 @@ def test_tick_is_idempotent_on_a_dated_hot_arc(tmp_path):
     assert hot.exists(), "a fresh arc must not be graduated away"
 
 
-def test_full_tick_is_stable_over_lesson_logs(tmp_path: Path):
+def test_full_tick_is_stable_over_lesson_logs(tmp_path: Path, monkeypatch):
     """A lesson log must not ping-pong between the tick's phases.
 
     Promotion copies rather than moves and gated on heat alone, so a lesson log
@@ -184,7 +184,15 @@ def test_full_tick_is_stable_over_lesson_logs(tmp_path: Path):
 
     Verified over full ticks, not quick_refresh ones — quick_refresh skips the
     heat and promote phases, so it cannot see this class of bug at all.
+
+    The promote threshold is lowered so a lesson log clears it. At the shipped
+    default a lesson log computes heat 3 against a threshold of 5 and can never
+    promote, so a test at defaults passes identically with or without the gate
+    and proves nothing. Lowering it puts the gate itself under test: without
+    `is_arc`, promotion copies the log into conscious/ and the reconcile then
+    reclaims and deletes it, every tick, forever.
     """
+    monkeypatch.setattr(brain_keeper, "BRAIN_PROMOTE_HEAT", 1)
     vault = tmp_path / "vault"
     ref = vault / "left" / "reference"
     ref.mkdir(parents=True)
