@@ -77,6 +77,13 @@ BRAIN_LESSON_FEED_MAX = int(os.getenv("BRAIN_LESSON_FEED_MAX", "6"))
 # the vault and searchable. A lesson too short to clear this is also too short
 # to meet the marker standard ("be specific — 'fixed the bug' teaches nobody").
 BRAIN_LESSON_MIN_CHARS = int(os.getenv("BRAIN_LESSON_MIN_CHARS", "40"))
+# Retention for resolved tick-request records. Failures outlive successes
+# because they are the diagnostic record. 0 on either disables that sweep;
+# KEEP_MIN is a floor that survives any age rule, so a quiet stretch cannot
+# empty the queue history.
+BRAIN_TICK_COMPLETED_RETAIN_DAYS = int(os.getenv("BRAIN_TICK_COMPLETED_RETAIN_DAYS", "7"))
+BRAIN_TICK_FAILED_RETAIN_DAYS = int(os.getenv("BRAIN_TICK_FAILED_RETAIN_DAYS", "30"))
+BRAIN_TICK_QUEUE_KEEP_MIN = int(os.getenv("BRAIN_TICK_QUEUE_KEEP_MIN", "20"))
 # Below signals (8) and inject (9): lessons are context, not an alarm.
 LESSON_FEED_PRIORITY = 7
 BRAIN_STALE_SIGNAL_KEEP_SEVERITIES = {"nuclear", "critical"}
@@ -581,6 +588,52 @@ TAG_REGION_MAP = {
 INBOX_DEFAULT_REGION = "left"
 
 
+def sweep_tick_queue(brain_feed_dir: Path, dry_run: bool = False) -> dict:
+    """Age out resolved tick-request records.
+
+    `requested/` drains itself; `completed/` and `failed/` only ever grow. That
+    costs three ways: GET /tick/{job_id} linearly scans all three directories on
+    every status poll, the failed pile reads as an active fault to anyone who
+    looks (the 59 sitting here were all queued and abandoned on one day three
+    months ago), and nothing ever reclaims the space.
+
+    Failures are kept far longer than successes — they are the diagnostic
+    record, and their value is exactly that they outlive the incident. A
+    floor of the most recent few is kept in both regardless of age, so a quiet
+    fortnight cannot erase the queue's history entirely.
+
+    `requested/` is never touched: a pending request is live state, and its
+    age means the drain is behind, not that the record is stale.
+    """
+    stats = {"completed_removed": 0, "failed_removed": 0, "errors": 0}
+    now = datetime.now(timezone.utc)
+    targets = (
+        ("completed", BRAIN_TICK_COMPLETED_RETAIN_DAYS, "completed_removed"),
+        ("failed", BRAIN_TICK_FAILED_RETAIN_DAYS, "failed_removed"),
+    )
+    for name, retain_days, stat_key in targets:
+        d = brain_feed_dir / "ticks" / name
+        if not d.is_dir() or retain_days <= 0:
+            continue
+        try:
+            records = sorted(d.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        except OSError:
+            stats["errors"] += 1
+            continue
+        cutoff = now - timedelta(days=retain_days)
+        # Newest BRAIN_TICK_QUEUE_KEEP_MIN are exempt from the age rule.
+        for path in records[BRAIN_TICK_QUEUE_KEEP_MIN:]:
+            try:
+                if datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc) >= cutoff:
+                    continue
+                if not dry_run:
+                    path.unlink()
+                stats[stat_key] += 1
+            except OSError:
+                stats["errors"] += 1
+    return stats
+
+
 def drain_inbox(vault_root: Path, dry_run: bool = False) -> dict:
     """Move notes from raw/inbox/ to appropriate region dirs based on tags."""
     inbox = vault_root / "raw" / "inbox"
@@ -649,6 +702,9 @@ def tick(
     # about to read, and it is what lets write_lessons_feed assume one log per
     # date at one path. A clean vault makes this a no-op.
     lesson_stats = lesson_reconcile.reconcile_lessons(vault_root, dry_run=dry_run)
+
+    # Phase 0c: age out resolved tick records so the queue dirs stay bounded.
+    queue_stats = sweep_tick_queue(brain_feed_dir, dry_run=dry_run)
 
     # 1. Scan all arc files — region dirs first, then clusters/
     arcs: list[markers.DocumentMeta] = []
@@ -1013,6 +1069,7 @@ def tick(
         "lesson_strays_removed": lesson_stats["strays_removed"],
         "lesson_feed_written": lesson_feed_stats["written"],
         "lesson_feed_stale": lesson_feed_stats["tombstoned_stale"],
+        "tick_records_swept": queue_stats["completed_removed"] + queue_stats["failed_removed"],
         "dry_run": dry_run,
     }
     return stats
