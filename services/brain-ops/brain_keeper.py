@@ -588,6 +588,30 @@ TAG_REGION_MAP = {
 INBOX_DEFAULT_REGION = "left"
 
 
+# A day count large enough to overflow timedelta aborts the sweep, and the
+# sweep runs before every other phase of the tick. Clamped rather than trusted.
+_MAX_RETAIN_DAYS = 36500
+
+
+def _resolution_time(path: Path) -> float:
+    """When a queue record reached its terminal state, as an epoch float.
+
+    Not mtime alone. The drain resolves a request by `mv`-ing it out of
+    `requested/`, and rename(2) on one filesystem preserves mtime — so a job
+    that sat in the queue for weeks before completing inherits its *enqueue*
+    time and is swept seconds after it finally resolves. That deletes exactly
+    the records worth keeping: the ones that took long enough to be
+    interesting. rename does update ctime, so the later of the two is the
+    moment the record stopped changing.
+
+    A restored vault (`cp -a` preserves mtime, sets a fresh ctime) reads as
+    recent under this rule and is retained rather than purged — the safe
+    direction for a function that deletes.
+    """
+    st = path.stat()
+    return max(st.st_mtime, st.st_ctime)
+
+
 def sweep_tick_queue(brain_feed_dir: Path, dry_run: bool = False) -> dict:
     """Age out resolved tick-request records.
 
@@ -607,6 +631,7 @@ def sweep_tick_queue(brain_feed_dir: Path, dry_run: bool = False) -> dict:
     """
     stats = {"completed_removed": 0, "failed_removed": 0, "errors": 0}
     now = datetime.now(timezone.utc)
+    keep_min = max(0, BRAIN_TICK_QUEUE_KEEP_MIN)
     targets = (
         ("completed", BRAIN_TICK_COMPLETED_RETAIN_DAYS, "completed_removed"),
         ("failed", BRAIN_TICK_FAILED_RETAIN_DAYS, "failed_removed"),
@@ -615,21 +640,25 @@ def sweep_tick_queue(brain_feed_dir: Path, dry_run: bool = False) -> dict:
         d = brain_feed_dir / "ticks" / name
         if not d.is_dir() or retain_days <= 0:
             continue
+        # Clamped because timedelta overflows on a large enough day count, and
+        # this runs before every other phase — a single fat-fingered env value
+        # (days confused for seconds) would otherwise abort every tick forever.
+        retain_days = min(retain_days, _MAX_RETAIN_DAYS)
         try:
-            records = sorted(d.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-        except OSError:
+            records = sorted(d.glob("*.json"), key=_resolution_time, reverse=True)
+            cutoff = now - timedelta(days=retain_days)
+        except (OSError, ValueError, OverflowError):
             stats["errors"] += 1
             continue
-        cutoff = now - timedelta(days=retain_days)
         # Newest BRAIN_TICK_QUEUE_KEEP_MIN are exempt from the age rule.
-        for path in records[BRAIN_TICK_QUEUE_KEEP_MIN:]:
+        for path in records[keep_min:]:
             try:
-                if datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc) >= cutoff:
+                if datetime.fromtimestamp(_resolution_time(path), tz=timezone.utc) >= cutoff:
                     continue
                 if not dry_run:
                     path.unlink()
                 stats[stat_key] += 1
-            except OSError:
+            except (OSError, ValueError, OverflowError):
                 stats["errors"] += 1
     return stats
 
