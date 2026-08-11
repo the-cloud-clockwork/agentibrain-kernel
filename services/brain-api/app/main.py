@@ -214,7 +214,9 @@ async def health_deep(_: None = Depends(require_token)) -> dict:
                                 },
                             )
                             comp.raise_for_status()
-                            text = (comp.json()["choices"][0]["message"]["content"] or "").strip()
+                            text = (
+                                comp.json()["choices"][0]["message"]["content"] or ""
+                            ).strip()
                             pong = "pong" in text.lower()
                             if not pong:
                                 ok = False
