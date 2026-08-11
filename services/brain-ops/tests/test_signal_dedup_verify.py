@@ -27,7 +27,6 @@ import brain_apply  # noqa: E402
 import brain_verifier  # noqa: E402
 import markers  # noqa: E402
 
-
 # ---------- Phase 4: parse_signals regex ----------
 
 

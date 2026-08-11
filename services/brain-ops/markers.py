@@ -50,6 +50,26 @@ ATTR_RE = re.compile(r'(\w+)=(?:"([^"]*)"|(\S+))')
 # Frontmatter delimiters
 FM_DELIM = "---"
 
+# A brain-api lesson log: `lessons-YYYY-MM-DD.md`, one file per day, each entry a
+# `## <ISO ts> — <source>` block. These are NOT work arcs — they carry no
+# cluster_id and no synthesis — but their filename embeds a date, so any check
+# that sniffs a date out of the name (see brain_keeper.is_arc) misreads them as
+# arcs and lets the heat/graduation machinery move and cool them. Anchored and
+# date-shaped so it cannot catch an unrelated file merely starting with "lessons".
+# Single source of truth: brain_keeper.is_arc, embed_arcs and lesson_reconcile
+# all match against this one pattern.
+LESSON_LOG_RE = re.compile(r"^lessons-\d{4}-\d{2}-\d{2}\.md$")
+
+# An entry boundary inside a lesson log. The timestamp is required, not
+# decoration: a bare `^## ` boundary also fires on a markdown heading written
+# *inside* a lesson's own prose, which splits one entry into two, defeats the
+# content-hash dedup, and — worst — makes the reconcile pass non-idempotent, so
+# it rewrites the file and re-embeds it on every tick forever. Every one of the
+# 154 entry headers in the live vault leads with an ISO timestamp, because
+# brain-api's `_build_lesson_entry` always puts one first.
+LESSON_ENTRY_SPLIT_RE = re.compile(r"(?m)^(?=##\s+\d{4}-\d{2}-\d{2}T)")
+LESSON_ENTRY_HEADER_RE = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2}T\S*)")
+
 # Severity ordering for comparisons
 SEVERITY_ORDER = {"info": 0, "warning": 1, "critical": 2, "nuclear": 3}
 

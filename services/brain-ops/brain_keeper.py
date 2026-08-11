@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import markers
 import redact
 import brain_verifier
+import lesson_reconcile
 
 
 # ── Heat computation ──────────────────────────────────────────────────
@@ -52,10 +53,39 @@ BRAIN_DECAY_INTERVAL_DAYS = max(1, int(os.getenv("BRAIN_DECAY_INTERVAL_DAYS", "4
 # nuclear/critical get filtered out of signals.md. Prevents broadcast pollution
 # from old stress-test debris and orphan signals.
 BRAIN_STALE_SIGNAL_DAYS = int(os.getenv("BRAIN_STALE_SIGNAL_DAYS", "3"))
+# Nuclear/critical signals used to skip the age sweep entirely and broadcast
+# forever. They now get a longer window instead of an exemption — long enough
+# that a real credential event cannot quietly lapse, short enough that a
+# cancelled CI run stops shouting days later. Five days is one working week: a
+# nuclear signal nobody has acted on in that time has already failed as a
+# signal, and repeating it only costs every agent's attention. A signal can
+# override this with `ttl_days=`, the same knob @inject blocks already honour.
+BRAIN_STALE_CRITICAL_DAYS = int(os.getenv("BRAIN_STALE_CRITICAL_DAYS", "5"))
 # @inject blocks ride every session for their parent arc's lifetime. Without a
 # cap an April note was still being injected in July. Longer than the signal
 # window because injects are standing guidance, not incidents. 0 disables.
 BRAIN_STALE_INJECT_DAYS = int(os.getenv("BRAIN_STALE_INJECT_DAYS", "30"))
+# Recent lessons ride every session, so the feed is capped hard on both axes.
+# Between the signal window (3d, incidents) and the inject window (30d,
+# standing guidance): a lesson stays useful longer than an alarm but is not
+# permanent advice.
+BRAIN_STALE_LESSON_DAYS = int(os.getenv("BRAIN_STALE_LESSON_DAYS", "14"))
+BRAIN_LESSON_FEED_MAX = int(os.getenv("BRAIN_LESSON_FEED_MAX", "6"))
+# Floor on what earns one of the injected slots. Smoke-test debris ("content",
+# "codex smoke test marker") is real in the vault and was taking two of six.
+# This filters the FEED only — nothing is deleted, and every lesson stays in
+# the vault and searchable. A lesson too short to clear this is also too short
+# to meet the marker standard ("be specific — 'fixed the bug' teaches nobody").
+BRAIN_LESSON_MIN_CHARS = int(os.getenv("BRAIN_LESSON_MIN_CHARS", "40"))
+# Retention for resolved tick-request records. Failures outlive successes
+# because they are the diagnostic record. 0 on either disables that sweep;
+# KEEP_MIN is a floor that survives any age rule, so a quiet stretch cannot
+# empty the queue history.
+BRAIN_TICK_COMPLETED_RETAIN_DAYS = int(os.getenv("BRAIN_TICK_COMPLETED_RETAIN_DAYS", "7"))
+BRAIN_TICK_FAILED_RETAIN_DAYS = int(os.getenv("BRAIN_TICK_FAILED_RETAIN_DAYS", "30"))
+BRAIN_TICK_QUEUE_KEEP_MIN = int(os.getenv("BRAIN_TICK_QUEUE_KEEP_MIN", "20"))
+# Below signals (8) and inject (9): lessons are context, not an alarm.
+LESSON_FEED_PRIORITY = 7
 BRAIN_STALE_SIGNAL_KEEP_SEVERITIES = {"nuclear", "critical"}
 
 
@@ -113,6 +143,13 @@ def is_arc(doc: markers.DocumentMeta) -> bool:
     penalises every cycle. They still contribute markers; they just don't
     compete for heat.
     """
+    # A lesson log is never an arc. Checked before cluster_id, because a stray
+    # cluster_id on one of these must not readmit it: the date in the filename
+    # is the log's date, not an arc's, and treating it as one is what let the
+    # graduation step move lesson logs out of left/reference and cool them to
+    # heat 0 until nothing could find them.
+    if doc.path and markers.LESSON_LOG_RE.match(doc.path.name):
+        return False
     fm = doc.frontmatter
     if fm.get("cluster_id"):
         return True
@@ -298,9 +335,12 @@ def write_signals_feed(
         f"## Signals — {date_str}",
         "",
     ]
-    cutoff = now - timedelta(days=BRAIN_STALE_SIGNAL_DAYS)
     for sig in signals_list:
-        sev = sig.attr("severity", "info")
+        # Case-folded: the severity is free text a marker author typed, and a
+        # capitalised `Nuclear` silently fell into the short window because the
+        # protected set is matched exactly. A credential alert quietly losing
+        # two days of life to a shift key is not an acceptable failure mode.
+        sev = sig.attr("severity", "info").strip().lower()
         src = sig.attr("source", "unknown")
         content_line = sig.content.splitlines()[0] if sig.content else "(empty)"
 
@@ -316,20 +356,50 @@ def write_signals_feed(
             stats["tombstoned_mitigated"] += 1
             continue
 
-        # Stale sweep: filter signals whose parent arc is too old, unless
-        # the severity is protected (nuclear/critical always broadcast).
-        if sev not in BRAIN_STALE_SIGNAL_KEEP_SEVERITIES:
-            parent_created = sig.attr("_parent_arc_created", "")
-            if parent_created:
-                try:
-                    pc = datetime.fromisoformat(parent_created.replace("Z", "+00:00"))
-                    if pc.tzinfo is None:
-                        pc = pc.replace(tzinfo=timezone.utc)
-                    if pc < cutoff:
-                        stats["tombstoned_stale"] += 1
-                        continue
-                except (ValueError, TypeError):
-                    pass
+        # Stale sweep. Protected severities get a longer window, not an
+        # exemption. Exempting them meant a nuclear signal broadcast forever
+        # unless an agent performed one of two exact rituals, and in practice
+        # that never happened: a cancelled CI run from 2026-08-05 was still
+        # firing six days later, and forty vault files had accumulated
+        # complaining about it — the brain raising alarm about its own
+        # inability to clear alarm. An alert nobody has acted on in a week is
+        # not made more actionable by broadcasting it in week two.
+        max_age = (
+            BRAIN_STALE_CRITICAL_DAYS
+            if sev in BRAIN_STALE_SIGNAL_KEEP_SEVERITIES
+            else BRAIN_STALE_SIGNAL_DAYS
+        )
+        # A signal whose verify command just re-confirmed the claim is a live
+        # re-observation, not an old record. The age sweep exists to retire
+        # claims nobody can confirm; this one was confirmed seconds ago.
+        if sig.attr("_still_true", "") == "true":
+            lines.append(f"- **[{sev}]** ({src}) {content_line}")
+            stats["written"] += 1
+            continue
+
+        # Per-signal override, same knob @inject blocks already honour.
+        raw_ttl = sig.attr("ttl_days", "")
+        if raw_ttl:
+            try:
+                max_age = int(raw_ttl)
+            except (ValueError, TypeError):
+                # Silently reverting to the default hides a typo'd override,
+                # and the operator only finds out when a signal expires early.
+                print(
+                    f"WARN: signal ({src}) has unparseable ttl_days={raw_ttl!r}; "
+                    f"using the {sev} default of {max_age}d"
+                )
+        parent_created = sig.attr("_parent_arc_created", "")
+        if parent_created:
+            try:
+                pc = datetime.fromisoformat(parent_created.replace("Z", "+00:00"))
+                if pc.tzinfo is None:
+                    pc = pc.replace(tzinfo=timezone.utc)
+                if pc < now - timedelta(days=max_age):
+                    stats["tombstoned_stale"] += 1
+                    continue
+            except (ValueError, TypeError):
+                pass
 
         lines.append(f"- **[{sev}]** ({src}) {content_line}")
         stats["written"] += 1
@@ -367,6 +437,91 @@ def _inject_is_live(inj: markers.Marker, now: datetime) -> bool:
     except ValueError:
         return True
     return (now - created_dt).days <= max_age
+
+
+def write_lessons_feed(path: Path, vault_root: Path, now: datetime | None = None) -> dict:
+    """Generate lessons.md from the most recent lesson-log entries.
+
+    Returns stats dict: {scanned_files, entries_found, written, tombstoned_stale}.
+
+    Source is the `left/reference/lessons-*.md` logs, not the @lesson markers
+    collected from arc bodies. The two are disjoint populations: arc lessons
+    are written by cluster synthesis and carry only their parent arc's
+    `created`, while these logs carry a real per-entry ISO timestamp in every
+    `##` header — and "most recent" is meaningless without one. Arc lessons
+    stay reachable through their arcs.
+
+    `id: lessons` contains neither "hot" nor "inject", so brain-api's
+    feed_payload() buckets it as a generic entry and the agentihooks adapter
+    picks it up with no change on its side.
+    """
+    now = now or datetime.now(timezone.utc)
+    stats = {
+        "scanned_files": 0,
+        "entries_found": 0,
+        "written": 0,
+        "tombstoned_stale": 0,
+        "skipped_thin": 0,
+    }
+    header = (
+        "---\nid: lessons\ntitle: Recent Lessons\n"
+        f"priority: {LESSON_FEED_PRIORITY}\nttl: 3600\nseverity: info\n---\n"
+    )
+
+    lessons_dir = vault_root / "left" / "reference"
+    entries: list[tuple[str, str]] = []
+    if lessons_dir.is_dir():
+        for log_path in sorted(lessons_dir.glob("lessons-*.md")):
+            if not markers.LESSON_LOG_RE.match(log_path.name):
+                continue
+            stats["scanned_files"] += 1
+            try:
+                text = log_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for entry in lesson_reconcile.split_entries(text):
+                stats["entries_found"] += 1
+                if len(entry[1].strip()) < BRAIN_LESSON_MIN_CHARS:
+                    stats["skipped_thin"] += 1
+                    continue
+                entries.append(entry)
+
+    cutoff = now - timedelta(days=BRAIN_STALE_LESSON_DAYS)
+    # Carry the parsed datetime so ordering is chronological. Sorting the raw
+    # ISO strings only agrees with time while every header shares one offset —
+    # true today because brain-api normalizes to UTC before writing, but a
+    # hand-edited entry or a future producer in another zone would silently
+    # reorder "most recent" with no error.
+    fresh: list[tuple[datetime, str, str]] = []
+    for entry_header, body in entries:
+        ts = lesson_reconcile.entry_sort_key(entry_header)
+        try:
+            entry_dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            if entry_dt.tzinfo is None:
+                entry_dt = entry_dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            # An unparseable timestamp cannot be aged out, so keep it rather
+            # than silently dropping a lesson on a formatting technicality.
+            fresh.append((now, entry_header, body))
+            continue
+        if entry_dt < cutoff:
+            stats["tombstoned_stale"] += 1
+            continue
+        fresh.append((entry_dt, entry_header, body))
+
+    if not fresh:
+        path.write_text(header + "\nNo recent lessons.\n", encoding="utf-8")
+        return stats
+
+    fresh.sort(key=lambda e: e[0], reverse=True)
+    top = fresh[:BRAIN_LESSON_FEED_MAX]
+
+    lines = [header]
+    for entry_dt, _entry_header, body in top:
+        lines.append(f"\n- **[{entry_dt.date().isoformat()}]** {body.strip()}\n")
+    path.write_text("".join(lines), encoding="utf-8")
+    stats["written"] = len(top)
+    return stats
 
 
 def write_inject_feed(path: Path, injects: list[markers.Marker]) -> None:
@@ -452,6 +607,81 @@ TAG_REGION_MAP = {
 INBOX_DEFAULT_REGION = "left"
 
 
+# A day count large enough to overflow timedelta aborts the sweep, and the
+# sweep runs before every other phase of the tick. Clamped rather than trusted.
+_MAX_RETAIN_DAYS = 36500
+
+
+def _resolution_time(path: Path) -> float:
+    """When a queue record reached its terminal state, as an epoch float.
+
+    Not mtime alone. The drain resolves a request by `mv`-ing it out of
+    `requested/`, and rename(2) on one filesystem preserves mtime — so a job
+    that sat in the queue for weeks before completing inherits its *enqueue*
+    time and is swept seconds after it finally resolves. That deletes exactly
+    the records worth keeping: the ones that took long enough to be
+    interesting. rename does update ctime, so the later of the two is the
+    moment the record stopped changing.
+
+    A restored vault (`cp -a` preserves mtime, sets a fresh ctime) reads as
+    recent under this rule and is retained rather than purged — the safe
+    direction for a function that deletes.
+    """
+    st = path.stat()
+    return max(st.st_mtime, st.st_ctime)
+
+
+def sweep_tick_queue(brain_feed_dir: Path, dry_run: bool = False) -> dict:
+    """Age out resolved tick-request records.
+
+    `requested/` drains itself; `completed/` and `failed/` only ever grow. That
+    costs three ways: GET /tick/{job_id} linearly scans all three directories on
+    every status poll, the failed pile reads as an active fault to anyone who
+    looks (the 59 sitting here were all queued and abandoned on one day three
+    months ago), and nothing ever reclaims the space.
+
+    Failures are kept far longer than successes — they are the diagnostic
+    record, and their value is exactly that they outlive the incident. A
+    floor of the most recent few is kept in both regardless of age, so a quiet
+    fortnight cannot erase the queue's history entirely.
+
+    `requested/` is never touched: a pending request is live state, and its
+    age means the drain is behind, not that the record is stale.
+    """
+    stats = {"completed_removed": 0, "failed_removed": 0, "errors": 0}
+    now = datetime.now(timezone.utc)
+    keep_min = max(0, BRAIN_TICK_QUEUE_KEEP_MIN)
+    targets = (
+        ("completed", BRAIN_TICK_COMPLETED_RETAIN_DAYS, "completed_removed"),
+        ("failed", BRAIN_TICK_FAILED_RETAIN_DAYS, "failed_removed"),
+    )
+    for name, retain_days, stat_key in targets:
+        d = brain_feed_dir / "ticks" / name
+        if not d.is_dir() or retain_days <= 0:
+            continue
+        # Clamped because timedelta overflows on a large enough day count, and
+        # this runs before every other phase — a single fat-fingered env value
+        # (days confused for seconds) would otherwise abort every tick forever.
+        retain_days = min(retain_days, _MAX_RETAIN_DAYS)
+        try:
+            records = sorted(d.glob("*.json"), key=_resolution_time, reverse=True)
+            cutoff = now - timedelta(days=retain_days)
+        except (OSError, ValueError, OverflowError):
+            stats["errors"] += 1
+            continue
+        # Newest BRAIN_TICK_QUEUE_KEEP_MIN are exempt from the age rule.
+        for path in records[keep_min:]:
+            try:
+                if datetime.fromtimestamp(_resolution_time(path), tz=timezone.utc) >= cutoff:
+                    continue
+                if not dry_run:
+                    path.unlink()
+                stats[stat_key] += 1
+            except (OSError, ValueError, OverflowError):
+                stats["errors"] += 1
+    return stats
+
+
 def drain_inbox(vault_root: Path, dry_run: bool = False) -> dict:
     """Move notes from raw/inbox/ to appropriate region dirs based on tags."""
     inbox = vault_root / "raw" / "inbox"
@@ -514,6 +744,15 @@ def tick(
 
     # Phase 0: drain raw/inbox/ → region dirs before scanning arcs
     inbox_stats = drain_inbox(vault_root, dry_run=dry_run)
+
+    # Phase 0b: heal lesson logs the old is_arc() bug scattered across regions.
+    # Must precede the scan below — it merges and removes files the scan is
+    # about to read, and it is what lets write_lessons_feed assume one log per
+    # date at one path. A clean vault makes this a no-op.
+    lesson_stats = lesson_reconcile.reconcile_lessons(vault_root, dry_run=dry_run)
+
+    # Phase 0c: age out resolved tick records so the queue dirs stay bounded.
+    queue_stats = sweep_tick_queue(brain_feed_dir, dry_run=dry_run)
 
     # 1. Scan all arc files — region dirs first, then clusters/
     arcs: list[markers.DocumentMeta] = []
@@ -607,6 +846,13 @@ def tick(
                 if not dry_run and arc.path:
                     _update_frontmatter_field(arc.path, "created", stamp)
 
+            # A lesson log carries no heat. Stamping one would also fight the
+            # reconcile pass, which rewrites these files to a fixed frontmatter
+            # block: the tick would add `heat:`, the next reconcile would strip
+            # it, and both would rewrite the file forever.
+            if not is_arc(arc):
+                continue
+
             cid = arc.frontmatter.get("cluster_id", "")
             boost = replay_boost_map.get(cid, 0)
             old_heat = arc.frontmatter.get("heat", "0")
@@ -624,6 +870,13 @@ def tick(
         for arc in arcs:
             heat = int(arc.frontmatter.get("heat", 0))
             if arc.path is None:
+                continue
+            # Lesson logs are not arcs and must not ride the heat ladder. This
+            # step copies rather than moves, so a promoted log left a second
+            # copy in conscious/ that Phase 0b then reclaimed as a stray and
+            # deleted — and promotion recreated it on the next tick. A ping-pong
+            # that never converges, writing a backup every cycle.
+            if not is_arc(arc):
                 continue
             fname = arc.path.name
 
@@ -658,7 +911,12 @@ def tick(
             extract_workflow = None  # type: ignore
         if extract_workflow is not None:
             for arc in arcs:
-                if arc.path is None:
+                # `arc.path` is where the scan found the file, and the demote
+                # step above moves files out of conscious/. Reading the stale
+                # path raised FileNotFoundError straight out of tick(), taking
+                # the whole maintenance pass down — feeds, dashboards and all —
+                # on any tick that demoted an arc.
+                if arc.path is None or not arc.path.exists():
                     continue
                 heat = int(arc.frontmatter.get("heat", 0))
                 status = arc.frontmatter.get("status", "")
@@ -760,6 +1018,16 @@ def tick(
     signals_deduped = 0
     for arc in arcs:
         arc_created = arc.frontmatter.get("created", "")
+        if not arc_created:
+            # `created` is only backfilled onto real arcs, so a standing doc
+            # (bridge/vision.md and friends — no cluster_id, no date) left this
+            # empty, and an empty value skips the age check entirely: every
+            # signal in such a document broadcast forever, at any severity.
+            # resolve_created falls back to the filename date and then mtime,
+            # so there is always a clock to age against.
+            derived, _ = resolve_created(arc)
+            if derived is not None:
+                arc_created = derived.strftime("%Y-%m-%d")
         for sig in arc.signals:
             sig.attrs["_parent_arc_created"] = arc_created
             sig_source = sig.attr("source", "")
@@ -799,6 +1067,13 @@ def tick(
         "tombstoned_cleared": 0,
         "tombstoned_mitigated": 0,
     }
+    lesson_feed_stats = {
+        "scanned_files": 0,
+        "entries_found": 0,
+        "written": 0,
+        "tombstoned_stale": 0,
+        "skipped_thin": 0,
+    }
     # Auto-verifier: run each signal's verify= command, tag _mitigated=true on
     # signals whose underlying claim has been falsified. write_signals_feed
     # already honors _mitigated for tombstoning, so no further plumbing needed.
@@ -809,6 +1084,9 @@ def tick(
         write_hot_arcs_md(brain_feed_dir / "hot-arcs.md", hot)
         signal_stats = write_signals_feed(brain_feed_dir / "signals.md", all_signals, now=now)
         write_inject_feed(brain_feed_dir / "inject.md", all_injects)
+        lesson_feed_stats = write_lessons_feed(
+            brain_feed_dir / "lessons.md", vault_root, now=now
+        )
 
     # 6. Update dashboards (skipped in quick_refresh)
     if not dry_run and not quick_refresh:
@@ -843,6 +1121,13 @@ def tick(
         "signals_verified_error": verify_stats.get("verified_error", 0),
         "inject_blocks_collected": len(all_injects),
         "lessons_collected": len(all_lessons),
+        "lesson_logs_scanned": lesson_stats["scanned"],
+        "lesson_logs_merged": lesson_stats["merged"],
+        "lesson_entries_deduped": lesson_stats["entries_deduped"],
+        "lesson_strays_removed": lesson_stats["strays_removed"],
+        "lesson_feed_written": lesson_feed_stats["written"],
+        "lesson_feed_stale": lesson_feed_stats["tombstoned_stale"],
+        "tick_records_swept": queue_stats["completed_removed"] + queue_stats["failed_removed"],
         "dry_run": dry_run,
     }
     return stats

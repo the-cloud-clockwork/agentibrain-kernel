@@ -24,8 +24,8 @@ import hashlib
 import json
 import logging
 import os
+import threading
 import time
-from pathlib import Path
 from typing import Any
 
 from fastapi import (
@@ -36,17 +36,19 @@ from fastapi import (
     Form,
     Header,
     HTTPException,
-    Path as PathParam,
     Query,
     UploadFile,
 )
+from fastapi import (
+    Path as PathParam,
+)
 
+from . import vault_reader
 from .feed import VAULT_ROOT, feed_payload
 from .markers import MarkerError, write_marker
 from .router import IngestResult, ingest_message
 from .signal import read_signal
 from .tick_trigger import enqueue_tick, get_tick_status
-from . import vault_reader
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 log = logging.getLogger("brain-api.main")
@@ -63,6 +65,11 @@ IDEMPOTENCY_TTL_SECONDS = int(os.getenv("IDEMPOTENCY_TTL_SECONDS", "3600"))
 _FEED_CACHE_TTL = int(os.getenv("FEED_CACHE_TTL_SECONDS", "30"))
 
 _idempotency_cache: dict[str, tuple[float, dict]] = {}
+# Sync route handlers run in Starlette's thread pool, so concurrent POSTs
+# (CLI sync racing tick-cron's drain on the same outbox) genuinely execute in
+# parallel threads. The check-then-act on the cache must be atomic or both
+# miss and double-write the marker.
+_idempotency_lock = threading.Lock()
 _feed_cache: dict[str, Any] = {"ts": 0.0, "payload": None}
 
 
@@ -104,8 +111,9 @@ async def health_deep(_: None = Depends(require_token)) -> dict:
     the embeddings service can reach both its DB and the embedding model
     (via its own /health/deep), and the inference gateway accepts our key.
     """
-    import httpx
     import uuid
+
+    import httpx
 
     checks: dict[str, Any] = {}
     ok = True
@@ -474,29 +482,33 @@ def post_marker(
     body_hash = _hash_marker_body(marker_type, content, attrs)
     idem_key = (x_idempotency_key or body_hash).strip()
 
-    _purge_idempotency()
-    cached = _idempotency_cache.get(idem_key)
-    if cached is not None:
-        cached_payload = dict(cached[1])
-        cached_payload["idempotent_replay"] = True
-        return cached_payload
+    # The lock spans check-write-record so two threads carrying the same key
+    # cannot both miss the cache and double-apply; it also serialises the
+    # non-atomic read-modify-write appends inside write_marker.
+    with _idempotency_lock:
+        _purge_idempotency()
+        cached = _idempotency_cache.get(idem_key)
+        if cached is not None:
+            cached_payload = dict(cached[1])
+            cached_payload["idempotent_replay"] = True
+            return cached_payload
 
-    try:
-        result = write_marker(marker_type, content, attrs)
-    except MarkerError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except OSError as exc:
-        log.error("marker write failed: %s", exc)
-        raise HTTPException(status_code=503, detail=f"vault write failed: {exc}")
+        try:
+            result = write_marker(marker_type, content, attrs)
+        except MarkerError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except OSError as exc:
+            log.error("marker write failed: %s", exc)
+            raise HTTPException(status_code=503, detail=f"vault write failed: {exc}")
 
-    response = {
-        "ok": True,
-        "idempotency_key": idem_key,
-        "body_hash": body_hash,
-        **result,
-    }
-    _idempotency_cache[idem_key] = (time.time(), response)
-    return response
+        response = {
+            "ok": True,
+            "idempotency_key": idem_key,
+            "body_hash": body_hash,
+            **result,
+        }
+        _idempotency_cache[idem_key] = (time.time(), response)
+        return response
 
 
 @app.post("/tick", status_code=202)

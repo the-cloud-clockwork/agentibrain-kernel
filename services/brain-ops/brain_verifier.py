@@ -110,11 +110,21 @@ def apply_verify_results(
     signals: list[markers.Marker],
     results: dict[tuple[str, str], str],
 ) -> dict[str, int]:
-    """Stamp `_mitigated=true` on signals whose verify command passed.
+    """Stamp the verdict on each signal for `write_signals_feed` to consume.
 
-    The existing `write_signals_feed` tombstone path consumes `_mitigated`, so
-    no changes are needed there. Returns stats dict for inclusion in the tick
-    summary.
+    Two outcomes matter, in opposite directions:
+
+    `pass` means the verify command succeeded, which falsifies the signal's
+    claim — stamped `_mitigated` so the existing tombstone path drops it.
+
+    `fail` means the claim still stands, and that is a live re-observation, not
+    merely an old record. Stamped `_still_true` so the age sweep leaves it
+    alone. Without this a nuclear signal re-confirming "the key is still
+    exposed" on every tick was swept anyway once its parent arc aged past the
+    window — the age sweep exists to retire claims nobody can confirm, and this
+    is a claim the machine just confirmed.
+
+    Returns stats dict for inclusion in the tick summary.
     """
     stats = {"verified_pass": 0, "verified_fail": 0, "verified_skip": 0, "verified_error": 0}
     for sig in signals:
@@ -123,6 +133,8 @@ def apply_verify_results(
         if status == PASS_STATUS:
             sig.attrs["_mitigated"] = "true"
             sig.attrs["_mitigated_by"] = "verifier"
+        elif status == FAIL_STATUS:
+            sig.attrs["_still_true"] = "true"
     return stats
 
 

@@ -15,18 +15,26 @@ module focuses on file routing + writing.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
+from uuid import uuid4
 
 VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "/vault")).resolve()
 
 _VALID_TYPES = frozenset({"lesson", "milestone", "signal", "decision"})
 _VALID_SEVERITIES = frozenset({"nuclear", "critical", "warning", "info"})
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+# Entry boundary inside a lesson log. The timestamp is required: a bare `^## `
+# also matches a markdown heading written inside a lesson's own prose, which
+# splits one entry in two and makes the dedup below miss. Kept in sync with
+# `services/brain-ops/markers.py` LESSON_ENTRY_SPLIT_RE / LESSON_ENTRY_HEADER_RE
+# — different services, no shared import.
+_LESSON_ENTRY_SPLIT_RE = re.compile(r"(?m)^(?=##\s+\d{4}-\d{2}-\d{2}T)")
+_LESSON_ENTRY_HEADER_RE = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2}T\S*)")
 _ADR_PATH_RE = re.compile(r"^ADR-(\d+)-", re.IGNORECASE)
 
 
@@ -91,9 +99,109 @@ def _write_new(path: Path, body: str) -> None:
     path.write_text(body + ("\n" if not body.endswith("\n") else ""), encoding="utf-8")
 
 
-def _format_timestamp_utc() -> tuple[str, str]:
-    now = datetime.now(tz=timezone.utc)
-    return now.strftime("%Y-%m-%d"), now.strftime("%Y%m%dT%H%M%SZ")
+def _format_timestamp_utc(override_ts: str | None = None) -> tuple[str, str, str]:
+    """Return (date_part, stamp, ts_iso), backdated when the marker carries one.
+
+    A replayed marker (outbox/backlog sync) sends its original emission time in
+    `attrs.ts`; honouring it keeps lessons/milestones in their original dated
+    files and arc dating truthful. Anything unparseable falls back to now.
+    """
+    moment = datetime.now(tz=timezone.utc)
+    if override_ts:
+        try:
+            parsed = datetime.fromisoformat(str(override_ts).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            moment = parsed.astimezone(timezone.utc)
+        except ValueError:
+            pass
+    return (
+        moment.strftime("%Y-%m-%d"),
+        moment.strftime("%Y%m%dT%H%M%SZ"),
+        moment.isoformat(timespec="seconds"),
+    )
+
+
+def _content_hash(text: str) -> str:
+    """Repo-standard content hash, matching brain-ops' recipe exactly.
+
+    Newlines are normalized first because the two sides of the dedup comparison
+    take different routes: the incoming lesson is hashed as submitted, while the
+    on-disk copy has been through `read_text`, whose universal-newline handling
+    silently rewrites `\\r\\n` to `\\n`. Without this, a lesson pasted from a
+    Windows source never matches itself on resubmission — precisely the repeat
+    the dedup exists to stop.
+    """
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(normalized.strip().encode("utf-8")).hexdigest()[:16]
+
+
+def _lesson_frontmatter(date_part: str) -> str:
+    """Frontmatter seeded when a day's lesson log is first created.
+
+    Without it these files embed as `Title: untitled` with no region, which is
+    indistinguishable from a dead session arc in the index.
+
+    Kept byte-identical to `services/brain-ops/lesson_reconcile.build_frontmatter`.
+    The two live in separate services and cannot share an import, so they agree
+    by convention — if this changes, that must too, or the tick's reconcile pass
+    will rewrite every log on every tick instead of being a no-op.
+    """
+    return (
+        "---\n"
+        f"id: lessons-{date_part}\n"
+        f"title: Lessons — {date_part}\n"
+        "type: lesson-log\n"
+        f"created: {date_part}\n"
+        "---\n"
+    )
+
+
+def _append_lesson(path: Path, entry: str, content: str, date_part: str) -> str:
+    """Append a lesson entry, seeding frontmatter and skipping duplicates.
+
+    Returns "appended" or "duplicate".
+
+    Dedup hashes the lesson *content* only, never the rendered entry: the
+    header carries a fresh timestamp and session id every time, so a
+    header-inclusive hash matches nothing. Agents re-emit the same lesson
+    across sessions, and the HTTP idempotency cache only covers an exact replay
+    within its TTL — which is how one log came to hold the same lesson four
+    times.
+
+    The index is the target file itself, so no side-car state can drift out of
+    sync with the vault, and a legacy file with no frontmatter is handled the
+    same as a fresh one. Repetition on a *different* day is left alone: a
+    lesson re-learned weeks later is signal.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = ""
+    if path.exists():
+        try:
+            existing = path.read_text(encoding="utf-8")
+        except OSError:
+            existing = ""
+
+    incoming = _content_hash(content)
+    for block in _LESSON_ENTRY_SPLIT_RE.split(existing):
+        lines = block.splitlines()
+        if not lines or not _LESSON_ENTRY_HEADER_RE.match(lines[0].strip()):
+            continue
+        block_body = "\n".join(lines[1:]).strip()
+        if block_body and _content_hash(block_body) == incoming:
+            return "duplicate"
+
+    # Seed frontmatter only when the file is new. Written here rather than via
+    # _append, which re-reads from disk and so would drop the seeded header.
+    if not existing:
+        existing = _lesson_frontmatter(date_part)
+
+    sep = "" if existing.endswith("\n\n") else ("\n" if existing.endswith("\n") else "\n\n")
+    path.write_text(
+        existing + sep + entry + ("\n" if not entry.endswith("\n") else ""),
+        encoding="utf-8",
+    )
+    return "appended"
 
 
 def _build_lesson_entry(content: str, attrs: dict[str, Any], ts_iso: str) -> str:
@@ -171,15 +279,13 @@ def write_marker(
     attrs = attrs or {}
     root = Path(vault_root) if vault_root else VAULT_ROOT
     root.mkdir(parents=True, exist_ok=True)
-    date_part, stamp = _format_timestamp_utc()
-    ts_iso = datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
+    date_part, stamp, ts_iso = _format_timestamp_utc(attrs.get("ts"))
 
     if marker_type == "lesson":
         rel = f"left/reference/lessons-{date_part}.md"
         target = _resolve_inside_vault(rel, root)
         body = _build_lesson_entry(content, attrs, ts_iso)
-        _append(target, body)
-        action = "appended"
+        action = _append_lesson(target, body, content, date_part)
     elif marker_type == "milestone":
         source = attrs.get("source") or ""
         project_rel = ""
@@ -203,6 +309,13 @@ def write_marker(
         slug = _slugify(attrs.get("title") or content, max_len=60)
         rel = f"amygdala/{stamp}-{severity}-{slug}.md"
         target = _resolve_inside_vault(rel, root)
+        # Second-resolution stamps collide under alert bursts (crash loop
+        # firing same-title signals within one second). A DIFFERENT signal
+        # must never be refused for a filename clash — true duplicates are
+        # already caught by the HTTP idempotency layer before reaching here.
+        if target.exists():
+            rel = f"amygdala/{stamp}-{severity}-{slug}-{uuid4().hex[:6]}.md"
+            target = _resolve_inside_vault(rel, root)
         body = _build_signal_file(content, attrs, ts_iso, slug)
         _write_new(target, body)
         action = "created"
@@ -212,6 +325,10 @@ def write_marker(
         slug = _slugify(attrs.get("title") or content, max_len=60)
         rel = f"left/decisions/ADR-{adr_number:04d}-{slug}.md"
         target = _resolve_inside_vault(rel, root)
+        if target.exists():
+            adr_number += 1
+            rel = f"left/decisions/ADR-{adr_number:04d}-{slug}.md"
+            target = _resolve_inside_vault(rel, root)
         body = _build_decision_file(content, attrs, ts_iso, adr_number)
         _write_new(target, body)
         action = "created"

@@ -28,6 +28,7 @@ agentibrain check               # deep verify: vault write, hello-embedding, pon
 agentibrain status              # compose ps + shallow health
 agentibrain logs <service> -f   # e.g. tick-cron, brain-api
 agentibrain build               # after any git pull / code change
+agentibrain sync --check        # re-ingest everything: buffers + raw/, narrated progress
 ```
 
 - `build`/`up`/`down`/`logs`/`status` auto-locate the stack (checkout you're
@@ -35,6 +36,11 @@ agentibrain build               # after any git pull / code change
   anywhere else.
 - Marker capture into the vault needs `BRAIN_URL=http://127.0.0.1:8103` in
   your agentihooks env (one-time, `~/.agentihooks/.env`).
+- No host crons: `tick-cron` drains `~/.agentihooks/brain-outbox` (and any
+  `-backlog` pile) and re-indexes vault `raw/` on its own every tick interval.
+  `sync` just does it now instead of at the next interval.
+- `~/.agentihooks` must exist before the first `up` (bootstrap.sh creates it);
+  otherwise Docker auto-creates it root-owned and agentihooks can't write to it.
 
 After the one-time block, `agentibrain build` / `check` / `logs` are the whole
 workflow. Full CLI reference: [`docs/CLI.md`](docs/CLI.md).

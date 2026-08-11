@@ -142,6 +142,12 @@ else
   printf "\nAGENTIBRAIN_REPO=%s\n" "$ROOT" >> "$ENV_FILE"
 fi
 
+# 1b. Pre-create the agentihooks marker-buffer dirs USER-owned. compose binds
+#     ~/.agentihooks into tick-cron; if it doesn't exist at first `up`, the
+#     Docker daemon (root) auto-creates it root:root 0755 and agentihooks can
+#     never write its outbox again.
+mkdir -p "$HOME/.agentihooks/brain-outbox"
+
 # 2a. Migrate a legacy in-repo vault. Earlier versions scaffolded ./vault
 #     inside the checkout; move its content to the new home if the target
 #     doesn't exist yet.
