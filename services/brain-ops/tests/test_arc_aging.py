@@ -185,14 +185,15 @@ def test_full_tick_is_stable_over_lesson_logs(tmp_path: Path, monkeypatch):
     Verified over full ticks, not quick_refresh ones — quick_refresh skips the
     heat and promote phases, so it cannot see this class of bug at all.
 
-    The promote threshold is lowered so a lesson log clears it. At the shipped
-    default a lesson log computes heat 3 against a threshold of 5 and can never
-    promote, so a test at defaults passes identically with or without the gate
-    and proves nothing. Lowering it puts the gate itself under test: without
-    `is_arc`, promotion copies the log into conscious/ and the reconcile then
-    reclaims and deletes it, every tick, forever.
+    The threshold is pinned to 3 because that is what the deployment actually
+    runs — the shipped default of 5 is overridden in the operator's
+    environment. A lesson log computes heat exactly 3 (same-day recency, the
+    only contribution its frontmatter can ever earn), and the promote check is
+    `heat >= threshold`, so 3 >= 3 fired on every tick. At the code default of
+    5 the arithmetic can never reach the bar, which is why a test at defaults
+    passes identically with and without the gate and proves nothing.
     """
-    monkeypatch.setattr(brain_keeper, "BRAIN_PROMOTE_HEAT", 1)
+    monkeypatch.setattr(brain_keeper, "BRAIN_PROMOTE_HEAT", 3)
     vault = tmp_path / "vault"
     ref = vault / "left" / "reference"
     ref.mkdir(parents=True)
