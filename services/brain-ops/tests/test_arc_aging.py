@@ -96,6 +96,20 @@ def test_standing_region_docs_are_not_arcs():
     assert brain_keeper.is_arc(_doc("odd-name.md", {"cluster_id": "c1"})) is True
 
 
+def test_lesson_logs_are_not_arcs():
+    """A lesson log's filename embeds a date, but it is not a work arc.
+
+    Treating it as one let graduation move it out of left/reference and cool it
+    to heat 0, which is how months of lessons became unfindable. The cluster_id
+    case matters too: the exemption must win over it, or a stray id readmits the
+    file to the machinery that scattered it.
+    """
+    assert brain_keeper.is_arc(_doc("lessons-2026-07-02.md", {})) is False
+    assert brain_keeper.is_arc(_doc("lessons-2026-08-11.md", {"cluster_id": "c1"})) is False
+    # Not a lesson log — a real arc that merely mentions lessons in its name.
+    assert brain_keeper.is_arc(_doc("2026-07-02-lessons-learned.md", {})) is True
+
+
 def _vault(tmp_path: Path) -> tuple[Path, Path]:
     vault = tmp_path / "vault"
     (vault / "clusters" / "2026-04-01").mkdir(parents=True)

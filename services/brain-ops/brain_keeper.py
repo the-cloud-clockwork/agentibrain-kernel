@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import markers
 import redact
 import brain_verifier
+import lesson_reconcile
 
 
 # ── Heat computation ──────────────────────────────────────────────────
@@ -56,6 +57,14 @@ BRAIN_STALE_SIGNAL_DAYS = int(os.getenv("BRAIN_STALE_SIGNAL_DAYS", "3"))
 # cap an April note was still being injected in July. Longer than the signal
 # window because injects are standing guidance, not incidents. 0 disables.
 BRAIN_STALE_INJECT_DAYS = int(os.getenv("BRAIN_STALE_INJECT_DAYS", "30"))
+# Recent lessons ride every session, so the feed is capped hard on both axes.
+# Between the signal window (3d, incidents) and the inject window (30d,
+# standing guidance): a lesson stays useful longer than an alarm but is not
+# permanent advice.
+BRAIN_STALE_LESSON_DAYS = int(os.getenv("BRAIN_STALE_LESSON_DAYS", "14"))
+BRAIN_LESSON_FEED_MAX = int(os.getenv("BRAIN_LESSON_FEED_MAX", "6"))
+# Below signals (8) and inject (9): lessons are context, not an alarm.
+LESSON_FEED_PRIORITY = 7
 BRAIN_STALE_SIGNAL_KEEP_SEVERITIES = {"nuclear", "critical"}
 
 
@@ -113,6 +122,13 @@ def is_arc(doc: markers.DocumentMeta) -> bool:
     penalises every cycle. They still contribute markers; they just don't
     compete for heat.
     """
+    # A lesson log is never an arc. Checked before cluster_id, because a stray
+    # cluster_id on one of these must not readmit it: the date in the filename
+    # is the log's date, not an arc's, and treating it as one is what let the
+    # graduation step move lesson logs out of left/reference and cool them to
+    # heat 0 until nothing could find them.
+    if doc.path and markers.LESSON_LOG_RE.match(doc.path.name):
+        return False
     fm = doc.frontmatter
     if fm.get("cluster_id"):
         return True
@@ -369,6 +385,82 @@ def _inject_is_live(inj: markers.Marker, now: datetime) -> bool:
     return (now - created_dt).days <= max_age
 
 
+def write_lessons_feed(path: Path, vault_root: Path, now: datetime | None = None) -> dict:
+    """Generate lessons.md from the most recent lesson-log entries.
+
+    Returns stats dict: {scanned_files, entries_found, written, tombstoned_stale}.
+
+    Source is the `left/reference/lessons-*.md` logs, not the @lesson markers
+    collected from arc bodies. The two are disjoint populations: arc lessons
+    are written by cluster synthesis and carry only their parent arc's
+    `created`, while these logs carry a real per-entry ISO timestamp in every
+    `##` header — and "most recent" is meaningless without one. Arc lessons
+    stay reachable through their arcs.
+
+    `id: lessons` contains neither "hot" nor "inject", so brain-api's
+    feed_payload() buckets it as a generic entry and the agentihooks adapter
+    picks it up with no change on its side.
+    """
+    now = now or datetime.now(timezone.utc)
+    stats = {"scanned_files": 0, "entries_found": 0, "written": 0, "tombstoned_stale": 0}
+    header = (
+        "---\nid: lessons\ntitle: Recent Lessons\n"
+        f"priority: {LESSON_FEED_PRIORITY}\nttl: 3600\nseverity: info\n---\n"
+    )
+
+    lessons_dir = vault_root / "left" / "reference"
+    entries: list[tuple[str, str]] = []
+    if lessons_dir.is_dir():
+        for log_path in sorted(lessons_dir.glob("lessons-*.md")):
+            if not markers.LESSON_LOG_RE.match(log_path.name):
+                continue
+            stats["scanned_files"] += 1
+            try:
+                text = log_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for entry in lesson_reconcile.split_entries(text):
+                entries.append(entry)
+                stats["entries_found"] += 1
+
+    cutoff = now - timedelta(days=BRAIN_STALE_LESSON_DAYS)
+    # Carry the parsed datetime so ordering is chronological. Sorting the raw
+    # ISO strings only agrees with time while every header shares one offset —
+    # true today because brain-api normalizes to UTC before writing, but a
+    # hand-edited entry or a future producer in another zone would silently
+    # reorder "most recent" with no error.
+    fresh: list[tuple[datetime, str, str]] = []
+    for entry_header, body in entries:
+        ts = lesson_reconcile.entry_sort_key(entry_header)
+        try:
+            entry_dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            if entry_dt.tzinfo is None:
+                entry_dt = entry_dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            # An unparseable timestamp cannot be aged out, so keep it rather
+            # than silently dropping a lesson on a formatting technicality.
+            fresh.append((now, entry_header, body))
+            continue
+        if entry_dt < cutoff:
+            stats["tombstoned_stale"] += 1
+            continue
+        fresh.append((entry_dt, entry_header, body))
+
+    if not fresh:
+        path.write_text(header + "\nNo recent lessons.\n", encoding="utf-8")
+        return stats
+
+    fresh.sort(key=lambda e: e[0], reverse=True)
+    top = fresh[:BRAIN_LESSON_FEED_MAX]
+
+    lines = [header]
+    for entry_dt, _entry_header, body in top:
+        lines.append(f"\n- **[{entry_dt.date().isoformat()}]** {body.strip()}\n")
+    path.write_text("".join(lines), encoding="utf-8")
+    stats["written"] = len(top)
+    return stats
+
+
 def write_inject_feed(path: Path, injects: list[markers.Marker]) -> None:
     """Generate inject.md from collected @inject markers. Deduplicates by content hash."""
     now = datetime.now(timezone.utc)
@@ -514,6 +606,12 @@ def tick(
 
     # Phase 0: drain raw/inbox/ → region dirs before scanning arcs
     inbox_stats = drain_inbox(vault_root, dry_run=dry_run)
+
+    # Phase 0b: heal lesson logs the old is_arc() bug scattered across regions.
+    # Must precede the scan below — it merges and removes files the scan is
+    # about to read, and it is what lets write_lessons_feed assume one log per
+    # date at one path. A clean vault makes this a no-op.
+    lesson_stats = lesson_reconcile.reconcile_lessons(vault_root, dry_run=dry_run)
 
     # 1. Scan all arc files — region dirs first, then clusters/
     arcs: list[markers.DocumentMeta] = []
@@ -799,6 +897,12 @@ def tick(
         "tombstoned_cleared": 0,
         "tombstoned_mitigated": 0,
     }
+    lesson_feed_stats = {
+        "scanned_files": 0,
+        "entries_found": 0,
+        "written": 0,
+        "tombstoned_stale": 0,
+    }
     # Auto-verifier: run each signal's verify= command, tag _mitigated=true on
     # signals whose underlying claim has been falsified. write_signals_feed
     # already honors _mitigated for tombstoning, so no further plumbing needed.
@@ -809,6 +913,9 @@ def tick(
         write_hot_arcs_md(brain_feed_dir / "hot-arcs.md", hot)
         signal_stats = write_signals_feed(brain_feed_dir / "signals.md", all_signals, now=now)
         write_inject_feed(brain_feed_dir / "inject.md", all_injects)
+        lesson_feed_stats = write_lessons_feed(
+            brain_feed_dir / "lessons.md", vault_root, now=now
+        )
 
     # 6. Update dashboards (skipped in quick_refresh)
     if not dry_run and not quick_refresh:
@@ -843,6 +950,12 @@ def tick(
         "signals_verified_error": verify_stats.get("verified_error", 0),
         "inject_blocks_collected": len(all_injects),
         "lessons_collected": len(all_lessons),
+        "lesson_logs_scanned": lesson_stats["scanned"],
+        "lesson_logs_merged": lesson_stats["merged"],
+        "lesson_entries_deduped": lesson_stats["entries_deduped"],
+        "lesson_strays_removed": lesson_stats["strays_removed"],
+        "lesson_feed_written": lesson_feed_stats["written"],
+        "lesson_feed_stale": lesson_feed_stats["tombstoned_stale"],
         "dry_run": dry_run,
     }
     return stats
