@@ -742,6 +742,13 @@ def tick(
                 if not dry_run and arc.path:
                     _update_frontmatter_field(arc.path, "created", stamp)
 
+            # A lesson log carries no heat. Stamping one would also fight the
+            # reconcile pass, which rewrites these files to a fixed frontmatter
+            # block: the tick would add `heat:`, the next reconcile would strip
+            # it, and both would rewrite the file forever.
+            if not is_arc(arc):
+                continue
+
             cid = arc.frontmatter.get("cluster_id", "")
             boost = replay_boost_map.get(cid, 0)
             old_heat = arc.frontmatter.get("heat", "0")
@@ -759,6 +766,13 @@ def tick(
         for arc in arcs:
             heat = int(arc.frontmatter.get("heat", 0))
             if arc.path is None:
+                continue
+            # Lesson logs are not arcs and must not ride the heat ladder. This
+            # step copies rather than moves, so a promoted log left a second
+            # copy in conscious/ that Phase 0b then reclaimed as a stray and
+            # deleted — and promotion recreated it on the next tick. A ping-pong
+            # that never converges, writing a backup every cycle.
+            if not is_arc(arc):
                 continue
             fname = arc.path.name
 
@@ -793,7 +807,12 @@ def tick(
             extract_workflow = None  # type: ignore
         if extract_workflow is not None:
             for arc in arcs:
-                if arc.path is None:
+                # `arc.path` is where the scan found the file, and the demote
+                # step above moves files out of conscious/. Reading the stale
+                # path raised FileNotFoundError straight out of tick(), taking
+                # the whole maintenance pass down — feeds, dashboards and all —
+                # on any tick that demoted an arc.
+                if arc.path is None or not arc.path.exists():
                     continue
                 heat = int(arc.frontmatter.get("heat", 0))
                 status = arc.frontmatter.get("status", "")

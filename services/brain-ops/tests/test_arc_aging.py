@@ -170,3 +170,44 @@ def test_tick_is_idempotent_on_a_dated_hot_arc(tmp_path):
 
     brain_keeper.tick(vault, feed)
     assert hot.exists(), "a fresh arc must not be graduated away"
+
+
+def test_full_tick_is_stable_over_lesson_logs(tmp_path: Path):
+    """A lesson log must not ping-pong between the tick's phases.
+
+    Promotion copies rather than moves and gated on heat alone, so a lesson log
+    left a second copy in conscious/ that the reconcile phase then reclaimed as
+    a stray and deleted — and promotion recreated it on the next tick, writing
+    a backup every cycle and never converging. Heat stamping had the same
+    shape: the tick added `heat:`, the reconcile stripped it back out.
+
+    Verified over full ticks, not quick_refresh ones — quick_refresh skips the
+    heat and promote phases, so it cannot see this class of bug at all.
+    """
+    vault = tmp_path / "vault"
+    ref = vault / "left" / "reference"
+    ref.mkdir(parents=True)
+    (vault / "clusters").mkdir()
+    feed = vault / "brain-feed"
+    feed.mkdir()
+    stamp = NOW.strftime("%Y-%m-%d")
+    (ref / f"lessons-{stamp}.md").write_text(
+        f"---\nid: lessons-{stamp}\ntitle: Lessons — {stamp}\n"
+        f"type: lesson-log\ncreated: {stamp}\n---\n\n"
+        f"## {NOW.isoformat()} — agent\n\n"
+        "A lesson with enough substance to earn a slot in the feed.\n"
+    )
+
+    seen = []
+    for _ in range(3):
+        brain_keeper.tick(vault, feed, dry_run=False, quick_refresh=False)
+        logs = sorted(
+            str(p.relative_to(vault))
+            for p in vault.rglob("lessons-*.md")
+            if "_backups" not in p.parts
+        )
+        seen.append((logs, (ref / f"lessons-{stamp}.md").read_text()))
+
+    assert seen[0] == seen[1] == seen[2]
+    assert seen[0][0] == [f"left/reference/lessons-{stamp}.md"]
+    assert "heat:" not in seen[0][1]
