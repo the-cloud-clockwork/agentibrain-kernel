@@ -55,7 +55,11 @@ def classify_severity(fields: dict) -> str | None:
 
     # Brain-sourced events carry their own severity
     if event.startswith("brain."):
-        sev = fields.get("severity", "")
+        # Case-folded: a publisher sending "Critical" otherwise fell through to
+        # None here, which drops the event entirely rather than merely
+        # misgrading it. The severity is free text from whatever wrote to the
+        # event bus, so it cannot be assumed lowercase.
+        sev = fields.get("severity", "").strip().lower()
         return sev if sev in ("nuclear", "critical", "warning") else None
 
     if priority == "urgent" or any(

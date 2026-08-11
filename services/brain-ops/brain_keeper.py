@@ -336,7 +336,11 @@ def write_signals_feed(
         "",
     ]
     for sig in signals_list:
-        sev = sig.attr("severity", "info")
+        # Case-folded: the severity is free text a marker author typed, and a
+        # capitalised `Nuclear` silently fell into the short window because the
+        # protected set is matched exactly. A credential alert quietly losing
+        # two days of life to a shift key is not an acceptable failure mode.
+        sev = sig.attr("severity", "info").strip().lower()
         src = sig.attr("source", "unknown")
         content_line = sig.content.splitlines()[0] if sig.content else "(empty)"
 
@@ -365,11 +369,26 @@ def write_signals_feed(
             if sev in BRAIN_STALE_SIGNAL_KEEP_SEVERITIES
             else BRAIN_STALE_SIGNAL_DAYS
         )
+        # A signal whose verify command just re-confirmed the claim is a live
+        # re-observation, not an old record. The age sweep exists to retire
+        # claims nobody can confirm; this one was confirmed seconds ago.
+        if sig.attr("_still_true", "") == "true":
+            lines.append(f"- **[{sev}]** ({src}) {content_line}")
+            stats["written"] += 1
+            continue
+
         # Per-signal override, same knob @inject blocks already honour.
-        try:
-            max_age = int(sig.attr("ttl_days", "") or max_age)
-        except (ValueError, TypeError):
-            pass
+        raw_ttl = sig.attr("ttl_days", "")
+        if raw_ttl:
+            try:
+                max_age = int(raw_ttl)
+            except (ValueError, TypeError):
+                # Silently reverting to the default hides a typo'd override,
+                # and the operator only finds out when a signal expires early.
+                print(
+                    f"WARN: signal ({src}) has unparseable ttl_days={raw_ttl!r}; "
+                    f"using the {sev} default of {max_age}d"
+                )
         parent_created = sig.attr("_parent_arc_created", "")
         if parent_created:
             try:
@@ -999,6 +1018,16 @@ def tick(
     signals_deduped = 0
     for arc in arcs:
         arc_created = arc.frontmatter.get("created", "")
+        if not arc_created:
+            # `created` is only backfilled onto real arcs, so a standing doc
+            # (bridge/vision.md and friends — no cluster_id, no date) left this
+            # empty, and an empty value skips the age check entirely: every
+            # signal in such a document broadcast forever, at any severity.
+            # resolve_created falls back to the filename date and then mtime,
+            # so there is always a clock to age against.
+            derived, _ = resolve_created(arc)
+            if derived is not None:
+                arc_created = derived.strftime("%Y-%m-%d")
         for sig in arc.signals:
             sig.attrs["_parent_arc_created"] = arc_created
             sig_source = sig.attr("source", "")

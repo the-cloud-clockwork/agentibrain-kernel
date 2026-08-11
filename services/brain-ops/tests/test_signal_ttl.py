@@ -89,3 +89,54 @@ def test_ttl_days_attr_overrides_the_window(tmp_path: Path):
 
     assert stats["written"] == 1
     assert stats["tombstoned_stale"] == 0
+
+
+def test_reverified_signal_survives_the_age_sweep(tmp_path: Path):
+    """A claim the verifier just re-confirmed is not an old record.
+
+    The age sweep exists to retire claims nobody can confirm. A nuclear signal
+    whose verify command re-asserts "still true" on every tick was swept anyway
+    once its parent arc aged out — the exact false negative this whole
+    mechanism must not produce.
+    """
+    import brain_verifier
+
+    out = tmp_path / "signals.md"
+    sig = _sig(
+        "nuclear",
+        brain_keeper.BRAIN_STALE_CRITICAL_DAYS + 5,
+        verify="false",  # exits non-zero => FAIL => the claim stands
+    )
+    sig.content = "credential still exposed"
+
+    results = brain_verifier.verify_all([sig])
+    brain_verifier.apply_verify_results([sig], results)
+    stats = brain_keeper.write_signals_feed(out, [sig], now=NOW)
+
+    assert sig.attrs.get("_still_true") == "true"
+    assert stats["written"] == 1
+    assert stats["tombstoned_stale"] == 0
+    assert "credential still exposed" in out.read_text()
+
+
+def test_severity_matching_is_case_insensitive(tmp_path: Path):
+    """A shift key must not cost a credential alert two days of life."""
+    out = tmp_path / "signals.md"
+    age = brain_keeper.BRAIN_STALE_SIGNAL_DAYS + 1  # inside critical, outside default
+    variants = [_sig(s, age) for s in ("nuclear", "Nuclear", "NUCLEAR", " critical ")]
+
+    stats = brain_keeper.write_signals_feed(out, variants, now=NOW)
+
+    assert stats["written"] == 4
+    assert stats["tombstoned_stale"] == 0
+
+
+def test_unparseable_ttl_days_falls_back_and_warns(tmp_path: Path, capsys):
+    """A typo'd override must not silently revert to the default."""
+    out = tmp_path / "signals.md"
+    sig = _sig("warning", 0.5, ttl_days="1.5")
+
+    stats = brain_keeper.write_signals_feed(out, [sig], now=NOW)
+
+    assert stats["written"] == 1
+    assert "ttl_days" in capsys.readouterr().out

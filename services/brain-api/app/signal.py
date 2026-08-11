@@ -24,6 +24,12 @@ VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "/vault")).resolve()
 # Left un-stripped deliberately: `root / path` already resolves an absolute
 # right-hand side to itself, so keeping the slash is what makes an absolute
 # override work.
+#
+# This deliberately diverges from `markers._resolve_inside_vault`, which pins
+# request-supplied paths inside the vault. The difference is the source: this
+# value comes only from deploy-time env, never from a request, so escaping the
+# vault is a configuration choice rather than an attack surface. Do not copy
+# this pattern onto anything a caller can influence.
 AMYGDALA_SIGNAL_PATH = os.environ.get("AMYGDALA_SIGNAL_PATH", "brain-feed/amygdala-active.md")
 
 _VALID_SEVERITIES = {"nuclear", "critical", "warning", "info", "resolved"}

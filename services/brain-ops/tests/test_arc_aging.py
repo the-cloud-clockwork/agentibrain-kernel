@@ -19,6 +19,7 @@ Run from repo root:
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -211,3 +212,28 @@ def test_full_tick_is_stable_over_lesson_logs(tmp_path: Path):
     assert seen[0] == seen[1] == seen[2]
     assert seen[0][0] == [f"left/reference/lessons-{stamp}.md"]
     assert "heat:" not in seen[0][1]
+
+
+def test_signals_in_standing_docs_still_age_out(tmp_path: Path):
+    """A signal in a doc with no `created` was immortal at any severity.
+
+    `created` is only backfilled onto real arcs, so a standing region document
+    left `_parent_arc_created` empty — and an empty value skips the age check
+    entirely, which is the "broadcasts forever" behaviour the TTL work set out
+    to kill.
+    """
+    vault, feed = _vault(tmp_path)
+    standing = vault / "bridge" / "vision.md"
+    standing.parent.mkdir(parents=True, exist_ok=True)
+    standing.write_text(
+        "---\ntitle: Vision\n---\n\n"
+        "<!-- @signal severity=warning source=stale-source -->\n"
+        "an ancient warning that should not broadcast forever\n"
+        "<!-- @/signal -->\n"
+    )
+    old = (NOW - timedelta(days=120)).timestamp()
+    os.utime(standing, (old, old))
+
+    brain_keeper.tick(vault, feed, dry_run=False, quick_refresh=False)
+
+    assert "an ancient warning" not in (feed / "signals.md").read_text()
