@@ -428,6 +428,10 @@ def write_signals_feed(
 
 
 _INJECT_DEAD_STATUSES = frozenset({"resolved", "graduated", "merged", "complete"})
+# Statuses that already say the arc is finished. Graduation may move such an
+# arc but must not relabel it — `resolved` in particular is load-bearing
+# evidence that an incident was closed, and overwriting it throws that away.
+_TERMINAL_ARC_STATUSES = frozenset({"resolved", "merged", "complete"})
 
 
 def _inject_is_live(inj: markers.Marker, now: datetime) -> bool:
@@ -954,6 +958,22 @@ def tick(
                     pass
             replay_boost_map[referenced] = replay_boost_map.get(referenced, 0) + 1
 
+    # 1b. Build the resolved-incident index, BEFORE any phase mutates an arc.
+    #     Where `mitigates:` closes signals by *source*, this closes them by the
+    #     identifier the incident carries in its own text — a run id or a commit
+    #     SHA. Two documents naming the same run id are talking about the same
+    #     event, and if one declares it resolved, the alarm has an answer and
+    #     should stop firing rather than wait out a five-day timer.
+    #
+    #     Position is load-bearing. Computed after graduation, this read
+    #     `status` values graduation had already rewritten, so a resolution that
+    #     happened to be old enough to graduate was discarded before it was ever
+    #     applied. Graduation no longer clobbers a terminal status either; both
+    #     guards, because the ordering is the kind of thing a later edit moves.
+    closed_incidents = signal_resolution.resolved_keys(
+        arcs, [sig for arc in arcs for sig in arc.signals]
+    )
+
     # 2. Recompute heat (skipped in quick_refresh)
     heat_changes = 0
     created_backfilled = 0
@@ -1100,6 +1120,17 @@ def tick(
             target_dir = vault_root / region_map.get(region, "left")
             dest = target_dir / arc.path.name
             if arc.path.resolve() != dest.resolve():
+                # Graduation files an arc away; it must not erase what the arc
+                # WAS. Overwriting a terminal status destroyed the record: a
+                # postmortem marked `status: resolved`, still sitting in
+                # clusters/ and old enough to graduate, had its status flipped
+                # to `graduated` in memory before the resolution index was ever
+                # built — so the alarm it closed kept broadcasting and the
+                # closure was silently discarded, never applied even once.
+                # The downstream consumers that care (mitigation map, @inject
+                # filter) already accept `resolved` alongside `graduated`.
+                terminal = str(arc.frontmatter.get("status", "")).strip().lower()
+                new_status = terminal if terminal in _TERMINAL_ARC_STATUSES else "graduated"
                 if not dry_run:
                     target_dir.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(arc.path), str(dest))
@@ -1107,8 +1138,8 @@ def tick(
                     # leaving `status: active` forever — so a 102-day-old arc at
                     # heat 0 still read as live to every downstream consumer
                     # (mitigation map, @inject filter, the tick prompt).
-                    _update_frontmatter_field(dest, "status", "graduated")
-                arc.frontmatter["status"] = "graduated"
+                    _update_frontmatter_field(dest, "status", new_status)
+                arc.frontmatter["status"] = new_status
                 graduations += 1
 
     # 4. Build mitigation map. Any arc with status in {resolved, graduated}
@@ -1129,16 +1160,6 @@ def tick(
             for m in mitigates:
                 if isinstance(m, str):
                     mitigated_sources.add(m.strip())
-
-    # 4b. Build the resolved-incident index. Where `mitigates:` closes signals
-    #     by *source*, this closes them by the identifier the incident carries
-    #     in its own text — a run id or a commit SHA. Two documents naming the
-    #     same run id are talking about the same event, and if one of them
-    #     declares it resolved, the alarm has an answer and should stop firing
-    #     rather than wait out a five-day timer.
-    closed_incidents = signal_resolution.resolved_keys(
-        arcs, [sig for arc in arcs for sig in arc.signals]
-    )
 
     # 5. Collect markers across all arcs. Tag each signal with its parent arc's
     #    `created` timestamp so the stale sweep in write_signals_feed can filter.

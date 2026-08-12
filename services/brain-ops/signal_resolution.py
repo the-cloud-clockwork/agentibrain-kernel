@@ -34,27 +34,48 @@ from __future__ import annotations
 import re
 
 # Hex-shaped tokens of seven characters or more: run ids, commit SHAs, build
-# numbers, ticket ids. Digits are a subset of hex, so one pattern covers both a
-# decimal run id and a hex SHA, and the seven-character normalization below
-# makes a full SHA match its own short form — which matters, because slugs
-# truncate and humans quote the short one.
+# numbers, ticket ids.
 _TOKEN_RE = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
-_KEY_LEN = 7
+_SHA_PREFIX_LEN = 7
 
 
 def incident_keys(text: str) -> set[str]:
     """Identifiers in `text` specific enough to name one incident.
 
-    A token must contain a digit. Without that rule ordinary words spelled from
-    the letters a-f — `defaced`, `feedbac` — become incident keys, and a single
-    unlucky word in a resolution note would close an unrelated alarm.
+    Two token shapes, keyed differently, because they have different structure:
+
+    **All-digit tokens are matched whole.** A CI run id is a near-sequential
+    global counter, so two runs from the same day routinely share their leading
+    digits and differ only at the end. Truncating them to a prefix does not
+    identify an incident — it identifies a *time window of about ten thousand
+    runs*. Run 31518579981 ("checkout is down") and run 31518571119 ("stale
+    cache key") both begin 3151857, and a prefix rule let the resolved cache bug
+    silently close the live checkout outage. Nothing about a decimal counter
+    justifies a prefix; it gets exact match.
+
+    **Tokens containing a-f are treated as commit SHAs and keyed on their first
+    seven characters.** Truncation is the point there: git itself abbreviates,
+    slugs truncate, and humans quote the short form, so `6f8c941e` and the full
+    forty-character hash have to reach the same key or an alarm never matches
+    its own fix. Seven hex characters is 268 million values — a real identifier,
+    unlike seven digits of a sequential counter.
+
+    A token must contain a digit either way. Without that rule ordinary words
+    spelled from the letters a-f — `defaced`, `feedbac` — become incident keys.
+
+    A short SHA that happens to be all digits (about one in thirty) is treated
+    as a counter and will not match its long form. That fails to *close* an
+    alarm, never falsely closes one, and the age sweep still retires it.
     """
     keys: set[str] = set()
     for match in _TOKEN_RE.finditer(text or ""):
         token = match.group(0).lower()
         if not any(c.isdigit() for c in token):
             continue
-        keys.add(token[:_KEY_LEN])
+        if token.isdigit():
+            keys.add(token)
+        else:
+            keys.add(token[:_SHA_PREFIX_LEN])
     return keys
 
 
@@ -74,8 +95,21 @@ def resolved_keys(arcs, signals) -> set[str]:
         keys |= incident_keys(sig.content or "")
 
     for arc in arcs or ():
-        status = str(arc.frontmatter.get("status", "")).strip().lower()
-        severity = str(arc.frontmatter.get("severity", "")).strip().lower()
+        fm = arc.frontmatter
+        status = str(fm.get("status", "")).strip().lower()
+        severity = str(fm.get("severity", "")).strip().lower()
+
+        # An explicit `resolves:` field is the precise instrument and always
+        # wins: the author is naming exactly what they closed, so there is
+        # nothing to infer.
+        declared = fm.get("resolves")
+        if declared:
+            if isinstance(declared, str):
+                keys |= incident_keys(declared)
+            elif isinstance(declared, list):
+                for item in declared:
+                    keys |= incident_keys(str(item))
+
         # Two shapes, because a resolution arrives by two routes. The synthesis
         # phase writes an incident arc and sets `status`; an agent emitting a
         # `resolved` marker gets a file in amygdala/ whose *frontmatter* carries
@@ -84,14 +118,18 @@ def resolved_keys(arcs, signals) -> set[str]:
         # path unable to close anything, which is the whole point of it.
         if status != "resolved" and severity != "resolved":
             continue
-        # Title and summary carry the identifier as often as the body does —
-        # a synthesized incident arc puts the run id in its summary line.
-        haystack = " ".join(
-            str(arc.frontmatter.get(field, ""))
-            for field in ("title", "summary", "cluster_id", "id")
+
+        if severity == "resolved":
+            # A resolved-severity file is single-purpose: the whole document IS
+            # the assertion, so every identifier in it is part of the claim.
+            keys |= incident_keys(arc.body or "")
+
+        # An arc's body is a narrative, and a good postmortem names every run it
+        # investigated — including the ones it explicitly ruled out. Scraping it
+        # closed those too. Only the identity fields speak for the arc itself.
+        keys |= incident_keys(
+            " ".join(str(fm.get(f, "")) for f in ("title", "summary", "cluster_id", "id"))
         )
-        keys |= incident_keys(haystack)
-        keys |= incident_keys(arc.body or "")
 
     return keys
 

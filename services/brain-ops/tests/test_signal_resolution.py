@@ -56,7 +56,7 @@ def test_a_full_sha_and_its_short_form_produce_the_same_key():
 
 
 def test_the_real_incident_pair_overlaps_on_run_id_and_commit():
-    assert sr.incident_keys(ALARM) & sr.incident_keys(RESOLUTION) == {"3151857", "6f8c941"}
+    assert sr.incident_keys(ALARM) & sr.incident_keys(RESOLUTION) == {"31518571119", "6f8c941"}
 
 
 def test_words_spelled_from_hex_letters_are_not_incident_keys():
@@ -85,9 +85,61 @@ def test_a_resolved_severity_signal_closes_its_incident():
     assert sr.is_resolved(ALARM, closed)
 
 
-def test_a_resolved_arc_closes_by_body_or_summary():
+def test_a_resolved_arc_closes_by_its_summary():
     arc = _doc("incident.md", {"status": "resolved", "summary": RESOLUTION})
     assert sr.is_resolved(ALARM, sr.resolved_keys([arc], []))
+
+
+def test_a_resolved_arc_does_not_close_what_its_body_merely_mentions():
+    """A good postmortem names every run it investigated, including the ones it
+    ruled out. Scraping the narrative closed those too — so the act of writing a
+    thorough postmortem silenced unrelated live alarms."""
+    arc = _doc(
+        "postmortem.md",
+        {"status": "resolved", "summary": "root cause for run 31518534521"},
+        body=(
+            "We also looked at runs 31518512340 and 31518598877 but ruled them out "
+            "as unrelated flakes. Root cause for THIS incident was a stale cache key."
+        ),
+    )
+    closed = sr.resolved_keys([arc], [])
+
+    assert "31518534521" in closed, "the incident it actually resolved"
+    assert "31518512340" not in closed, "explicitly ruled out"
+    assert "31518598877" not in closed, "explicitly ruled out"
+
+
+def test_a_resolved_severity_file_asserts_with_its_whole_body():
+    """Unlike an arc, one of these is single-purpose — the document IS the
+    claim, and the identifier normally sits in the prose, not the frontmatter."""
+    doc = _doc("amygdala/x.md", {"severity": "resolved"}, body=RESOLUTION)
+    assert sr.is_resolved(ALARM, sr.resolved_keys([doc], []))
+
+
+def test_an_explicit_resolves_field_is_honoured():
+    """The precise instrument, for an author who wants no inference at all."""
+    arc = _doc("fix.md", {"status": "resolved", "resolves": "31518571119"})
+    assert sr.is_resolved(ALARM, sr.resolved_keys([arc], []))
+    arc_list = _doc("fix.md", {"status": "resolved", "resolves": ["31518571119", "6f8c941e"]})
+    assert sr.is_resolved(ALARM, sr.resolved_keys([arc_list], []))
+
+
+def test_two_github_runs_from_the_same_day_are_different_incidents():
+    """Run ids are a near-sequential global counter, so two runs minutes apart
+    share their leading digits. Keying on a 7-char prefix did not identify an
+    incident — it identified a window of ~10,000 runs, and a resolved cache bug
+    silently closed a live checkout outage."""
+    live = "Run=31518579981 checkout is down, orders failing"
+    other = "Run=31518571119 stale cache key. Fixed in 9f1c2ab."
+    assert not (sr.incident_keys(live) & sr.incident_keys(other))
+
+
+def test_a_short_sha_still_matches_its_full_form():
+    """Truncation IS right for hex: git abbreviates, slugs truncate, humans
+    quote the short one. Seven hex characters is 268M values, not a counter."""
+    assert sr.incident_keys("SHA=6f8c941ebcb1582d055c308e67d040fbfd8410c2") & sr.incident_keys(
+        "(SHA 6f8c941e)"
+    )
 
 
 def test_a_graduated_arc_does_not_close_anything():
@@ -194,7 +246,7 @@ def test_a_closed_incident_ages_out_on_the_shorter_window(tmp_path: Path):
     for i in range(brain_keeper.BRAIN_SIGNAL_KEEP_MIN):
         _signal_file(tmp_path, f"fresh-{i}.md", NOW, "warning", f"live {i}")
 
-    stats = brain_keeper.sweep_signal_files(tmp_path, {"3151857"})
+    stats = brain_keeper.sweep_signal_files(tmp_path, {"31518571119"})
 
     assert stats["archived_resolved"] == 1
     assert stats["archived_stale"] == 0
@@ -218,7 +270,7 @@ def test_a_resolution_is_never_archived_before_the_alarm_it_closes(tmp_path: Pat
     for i in range(brain_keeper.BRAIN_SIGNAL_KEEP_MIN):
         _signal_file(tmp_path, f"fresh-{i}.md", NOW, "warning", f"live {i}")
 
-    stats = brain_keeper.sweep_signal_files(tmp_path, {"3151857"})
+    stats = brain_keeper.sweep_signal_files(tmp_path, {"31518571119"})
 
     assert stats["archived_resolved"] == 0
     assert closing.exists(), "archived a resolution still holding an alarm closed"
@@ -335,3 +387,75 @@ def test_the_closing_signal_does_not_tombstone_itself(tmp_path: Path):
 
     assert stats["signals_written"] == 1
     assert stats["signals_tombstoned_resolved"] == 0
+
+
+def test_graduation_does_not_erase_a_resolution_before_it_is_applied(tmp_path: Path):
+    """The ordering bug, end to end.
+
+    A postmortem marked `status: resolved`, still in clusters/ and old enough to
+    graduate, had its status rewritten to `graduated` in memory before the
+    resolution index was built. The closure was discarded without ever being
+    applied once, and the alarm kept broadcasting. Reproduced with the
+    resolution backdated past the graduation age.
+    """
+    vault = tmp_path / "vault"
+    old_day = (NOW - timedelta(days=20)).strftime("%Y-%m-%d")
+    (vault / "clusters" / old_day).mkdir(parents=True)
+    (vault / "clusters" / NOW.strftime("%Y-%m-%d")).mkdir(parents=True)
+    (vault / "left").mkdir(parents=True)
+    feed = vault / "brain-feed"
+    feed.mkdir()
+    stamp = NOW.strftime("%Y-%m-%d")
+
+    (vault / "clusters" / stamp / f"{stamp}-deploy-failed.md").write_text(
+        f"---\ncluster_id: {stamp}-deploy-failed\ncreated: {stamp}\nstatus: active\n---\n\n"
+        f"<!-- @signal severity=nuclear source=github-actions -->\n{ALARM}\n<!-- @/signal -->\n"
+    )
+    postmortem = vault / "clusters" / old_day / f"{old_day}-deploy-postmortem.md"
+    postmortem.write_text(
+        f"---\ncluster_id: {old_day}-deploy-postmortem\ncreated: {old_day}\n"
+        f"status: resolved\nheat: 0\nsummary: {RESOLUTION}\n---\n\nthe write-up\n"
+    )
+
+    stats = brain_keeper.tick(vault, feed, dry_run=False, quick_refresh=False)
+
+    assert stats["signals_tombstoned_resolved"] == 1, "the resolution must be applied"
+    assert "Branch=dev SHA=6f8c941ebcb" not in (feed / "signals.md").read_text()
+
+
+def test_graduation_files_a_resolved_arc_without_relabelling_it(tmp_path: Path):
+    """Graduation moves an arc; it must not erase what the arc WAS."""
+    vault = tmp_path / "vault"
+    old_day = (NOW - timedelta(days=30)).strftime("%Y-%m-%d")
+    (vault / "clusters" / old_day).mkdir(parents=True)
+    (vault / "left").mkdir(parents=True)
+    feed = vault / "brain-feed"
+    feed.mkdir()
+    (vault / "clusters" / old_day / f"{old_day}-fixed.md").write_text(
+        f"---\ncluster_id: {old_day}-fixed\ncreated: {old_day}\nstatus: resolved\nheat: 0\n"
+        "---\n\nclosed long ago\n"
+    )
+
+    brain_keeper.tick(vault, feed, dry_run=False, quick_refresh=False)
+
+    moved = vault / "left" / f"{old_day}-fixed.md"
+    assert moved.exists(), "it should still graduate out of clusters/"
+    assert "status: resolved" in moved.read_text()
+    assert "status: graduated" not in moved.read_text()
+
+
+def test_an_ordinary_active_arc_still_graduates_to_graduated(tmp_path: Path):
+    vault = tmp_path / "vault"
+    old_day = (NOW - timedelta(days=30)).strftime("%Y-%m-%d")
+    (vault / "clusters" / old_day).mkdir(parents=True)
+    (vault / "left").mkdir(parents=True)
+    feed = vault / "brain-feed"
+    feed.mkdir()
+    (vault / "clusters" / old_day / f"{old_day}-cold.md").write_text(
+        f"---\ncluster_id: {old_day}-cold\ncreated: {old_day}\nstatus: active\nheat: 0\n"
+        "---\n\nold work\n"
+    )
+
+    brain_keeper.tick(vault, feed, dry_run=False, quick_refresh=False)
+
+    assert "status: graduated" in (vault / "left" / f"{old_day}-cold.md").read_text()
