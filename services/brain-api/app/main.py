@@ -2,6 +2,8 @@
 
 Endpoints:
   GET  /health                         — liveness
+  GET  /health/deep                    — dependencies reachable (vault, embeddings, inference)
+  GET  /health/pipeline                — the loop is flowing (ingest → … → index)
   POST /ingest                         — classify + fan out (operator message)
   POST /ingest_with_files              — same, with multipart attachments
   POST /index_artifact                 — embed + index an artifact (called by artifact-store)
@@ -42,8 +44,9 @@ from fastapi import (
 from fastapi import (
     Path as PathParam,
 )
+from starlette.concurrency import run_in_threadpool
 
-from . import vault_reader
+from . import pipeline, vault_reader
 from .feed import VAULT_ROOT, feed_payload
 from .markers import MarkerError, write_marker
 from .router import IngestResult, ingest_message
@@ -214,9 +217,7 @@ async def health_deep(_: None = Depends(require_token)) -> dict:
                                 },
                             )
                             comp.raise_for_status()
-                            text = (
-                                comp.json()["choices"][0]["message"]["content"] or ""
-                            ).strip()
+                            text = (comp.json()["choices"][0]["message"]["content"] or "").strip()
                             pong = "pong" in text.lower()
                             if not pong:
                                 ok = False
@@ -242,6 +243,41 @@ async def health_deep(_: None = Depends(require_token)) -> dict:
                 checks["inference"] = {"ok": False, "url": inference_url, "error": str(exc)[:300]}
 
     return {"status": "ok" if ok else "degraded", "service": "brain-api", "checks": checks}
+
+
+@app.get("/health/pipeline")
+async def health_pipeline(_: None = Depends(require_token)) -> dict:
+    """Is the brain's loop flowing — ingest → drain → arcs → lessons → signals → feed → index.
+
+    Distinct from /health/deep, which asks whether dependencies are reachable.
+    A stack can pass every dependency check and still be dead: the drain not
+    consuming, every tick failing, lessons written but never fed back.
+
+    Cheap by construction — bounded vault globs plus one grouped count from the
+    embeddings service. No embedding call, no completion call. Runs server-side
+    because the vault is only mounted here, which is what lets this answer for
+    a remote deployment.
+    """
+    import httpx
+
+    index_stats: dict | None = None
+    if EMBEDDINGS_URL and _EMBEDDINGS_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"{EMBEDDINGS_URL.rstrip('/')}/stats",
+                    headers={"Authorization": f"Bearer {_EMBEDDINGS_API_KEY}"},
+                )
+            index_stats = resp.json() if resp.status_code == 200 else {"error": resp.text[:300]}
+        except Exception as exc:  # noqa: BLE001 — an unreachable index degrades, never 500s
+            index_stats = {"error": str(exc)[:300]}
+
+    # pipeline_report is synchronous filesystem work against what is an NFS
+    # mount in production. Called directly from this `async def` it would run
+    # ON the event loop and stall every other request for the duration of the
+    # walk — the handler must hand it to the threadpool the way FastAPI does
+    # for a plain `def` endpoint.
+    return await run_in_threadpool(pipeline.pipeline_report, index_stats=index_stats)
 
 
 # ---------------------------------------------------------------------------

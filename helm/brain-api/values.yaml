@@ -59,6 +59,18 @@ tpl:
       BRAIN_CLASSIFY_MODEL: brain-classify
       VAULT_ROOT: /vault
       LOG_LEVEL: INFO
+      # /health/pipeline thresholds — how far behind each stage may fall
+      # before `agentibrain check` calls it degraded. Defaults assume the
+      # shipped cadences (tick-drain every minute, tick cron every 2h);
+      # raise them in your overlay if you tick less often.
+      PIPELINE_PENDING_STUCK_SECONDS: "300"
+      PIPELINE_TICK_STALE_HOURS: "6"
+      PIPELINE_FEED_STALE_HOURS: "6"
+      PIPELINE_MARKER_QUIET_HOURS: "72"
+      # Must match brain-ops: the check reads the same lesson-feed cap and
+      # window the tick writes with, so a divergence reads as a real defect.
+      BRAIN_LESSON_FEED_MAX: "6"
+      BRAIN_STALE_LESSON_DAYS: "14"
   secrets:
     enabled: true
     external:

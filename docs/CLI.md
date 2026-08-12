@@ -44,20 +44,50 @@ to remember where the compose file is or type `docker compose` yourself.
 ## Testing a running brain
 
 ```bash
-agentibrain check          # exit 0 = healthy, 1 = degraded
+agentibrain check          # exit 0 = clean, 1 = broken, 2 = degraded
 ```
 
 No URL needed locally — the CLI targets `http://localhost:8103` (brain-api's
 published port) by default; override the port with `PORT_BRAIN_API` in
 `~/.agentibrain/.env` or point at a remote brain with `--brain-url` /
-`$BRAIN_URL`.
+`$BRAIN_URL`. Token resolves from `$KB_ROUTER_TOKEN` or `~/.agentibrain/.env`
+automatically; override with `--token`.
 
-`check` calls `GET /health/deep`, which round-trips a real vault write, makes
-the embeddings service hit Postgres and run an actual embedding call
-(validating the model dimension against the pgvector schema), and verifies the
-inference gateway accepts the configured key. Token resolves from
-`$KB_ROUTER_TOKEN` or `~/.agentibrain/.env` automatically; override with
-`--token`.
+`check` asks two questions, because a stack can pass one and fail the other.
+
+**Do the dependencies work?** (`GET /health/deep`) — round-trips a real vault
+write, makes the embeddings service hit Postgres and run an actual embedding
+call (validating the model dimension against the pgvector schema), and
+verifies the inference gateway accepts the configured key with a real
+one-token completion.
+
+**Is the loop actually flowing?** (`GET /health/pipeline`) — seven stages, in
+the order data travels, each reporting the evidence behind its verdict:
+
+| Stage | Fails when |
+|---|---|
+| `ingest` | — (warns when no marker has been written for `PIPELINE_MARKER_QUIET_HOURS`) |
+| `drain` | requests pile up unconsumed, or the most recent tick failed — the `error_tail` is quoted inline |
+| `arcs` | arcs exist but `hot-arcs.md` was never written |
+| `lessons` | a lesson log sits outside `left/reference/`, the feed is missing, or recent lessons produce an empty feed |
+| `signals` | signal files exist but `signals.md` was never written (warns when the file is stale, so its TTL sweep has not run) |
+| `feed` | `brain-feed/` holds files but none parse as feed entries — nothing reaches a session |
+| `index` | source files exist for a producer the index holds no rows for |
+
+A stage with no input reports `ok`. A fresh vault has no arcs, no lessons and
+no ticks; calling that broken would make the command worth ignoring.
+
+Both run server-side, where the vault is mounted — so the same report is
+available for a remote deployment, not just the machine you are sitting at.
+The one check the server cannot make is added locally: markers still buffered
+in this machine's agentihooks outbox, which look like silence from the far
+side. `agentibrain sync` replays them.
+
+```bash
+agentibrain check --pipeline-only   # skip the LLM/embedding round-trips
+agentibrain check --deps-only       # just the dependency probes
+agentibrain check --json            # both payloads, machine-readable
+```
 
 Shallow variant:
 
@@ -70,6 +100,7 @@ Raw equivalents (no install needed):
 ```bash
 TOK=$(grep ^KB_ROUTER_TOKEN .env | cut -d= -f2)
 curl -H "Authorization: Bearer $TOK" http://127.0.0.1:8103/health/deep | jq .
+curl -H "Authorization: Bearer $TOK" http://127.0.0.1:8103/health/pipeline | jq '.stages'
 docker compose logs tick-cron | grep extraction     # did extraction run
 curl -H "Authorization: Bearer $TOK" http://127.0.0.1:8103/feed | jq '.hot_arcs'
 ```

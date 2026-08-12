@@ -267,3 +267,37 @@ def get_vector_count() -> int:
     with pool.connection() as conn:
         cur = conn.execute("SELECT COUNT(*) FROM content_embeddings")
         return cur.fetchone()[0]
+
+
+def get_producer_stats() -> dict:
+    """Per-producer coverage: distinct keys, chunk rows, newest row.
+
+    `keys` is the count that answers "are the source documents indexed" —
+    `rows` counts chunks, so a single long document inflates it. A pipeline
+    check comparing the index against files on disk must compare keys.
+    """
+    pool = get_pool()
+    with pool.connection() as conn:
+        cur = conn.execute(
+            """SELECT producer,
+                      COUNT(DISTINCT key) AS keys,
+                      COUNT(*)            AS rows,
+                      MAX(created_at)     AS newest
+               FROM content_embeddings
+               GROUP BY producer
+               ORDER BY producer"""
+        )
+        producers = [
+            {
+                "producer": row[0],
+                "keys": int(row[1]),
+                "rows": int(row[2]),
+                "newest": row[3].isoformat() if row[3] else None,
+            }
+            for row in cur.fetchall()
+        ]
+    return {
+        "producers": producers,
+        "total_rows": sum(p["rows"] for p in producers),
+        "total_keys": sum(p["keys"] for p in producers),
+    }
