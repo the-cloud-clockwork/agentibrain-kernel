@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,12 @@ from agentibrain import scaffold as _scaffold
 from agentibrain.config import DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_PATH, BrainSettings
 
 console = Console()
+
+# How long `tick --wait` / `sync --check` block before calling a tick stalled.
+# MUST exceed brain-ops' BRAIN_LLM_TIMEOUT_SECONDS (600s) plus the drain's
+# pickup interval, or a perfectly healthy slow tick reports as a timeout and
+# sends the operator hunting for a fault that is not there.
+TICK_WAIT_SECONDS = int(os.getenv("AGENTIBRAIN_TICK_WAIT_SECONDS", "900"))
 
 
 def _load_settings() -> BrainSettings:
@@ -528,10 +535,10 @@ def tick_cmd(
         )
         return
 
-    console.print("  waiting (≤5 min)…")
+    console.print(f"  waiting (≤{TICK_WAIT_SECONDS // 60} min)…")
     import time as _time
 
-    deadline = _time.time() + 300
+    deadline = _time.time() + TICK_WAIT_SECONDS
     while _time.time() < deadline:
         try:
             s = httpx.get(f"{base}/tick/{job_id}", headers=headers, timeout=10.0)
@@ -710,10 +717,10 @@ def sync_cmd(wait: bool, check: bool, brain_url: str | None, token: str | None) 
     if not wait:
         sys.exit(2 if totals["failed"] else 0)
 
-    console.print("  waiting (≤5 min)…")
+    console.print(f"  waiting (≤{TICK_WAIT_SECONDS // 60} min)…")
     import time as _time
 
-    deadline = _time.time() + 300
+    deadline = _time.time() + TICK_WAIT_SECONDS
     started = _time.time()
     last_state = ""
     stall_hinted = False
