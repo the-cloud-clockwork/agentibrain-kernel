@@ -288,12 +288,26 @@ def find_hot_spots(text: str, min_heat: int = 7) -> list[Marker]:
 
 
 def find_signals(text: str, min_severity: str = "warning") -> list[Marker]:
-    """Find @signal markers at or above min_severity."""
+    """Find @signal markers at or above min_severity, plus every resolution.
+
+    `resolved` is not a rung on this ladder — it is the assertion that closes an
+    alarm, and signal_resolution.py cannot act on one it never receives. Ranked
+    numerically it scores 0 (absent from SEVERITY_ORDER, so `.get` defaults),
+    which sits below the default threshold of `warning`. The single severity
+    that retires a signal was therefore the single severity this filter dropped,
+    and every resolution written by an agent was silently discarded here while
+    the alarm it answered kept broadcasting.
+
+    So resolutions bypass the threshold entirely. Filtering them by alarm level
+    is a category error: the caller asking for "critical and above" wants the
+    loud things *and* the news that a loud thing is over.
+    """
     threshold = SEVERITY_ORDER.get(min_severity, 1)
     return [
         m
         for m in find_markers(text, "signal")
-        if SEVERITY_ORDER.get(m.attr("severity", "info"), 0) >= threshold
+        if (sev := m.attr("severity", "info")) == "resolved"
+        or SEVERITY_ORDER.get(sev, 0) >= threshold
     ]
 
 
