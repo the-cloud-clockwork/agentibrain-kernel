@@ -202,6 +202,28 @@ def test_a_closed_incident_ages_out_on_the_shorter_window(tmp_path: Path):
     assert open_file.exists(), "an open incident keeps the long window"
 
 
+def test_a_resolution_is_never_archived_before_the_alarm_it_closes(tmp_path: Path, monkeypatch):
+    """Otherwise the sweep undoes its own work and the alarm flip-flops.
+
+    Archive the closing document while the alarm it silenced is still inside
+    its own broadcast window, and the next tick re-opens the alarm — a nuclear
+    alert that comes back from the dead, which is the exact failure this whole
+    change set out to kill. The two knobs move independently, so the floor has
+    to be enforced rather than assumed.
+    """
+    monkeypatch.setattr(brain_keeper, "BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS", 2)
+    monkeypatch.setattr(brain_keeper, "BRAIN_STALE_CRITICAL_DAYS", 30)
+    when = NOW - timedelta(days=10)
+    closing = _signal_file(tmp_path, "closing.md", when, "resolved", RESOLUTION)
+    for i in range(brain_keeper.BRAIN_SIGNAL_KEEP_MIN):
+        _signal_file(tmp_path, f"fresh-{i}.md", NOW, "warning", f"live {i}")
+
+    stats = brain_keeper.sweep_signal_files(tmp_path, {"3151857"})
+
+    assert stats["archived_resolved"] == 0
+    assert closing.exists(), "archived a resolution still holding an alarm closed"
+
+
 def test_the_newest_signals_survive_any_age_rule(tmp_path: Path):
     """A quiet stretch must not leave an operator with no recent history."""
     old = NOW - timedelta(days=brain_keeper.BRAIN_SIGNAL_RETAIN_DAYS + 50)

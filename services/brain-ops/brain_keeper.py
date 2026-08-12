@@ -736,6 +736,14 @@ def sweep_signal_files(
     keep_min = max(0, BRAIN_SIGNAL_KEEP_MIN)
     open_days = min(max(0, BRAIN_SIGNAL_RETAIN_DAYS), _MAX_RETAIN_DAYS)
     resolved_days = min(max(0, BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS), _MAX_RETAIN_DAYS)
+    # A resolution must outlive every alarm it can close, or the sweep undoes
+    # its own work: archive the closing document while the alarm it silenced is
+    # still broadcasting, and the next tick re-opens the alarm. At the shipped
+    # defaults (14 vs 5) that cannot happen, but the two knobs move
+    # independently, and a flip-flopping nuclear alert is the exact failure this
+    # whole change set out to kill. Floored, not merely documented.
+    if resolved_days > 0:
+        resolved_days = max(resolved_days, BRAIN_STALE_CRITICAL_DAYS + 1)
 
     try:
         files = [
