@@ -580,7 +580,14 @@ def check_signals(root: Path, now: datetime) -> dict:
     including a nuclear alert that should already have expired — is being
     read from a file nothing has revisited.
     """
-    signal_files = _glob(root, "amygdala/*.md")
+    # README.md is the directory's own documentation — the scaffold seeds it,
+    # and counting it inflated the file count and pinned `oldest` to the day
+    # the vault was created rather than to the oldest live alarm.
+    signal_files = [
+        p
+        for p in _glob(root, "amygdala/*.md")
+        if p.name != "README.md" and not p.name.startswith(".")
+    ]
     _, newest_ts = _newest(signal_files)
     oldest_ts = (
         min((p.stat().st_mtime for p in signal_files if p.is_file()), default=0.0)

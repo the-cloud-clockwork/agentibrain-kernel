@@ -213,9 +213,7 @@ def test_marker_lesson_dedupes_repeated_content(vault: Path, client):
 def test_marker_lesson_distinct_content_still_appends(vault: Path, client):
     """Dedup must not swallow a genuinely different lesson."""
     client.post("/marker", json={"type": "lesson", "content": "Lesson one.", "attrs": {}})
-    resp = client.post(
-        "/marker", json={"type": "lesson", "content": "Lesson two.", "attrs": {}}
-    )
+    resp = client.post("/marker", json={"type": "lesson", "content": "Lesson two.", "attrs": {}})
     assert resp.json()["action"] == "appended"
     written = (vault / resp.json()["vault_path"]).read_text()
     assert "Lesson one." in written and "Lesson two." in written
@@ -257,3 +255,74 @@ def test_marker_lesson_dedupes_crlf_content(vault: Path, client):
     assert first.json()["action"] == "appended"
     assert second.json()["action"] == "duplicate"
     assert (vault / first.json()["vault_path"]).read_text().count("line two") == 1
+
+
+def test_the_same_alarm_re_emitted_later_does_not_create_a_second_file(vault: Path, client):
+    """Idempotency is a one-hour cache, so tomorrow's re-emission is a new
+    marker — and a signal filename is timestamped, so nothing downstream could
+    tell the copy from a fresh incident. One CI failure left seven files this
+    way, four of them byte-identical re-emissions of an already-resolved note.
+    """
+    body = {
+        "type": "signal",
+        "content": "Branch=dev SHA=6f8c941 Run=31518571119 deploy failed",
+        "attrs": {"severity": "nuclear", "source": "github-actions"},
+    }
+    first = client.post("/marker", json=body, headers={"X-Idempotency-Key": "a"}).json()
+    second = client.post("/marker", json=body, headers={"X-Idempotency-Key": "b"}).json()
+
+    assert first["action"] == "created"
+    assert second["action"] == "duplicate"
+    assert second["vault_path"] == first["vault_path"]
+    assert second["written_bytes"] == 0
+    assert len(_signal_files(vault)) == 1
+
+
+def test_a_different_alarm_is_never_absorbed(vault: Path, client):
+    a = {"type": "signal", "content": "auth-broker down", "attrs": {"title": "t"}}
+    b = {"type": "signal", "content": "postgres down", "attrs": {"title": "t"}}
+    r1 = client.post("/marker", json=a, headers={"X-Idempotency-Key": "1"}).json()
+    r2 = client.post("/marker", json=b, headers={"X-Idempotency-Key": "2"}).json()
+    assert r2["action"] == "created"
+    assert r1["vault_path"] != r2["vault_path"]
+
+
+def test_a_resolved_signal_does_not_suppress_the_condition_firing_again(vault: Path, client):
+    """Dedup is scoped to OPEN signals. Once an incident is closed, the same
+    condition recurring is news, not a repeat."""
+    content = "nightly backup failed on host-01"
+    client.post(
+        "/marker",
+        json={"type": "signal", "content": content, "attrs": {"severity": "resolved"}},
+        headers={"X-Idempotency-Key": "r1"},
+    )
+    again = client.post(
+        "/marker",
+        json={"type": "signal", "content": content, "attrs": {"severity": "critical"}},
+        headers={"X-Idempotency-Key": "r2"},
+    ).json()
+
+    assert again["action"] == "created"
+    assert len(_signal_files(vault)) == 2
+
+
+def test_resolved_is_a_writable_severity(vault: Path, client):
+    """It was being coerced to `warning`, so the only way a nuclear signal ever
+    stopped broadcasting was to outlive its five-day window — for a condition
+    often fixed in one minute."""
+    resp = client.post(
+        "/marker",
+        json={
+            "type": "signal",
+            "content": "run 31518571119 is resolved; fixed in cf4ad749",
+            "attrs": {"severity": "resolved", "source": "github-actions"},
+        },
+    )
+    data = resp.json()
+    assert "resolved" in data["vault_path"]
+    assert "severity: resolved" in (vault / data["vault_path"]).read_text()
+
+
+def _signal_files(vault: Path) -> list[Path]:
+    """Signals only — the scaffold seeds amygdala/README.md as documentation."""
+    return [p for p in (vault / "amygdala").glob("*.md") if p.name != "README.md"]

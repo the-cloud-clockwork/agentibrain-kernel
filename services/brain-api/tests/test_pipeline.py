@@ -310,6 +310,25 @@ def test_lessons_older_than_the_window_do_not_force_a_failure(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
+def test_the_amygdala_readme_is_not_counted_as_a_signal(tmp_path: Path):
+    """The scaffold seeds amygdala/README.md, and counting it pinned
+    `oldest_signal_age_days` to the day the vault was created — 122 days on a
+    live vault whose oldest actual alarm was 71."""
+    import os
+
+    root = _vault(tmp_path)
+    readme = root / "amygdala" / "README.md"
+    readme.write_text("# amygdala\n\nwhat lives here\n")
+    os.utime(readme, ((NOW - timedelta(days=400)).timestamp(),) * 2)
+    (root / "amygdala" / "2026-08-12-real.md").write_text("---\nseverity: warning\n---\nx")
+    _feed_file(root, "signals.md", "signals", "- **[warning]** (ci) something")
+
+    stage = pipeline.check_signals(root, NOW)
+
+    assert stage["signal_files"] == 1
+    assert stage["oldest_signal_age_days"] < 1
+
+
 def test_signals_raised_but_never_broadcast_fails(tmp_path: Path):
     root = _vault(tmp_path)
     (root / "amygdala" / "2026-08-12-nuclear-ci-red.md").write_text(

@@ -67,6 +67,8 @@ tpl:
       PIPELINE_TICK_STALE_HOURS: "6"
       PIPELINE_FEED_STALE_HOURS: "6"
       PIPELINE_MARKER_QUIET_HOURS: "72"
+      # Newest-first cap on the per-write signal dedup scan.
+      SIGNAL_DEDUP_SCAN_MAX: "300"
       # Must match brain-ops: the check reads the same lesson-feed cap and
       # window the tick writes with, so a divergence reads as a real defect.
       BRAIN_LESSON_FEED_MAX: "6"

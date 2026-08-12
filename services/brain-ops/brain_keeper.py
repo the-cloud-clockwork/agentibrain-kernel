@@ -28,6 +28,7 @@ import markers
 import redact
 import brain_verifier
 import lesson_reconcile
+import signal_resolution
 
 
 # ── Heat computation ──────────────────────────────────────────────────
@@ -84,6 +85,14 @@ BRAIN_LESSON_MIN_CHARS = int(os.getenv("BRAIN_LESSON_MIN_CHARS", "40"))
 BRAIN_TICK_COMPLETED_RETAIN_DAYS = int(os.getenv("BRAIN_TICK_COMPLETED_RETAIN_DAYS", "7"))
 BRAIN_TICK_FAILED_RETAIN_DAYS = int(os.getenv("BRAIN_TICK_FAILED_RETAIN_DAYS", "30"))
 BRAIN_TICK_QUEUE_KEEP_MIN = int(os.getenv("BRAIN_TICK_QUEUE_KEEP_MIN", "20"))
+# Retention for signal files in amygdala/, the last directory in the vault that
+# only ever grew. Generous by default because a signal is content, not a
+# machine record — 90 days keeps a quarter of incident history in place, while
+# a closed incident becomes history sooner. Files are archived under _backups/,
+# never deleted. 0 on either disables that half of the sweep.
+BRAIN_SIGNAL_RETAIN_DAYS = int(os.getenv("BRAIN_SIGNAL_RETAIN_DAYS", "90"))
+BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS = int(os.getenv("BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS", "14"))
+BRAIN_SIGNAL_KEEP_MIN = int(os.getenv("BRAIN_SIGNAL_KEEP_MIN", "25"))
 # Below signals (8) and inject (9): lessons are context, not an alarm.
 LESSON_FEED_PRIORITY = 7
 BRAIN_STALE_SIGNAL_KEEP_SEVERITIES = {"nuclear", "critical"}
@@ -314,6 +323,7 @@ def write_signals_feed(
         "tombstoned_stale": 0,
         "tombstoned_cleared": 0,
         "tombstoned_mitigated": 0,
+        "tombstoned_resolved": 0,
     }
 
     if not signals_list:
@@ -354,6 +364,14 @@ def write_signals_feed(
         # signals — the only way they exit the broadcast besides operator action.
         if sig.attr("_mitigated", "") == "true":
             stats["tombstoned_mitigated"] += 1
+            continue
+
+        # Resolution tombstone: something in the vault named this incident's
+        # own identifier and declared it resolved. Evidence beats the timer —
+        # a deploy failure fixed in one minute should not keep broadcasting
+        # nuclear for five days because that is when its window happens to end.
+        if sig.attr("_resolved", "") == "true":
+            stats["tombstoned_resolved"] += 1
             continue
 
         # Stale sweep. Protected severities get a longer window, not an
@@ -682,6 +700,104 @@ def sweep_tick_queue(brain_feed_dir: Path, dry_run: bool = False) -> dict:
     return stats
 
 
+def sweep_signal_files(
+    vault_root: Path,
+    closed_incidents: set[str] | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """Archive signal files that have outlived their usefulness.
+
+    `amygdala/` was the last unbounded directory in the vault: 85 files, the
+    oldest 125 days, nothing ever removing one. It grows at the rate alarms are
+    *emitted*, which is faster than the rate incidents happen — one CI failure
+    left seven files behind. Every one of them is re-read on every tick and
+    walked by every region scan.
+
+    Archived, never deleted. A signal is content: it records that something
+    caught fire and, often, what was done about it. The tick queue holds
+    machine records and can be purged outright; this cannot, so files move to
+    `_backups/amygdala/<YYYY-MM>/` where the scan does not reach them and an
+    operator still can.
+
+    A closed signal ages out faster than an open one, on the same reasoning the
+    feed uses: once an incident has an answer, the file is history rather than
+    an alarm. `README.md` and dot-files are left alone — they are the
+    directory's own furniture, not signals.
+    """
+    stats = {"archived_resolved": 0, "archived_stale": 0, "errors": 0}
+    amygdala = vault_root / "amygdala"
+    if not amygdala.is_dir():
+        return stats
+    if BRAIN_SIGNAL_RETAIN_DAYS <= 0 and BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS <= 0:
+        return stats
+
+    closed = closed_incidents or set()
+    now = datetime.now(timezone.utc)
+    keep_min = max(0, BRAIN_SIGNAL_KEEP_MIN)
+    open_days = min(max(0, BRAIN_SIGNAL_RETAIN_DAYS), _MAX_RETAIN_DAYS)
+    resolved_days = min(max(0, BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS), _MAX_RETAIN_DAYS)
+
+    try:
+        files = [
+            p
+            for p in amygdala.glob("*.md")
+            if p.is_file() and p.name != "README.md" and not p.name.startswith(".")
+        ]
+        files.sort(key=_resolution_time, reverse=True)
+    except (OSError, ValueError, OverflowError):
+        stats["errors"] += 1
+        return stats
+
+    # The newest few survive any age rule, so a quiet stretch cannot empty the
+    # directory and leave an operator with no recent alarm history at all.
+    for path in files[keep_min:]:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            stats["errors"] += 1
+            continue
+        fm, body = markers.parse_frontmatter(text)
+        severity = str(fm.get("severity", "")).strip().lower()
+        is_closed = severity == "resolved" or signal_resolution.is_resolved(body, closed)
+        retain = resolved_days if is_closed else open_days
+        if retain <= 0:
+            continue
+
+        created = fm.get("created", "")
+        try:
+            if created:
+                when = datetime.fromisoformat(str(created).replace("Z", "+00:00"))
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=timezone.utc)
+            else:
+                when = datetime.fromtimestamp(_resolution_time(path), tz=timezone.utc)
+            if when >= now - timedelta(days=retain):
+                continue
+        except (OSError, ValueError, TypeError, OverflowError):
+            stats["errors"] += 1
+            continue
+
+        stat_key = "archived_resolved" if is_closed else "archived_stale"
+        if dry_run:
+            stats[stat_key] += 1
+            continue
+        try:
+            dest_dir = vault_root / "_backups" / "amygdala" / when.strftime("%Y-%m")
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = dest_dir / path.name
+            # Two signals can share a name across archive runs only if one was
+            # restored; never overwrite the earlier copy.
+            n = 1
+            while dest.exists():
+                dest = dest_dir / f"{path.stem}.{n}{path.suffix}"
+                n += 1
+            shutil.move(str(path), str(dest))
+            stats[stat_key] += 1
+        except (OSError, shutil.Error):
+            stats["errors"] += 1
+    return stats
+
+
 def drain_inbox(vault_root: Path, dry_run: bool = False) -> dict:
     """Move notes from raw/inbox/ to appropriate region dirs based on tags."""
     inbox = vault_root / "raw" / "inbox"
@@ -1006,6 +1122,16 @@ def tick(
                 if isinstance(m, str):
                     mitigated_sources.add(m.strip())
 
+    # 4b. Build the resolved-incident index. Where `mitigates:` closes signals
+    #     by *source*, this closes them by the identifier the incident carries
+    #     in its own text — a run id or a commit SHA. Two documents naming the
+    #     same run id are talking about the same event, and if one of them
+    #     declares it resolved, the alarm has an answer and should stop firing
+    #     rather than wait out a five-day timer.
+    closed_incidents = signal_resolution.resolved_keys(
+        arcs, [sig for arc in arcs for sig in arc.signals]
+    )
+
     # 5. Collect markers across all arcs. Tag each signal with its parent arc's
     #    `created` timestamp so the stale sweep in write_signals_feed can filter.
     #    Also tag with mitigation status when source matches mitigated_sources.
@@ -1033,6 +1159,14 @@ def tick(
             sig_source = sig.attr("source", "")
             if sig_source and sig_source in mitigated_sources:
                 sig.attrs["_mitigated"] = "true"
+            # A resolved signal is the assertion itself, never its own subject —
+            # without this guard the closing marker matches its own keys and
+            # tombstones itself, so the resolution never reaches the feed and
+            # the operator has no record that the alarm was answered.
+            if sig.attr("severity", "").strip().lower() != "resolved" and (
+                signal_resolution.is_resolved(sig.content, closed_incidents)
+            ):
+                sig.attrs["_resolved"] = "true"
             content_hash = hashlib.sha256(sig.content.strip().encode("utf-8")).hexdigest()[:16]
             dedup_key = (sig_source, content_hash)
             if dedup_key in seen_signals:
@@ -1066,6 +1200,7 @@ def tick(
         "tombstoned_stale": 0,
         "tombstoned_cleared": 0,
         "tombstoned_mitigated": 0,
+        "tombstoned_resolved": 0,
     }
     lesson_feed_stats = {
         "scanned_files": 0,
@@ -1084,9 +1219,7 @@ def tick(
         write_hot_arcs_md(brain_feed_dir / "hot-arcs.md", hot)
         signal_stats = write_signals_feed(brain_feed_dir / "signals.md", all_signals, now=now)
         write_inject_feed(brain_feed_dir / "inject.md", all_injects)
-        lesson_feed_stats = write_lessons_feed(
-            brain_feed_dir / "lessons.md", vault_root, now=now
-        )
+        lesson_feed_stats = write_lessons_feed(brain_feed_dir / "lessons.md", vault_root, now=now)
 
     # 6. Update dashboards (skipped in quick_refresh)
     if not dry_run and not quick_refresh:
@@ -1097,6 +1230,16 @@ def tick(
             except OSError:
                 pass
             update_dashboard(date_dir, date_arcs)
+
+    # 7. Archive aged-out signal files. Deliberately last: amygdala/ is inside
+    #    REGION_DIRS, so its files were scanned as documents at the top of this
+    #    tick and the phases above hold live paths into them. Moving one earlier
+    #    would pull the ground out from under heat stamping and graduation.
+    #    Skipped on quick_refresh, which exists to be cheap and never mutates
+    #    the vault's shape.
+    signal_sweep = {"archived_resolved": 0, "archived_stale": 0, "errors": 0}
+    if not quick_refresh:
+        signal_sweep = sweep_signal_files(vault_root, closed_incidents, dry_run=dry_run)
 
     stats = {
         "inbox_drained": inbox_stats.get("drained", 0),
@@ -1114,6 +1257,11 @@ def tick(
         "signals_tombstoned_stale": signal_stats["tombstoned_stale"],
         "signals_tombstoned_cleared": signal_stats["tombstoned_cleared"],
         "signals_tombstoned_mitigated": signal_stats["tombstoned_mitigated"],
+        "signals_tombstoned_resolved": signal_stats["tombstoned_resolved"],
+        "signals_resolved_incidents": len(closed_incidents),
+        "signals_archived_resolved": signal_sweep["archived_resolved"],
+        "signals_archived_stale": signal_sweep["archived_stale"],
+        "signals_archive_errors": signal_sweep["errors"],
         "signals_deduped": signals_deduped,
         "signals_verified_pass": verify_stats.get("verified_pass", 0),
         "signals_verified_fail": verify_stats.get("verified_fail", 0),
