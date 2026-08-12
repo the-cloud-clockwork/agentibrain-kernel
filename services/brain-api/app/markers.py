@@ -47,6 +47,11 @@ _ADR_PATH_RE = re.compile(r"^ADR-(\d+)-", re.IGNORECASE)
 # marker write against a directory that would otherwise grow without limit;
 # a duplicate older than this window is a re-fire worth recording anyway.
 SIGNAL_DEDUP_SCAN_MAX = int(os.getenv("SIGNAL_DEDUP_SCAN_MAX", "300"))
+# The filename shape this module writes for signals: a UTC stamp, then severity
+# and slug. Scoping the dedup scan to it keeps the scan over files whose schema
+# is known, and off the synthesized incident arcs that also live in amygdala/ —
+# those carry `severity: nuclear` meaning a synthesis score, not an alarm level.
+_SIGNAL_FILENAME_RE = re.compile(r"^\d{8}T\d{6}Z-")
 
 
 class MarkerError(ValueError):
@@ -254,7 +259,9 @@ def _build_signal_file(content: str, attrs: dict[str, Any], ts_iso: str, slug: s
     )
 
 
-def _existing_signal_with_same_body(amygdala_dir: Path, content: str) -> Path | None:
+def _existing_signal_with_same_body(
+    amygdala_dir: Path, content: str, severity: str, source: str
+) -> Path | None:
     """An open signal already carrying this exact claim, if one exists.
 
     The HTTP idempotency cache has a one-hour TTL, so an agent re-emitting the
@@ -264,35 +271,49 @@ def _existing_signal_with_same_body(amygdala_dir: Path, content: str) -> Path | 
     from a fresh incident. One CI failure produced seven files this way, four of
     them byte-identical re-emissions of the same already-resolved note.
 
-    Deliberately scoped to *open* signals: a resolved one must not suppress the
-    same condition genuinely firing again later. Newest-first and capped, so the
-    cost does not grow with the directory; the retention sweep bounds it further.
+    Identity is (source, severity, body), not body alone. The same sentence at a
+    higher severity is an **escalation**, and the same sentence from a different
+    watcher is corroboration from an independent observer — absorbing either one
+    silently destroys an alarm. Matching on body alone meant a `nuclear` from
+    cron vanished into an existing `warning` from ci and never broadcast at all.
+
+    Scoped to *open* signals: a resolved one must not suppress the same
+    condition genuinely firing again later.
+
+    Candidates are ordered by filename rather than mtime. The names this writer
+    produces are UTC timestamps, so lexical order *is* chronological — and it
+    costs one readdir, where sorting on mtime stats every file in the directory
+    before the cap can apply. Over an NFS mount that is a network round trip
+    each. The same pattern scopes the scan to files this code wrote, so the
+    synthesized incident arcs that also live here are never read.
     """
     if not amygdala_dir.is_dir():
         return None
     incoming = _content_hash(content)
+    want_severity = (severity or "").strip().lower()
+    want_source = (source or "").strip().lower()
     try:
-        # README.md is the directory's own furniture — the scaffold seeds it —
-        # and dot-files are never signals. Same exclusion the retention sweep
-        # applies, for the same reason.
-        candidates = [
-            p
-            for p in amygdala_dir.glob("*.md")
-            if p.is_file() and p.name != "README.md" and not p.name.startswith(".")
-        ]
+        candidates = sorted(
+            (
+                p
+                for p in amygdala_dir.iterdir()
+                if p.name.endswith(".md") and _SIGNAL_FILENAME_RE.match(p.name)
+            ),
+            key=lambda p: p.name,
+            reverse=True,
+        )[:SIGNAL_DEDUP_SCAN_MAX]
     except OSError:
         return None
-    try:
-        candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    except OSError:
-        pass
-    for path in candidates[:SIGNAL_DEDUP_SCAN_MAX]:
+    for path in candidates:
         try:
             text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError, IsADirectoryError):
             continue
         fm, body = _parse_frontmatter(text)
-        if fm.get("severity", "").strip().lower() == "resolved":
+        existing_severity = str(fm.get("severity", "")).strip().lower()
+        if existing_severity == "resolved" or existing_severity != want_severity:
+            continue
+        if str(fm.get("source", "")).strip().lower() != want_source:
             continue
         if body and _content_hash(body) == incoming:
             return path
@@ -366,7 +387,9 @@ def write_marker(
         # An open signal already carrying this exact claim absorbs the write.
         # Returning the existing path rather than 409-ing keeps the caller's
         # contract unchanged — a re-emission is a no-op, not an error.
-        duplicate = _existing_signal_with_same_body(root / "amygdala", content)
+        duplicate = _existing_signal_with_same_body(
+            root / "amygdala", content, severity, attrs.get("source") or "unknown"
+        )
         if duplicate is not None:
             return {
                 "vault_path": str(duplicate.relative_to(root)),

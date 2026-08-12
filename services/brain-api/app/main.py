@@ -73,6 +73,14 @@ _idempotency_cache: dict[str, tuple[float, dict]] = {}
 # parallel threads. The check-then-act on the cache must be atomic or both
 # miss and double-write the marker.
 _idempotency_lock = threading.Lock()
+# This lock also serializes `write_marker` itself, not just the cache — the
+# signal dedup inside it is a scan-then-write, which is only race-free because
+# the whole thing happens under here. That guarantee is PROCESS-LOCAL, and it
+# holds because brain-api runs one replica (helm/brain-api/values.yaml) with a
+# single uvicorn worker (its Dockerfile passes no --workers). Raising either
+# breaks the invariant silently; nothing else enforces it. The blast radius if
+# it ever does is a duplicate signal file, not a lost one — `_write_new`'s
+# uuid-suffix path still disambiguates — but the note belongs here.
 _feed_cache: dict[str, Any] = {"ts": 0.0, "payload": None}
 
 

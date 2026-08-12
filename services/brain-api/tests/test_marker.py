@@ -287,6 +287,76 @@ def test_a_different_alarm_is_never_absorbed(vault: Path, client):
     assert r1["vault_path"] != r2["vault_path"]
 
 
+def test_an_escalation_of_the_same_text_is_not_absorbed(vault: Path, client):
+    """The same sentence at a higher severity is a NEW alarm.
+
+    Matching on body alone meant a `nuclear` vanished into an existing
+    `warning` file: no file written, nothing broadcast, and a response that
+    handed the caller the old path with no way to notice. A dedup that can
+    swallow an escalation is worse than no dedup.
+    """
+    text = "deploy failed"
+    warn = client.post(
+        "/marker",
+        json={"type": "signal", "content": text, "attrs": {"severity": "warning", "source": "ci"}},
+        headers={"X-Idempotency-Key": "w"},
+    ).json()
+    nuke = client.post(
+        "/marker",
+        json={"type": "signal", "content": text, "attrs": {"severity": "nuclear", "source": "ci"}},
+        headers={"X-Idempotency-Key": "n"},
+    ).json()
+
+    assert nuke["action"] == "created"
+    assert nuke["vault_path"] != warn["vault_path"]
+    assert "severity: nuclear" in (vault / nuke["vault_path"]).read_text()
+
+
+def test_the_same_text_from_a_second_watcher_is_not_absorbed(vault: Path, client):
+    """Two independent observers reporting the same condition is corroboration,
+    and which watcher saw it is often the whole diagnostic value."""
+    text = "deploy failed"
+    ci = client.post(
+        "/marker",
+        json={"type": "signal", "content": text, "attrs": {"severity": "warning", "source": "ci"}},
+        headers={"X-Idempotency-Key": "c"},
+    ).json()
+    cron = client.post(
+        "/marker",
+        json={
+            "type": "signal",
+            "content": text,
+            "attrs": {"severity": "warning", "source": "cron"},
+        },
+        headers={"X-Idempotency-Key": "k"},
+    ).json()
+
+    assert cron["action"] == "created"
+    assert cron["vault_path"] != ci["vault_path"]
+
+
+def test_a_synthesized_incident_arc_is_not_a_dedup_candidate(vault: Path, client):
+    """amygdala/ is heterogeneous. The tick's synthesis phase files incident
+    arcs here whose `severity: nuclear` is a synthesis score, not an alarm
+    level, and whose schema is entirely different. Scanning them is wasted I/O
+    at best and a wrong match at worst."""
+    (vault / "amygdala").mkdir(parents=True, exist_ok=True)
+    (vault / "amygdala" / "2026-05-15T02-10-09Z-tick-complete.md").write_text(
+        "---\ncluster_id: amygdala-tick\nseverity: nuclear\nstatus: active\nheat: 3\n---\n\n"
+        "brain tick complete\n"
+    )
+    resp = client.post(
+        "/marker",
+        json={
+            "type": "signal",
+            "content": "brain tick complete",
+            "attrs": {"severity": "nuclear", "source": "unknown"},
+        },
+    ).json()
+
+    assert resp["action"] == "created", "a synthesized arc must not absorb a real alarm"
+
+
 def test_a_resolved_signal_does_not_suppress_the_condition_firing_again(vault: Path, client):
     """Dedup is scoped to OPEN signals. Once an incident is closed, the same
     condition recurring is news, not a repeat."""
