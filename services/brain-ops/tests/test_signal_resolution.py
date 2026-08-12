@@ -254,26 +254,63 @@ def test_a_closed_incident_ages_out_on_the_shorter_window(tmp_path: Path):
     assert open_file.exists(), "an open incident keeps the long window"
 
 
-def test_a_resolution_is_never_archived_before_the_alarm_it_closes(tmp_path: Path, monkeypatch):
-    """Otherwise the sweep undoes its own work and the alarm flip-flops.
+def test_a_closing_document_keeps_the_long_window(tmp_path: Path):
+    """The shorter window belongs to the answered alarm, never to the answer.
 
-    Archive the closing document while the alarm it silenced is still inside
-    its own broadcast window, and the next tick re-opens the alarm — a nuclear
-    alert that comes back from the dead, which is the exact failure this whole
-    change set out to kill. The two knobs move independently, so the floor has
-    to be enforced rather than assumed.
+    `closed_incidents` is rebuilt from scratch every tick from whatever is still
+    scanned, so archiving the closer deletes the only key that closes its
+    incident. Closers are cheap — one per incident, against one per re-emission.
     """
-    monkeypatch.setattr(brain_keeper, "BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS", 2)
-    monkeypatch.setattr(brain_keeper, "BRAIN_STALE_CRITICAL_DAYS", 30)
-    when = NOW - timedelta(days=10)
-    closing = _signal_file(tmp_path, "closing.md", when, "resolved", RESOLUTION)
+    when = NOW - timedelta(days=brain_keeper.BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS + 20)
+    closer = _signal_file(tmp_path, "closer.md", when, "resolved", RESOLUTION)
+    answered = _signal_file(tmp_path, "answered.md", when, "warning", ALARM)
     for i in range(brain_keeper.BRAIN_SIGNAL_KEEP_MIN):
         _signal_file(tmp_path, f"fresh-{i}.md", NOW, "warning", f"live {i}")
 
     stats = brain_keeper.sweep_signal_files(tmp_path, {"31518571119"})
 
-    assert stats["archived_resolved"] == 0
-    assert closing.exists(), "archived a resolution still holding an alarm closed"
+    assert closer.exists(), "archiving the answer destroys the only record of it"
+    assert not answered.exists(), "the answered alarm still ages out fast"
+    assert stats["archived_resolved"] == 1
+
+
+def test_a_late_duplicate_alarm_is_still_closed_after_a_sweep(tmp_path: Path):
+    """The resurrection case, across two ticks with a real archive between them.
+
+    One CI failure left seven files in this directory, so a duplicate emission
+    of the same alarm arriving later is routine, not exotic. If the sweep has
+    archived the answer by then, the late copy finds nothing that closes it and
+    broadcasts nuclear for a condition the vault already answered. The age sweep
+    cannot save it either — that measures the ALARM's age, and this copy is new.
+
+    Every previous tick-level test here ran a single tick with fewer files than
+    KEEP_MIN, so the sweep never moved anything and this was invisible.
+    """
+    vault = tmp_path / "vault"
+    (vault / "clusters").mkdir(parents=True)
+    (vault / "left").mkdir(parents=True)
+    feed = vault / "brain-feed"
+    feed.mkdir()
+
+    old = NOW - timedelta(days=brain_keeper.BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS + 20)
+    _signal_file(vault, "closer.md", old, "resolved", RESOLUTION)
+    for i in range(brain_keeper.BRAIN_SIGNAL_KEEP_MIN):
+        _signal_file(vault, f"filler-{i}.md", NOW, "info", f"routine {i}")
+
+    brain_keeper.tick(vault, feed, dry_run=False, quick_refresh=False)
+
+    # Tick 2: the same alarm fires again, brand new, carrying the same run id.
+    stamp = NOW.strftime("%Y-%m-%d")
+    (vault / "clusters" / stamp).mkdir(parents=True, exist_ok=True)
+    (vault / "clusters" / stamp / f"{stamp}-deploy-failed.md").write_text(
+        f"---\ncluster_id: {stamp}-deploy-failed\ncreated: {stamp}\nstatus: active\n---\n\n"
+        f"<!-- @signal severity=nuclear source=github-actions -->\n{ALARM}\n<!-- @/signal -->\n"
+    )
+
+    stats = brain_keeper.tick(vault, feed, dry_run=False, quick_refresh=False)
+
+    assert stats["signals_tombstoned_resolved"] == 1, "the answer must survive to close it"
+    assert "SHA=6f8c941ebcb" not in (feed / "signals.md").read_text()
 
 
 def test_the_newest_signals_survive_any_age_rule(tmp_path: Path):

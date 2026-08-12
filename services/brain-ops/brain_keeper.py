@@ -740,14 +740,6 @@ def sweep_signal_files(
     keep_min = max(0, BRAIN_SIGNAL_KEEP_MIN)
     open_days = min(max(0, BRAIN_SIGNAL_RETAIN_DAYS), _MAX_RETAIN_DAYS)
     resolved_days = min(max(0, BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS), _MAX_RETAIN_DAYS)
-    # A resolution must outlive every alarm it can close, or the sweep undoes
-    # its own work: archive the closing document while the alarm it silenced is
-    # still broadcasting, and the next tick re-opens the alarm. At the shipped
-    # defaults (14 vs 5) that cannot happen, but the two knobs move
-    # independently, and a flip-flopping nuclear alert is the exact failure this
-    # whole change set out to kill. Floored, not merely documented.
-    if resolved_days > 0:
-        resolved_days = max(resolved_days, BRAIN_STALE_CRITICAL_DAYS + 1)
 
     try:
         files = [
@@ -755,7 +747,7 @@ def sweep_signal_files(
             for p in amygdala.glob("*.md")
             if p.is_file() and p.name != "README.md" and not p.name.startswith(".")
         ]
-        files.sort(key=_resolution_time, reverse=True)
+        files.sort(key=lambda p: (_resolution_time(p), p.name), reverse=True)
     except (OSError, ValueError, OverflowError):
         stats["errors"] += 1
         return stats
@@ -770,8 +762,26 @@ def sweep_signal_files(
             continue
         fm, body = markers.parse_frontmatter(text)
         severity = str(fm.get("severity", "")).strip().lower()
-        is_closed = severity == "resolved" or signal_resolution.is_resolved(body, closed)
-        retain = resolved_days if is_closed else open_days
+
+        # The shorter window belongs to the ANSWERED ALARM, never to the answer.
+        #
+        # A closing document is the vault's only record that an incident was
+        # resolved, and `closed_incidents` is rebuilt from scratch on every tick
+        # from whatever is still scanned. Archive the closer and that key is
+        # simply gone — so a late or duplicate emission of the same alarm, which
+        # this directory's own history shows is routine (one CI failure left
+        # seven files), arrives to find nothing that closes it and broadcasts
+        # nuclear for a condition the vault had already answered. The age sweep
+        # does not catch it either: that measures the ALARM's age, and the
+        # late-arriving copy is brand new.
+        #
+        # An earlier guard floored the resolved window above the alarm window,
+        # which only helped when alarm and answer were created close together —
+        # the case that was never the problem. Closers are cheap: one per
+        # incident, against one per re-emission. They keep the long window.
+        is_closer = severity == "resolved"
+        is_answered_alarm = not is_closer and signal_resolution.is_resolved(body, closed)
+        retain = resolved_days if is_answered_alarm else open_days
         if retain <= 0:
             continue
 
@@ -789,7 +799,7 @@ def sweep_signal_files(
             stats["errors"] += 1
             continue
 
-        stat_key = "archived_resolved" if is_closed else "archived_stale"
+        stat_key = "archived_resolved" if is_answered_alarm else "archived_stale"
         if dry_run:
             stats[stat_key] += 1
             continue
