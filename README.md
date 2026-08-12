@@ -154,11 +154,21 @@ The `tick-drain` service polls `brain-feed/ticks/requested/` every 30s, coalesce
 **Verify the whole stack in one command:**
 
 ```bash
-agentibrain check          # exit 0 = healthy, 1 = degraded (targets localhost:8103 by default)
+agentibrain check          # 0 clean · 1 broken · 2 degraded (targets localhost:8103)
 ```
 
-Deep check: real vault write, embeddings → Postgres round-trip with dimension
-validation, inference-gateway auth. Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
+Two questions, because a stack can pass one and fail the other:
+
+- **Dependencies** — a real vault write, an embeddings → Postgres round-trip
+  with dimension validation, a real completion through the inference gateway.
+- **Pipeline** — whether data is actually moving: markers arriving, the tick
+  queue draining and succeeding, arcs ranked, lessons reconciled and fed back,
+  signals broadcasting, the feed reaching a session, every producer present in
+  the index. Each stage reports the evidence behind its verdict.
+
+Both run server-side, so `--brain-url` answers for a brain on another machine.
+`--deps-only`, `--pipeline-only` and `--json` narrow or machine-read it. Full
+CLI reference: [`docs/CLI.md`](docs/CLI.md).
 
 See [`local/README.md`](local/README.md) for full local docs, troubleshooting, port overrides, and inference modes.
 

@@ -228,6 +228,25 @@ def test_a_lesson_log_outside_left_reference_fails(tmp_path: Path):
     assert "frontal-lobe/unconscious/lessons-2026-08-10.md" in stage["scattered_paths"]
 
 
+def test_a_file_merely_named_like_a_lesson_log_is_not_scatter(tmp_path: Path):
+    """`lessons-learned-notes.md` is somebody's idea doc, not a lesson log.
+
+    The reconcile matches an anchored, date-shaped name and correctly refuses
+    to touch anything else — so flagging such a file produced a failure no tick
+    could ever clear, with a hint blaming a phase that was working fine.
+    """
+    root = _vault(tmp_path)
+    _lesson_log(root, "left/reference/lessons-2026-08-11.md", NOW)
+    (root / "right" / "ideas").mkdir(parents=True)
+    (root / "right" / "ideas" / "lessons-learned-notes.md").write_text("# an idea, named oddly\n")
+    _feed_file(root, "lessons.md", "lessons", "- a lesson")
+
+    stage = pipeline.check_lessons(root, NOW)
+
+    assert stage["scattered_logs"] == 0
+    assert stage["status"] == "ok"
+
+
 def test_backups_do_not_count_as_scatter(tmp_path: Path):
     """The reconcile's own safety copies must not read as the fault they guard."""
     root = _vault(tmp_path)
@@ -404,17 +423,68 @@ def test_a_producer_with_source_files_and_no_rows_fails(tmp_path: Path):
 
 
 def test_index_counts_keys_not_chunk_rows(tmp_path: Path):
-    """One long document produces many rows; coverage is a question about keys."""
+    """One long document produces many rows; coverage is a question about keys.
+
+    The fixture has to make the two disagree — `keys=0, rows=5` — or the test
+    passes identically whether the code branches on keys or on rows, and proves
+    neither.
+    """
     root = _vault(tmp_path)
     _lesson_log(root, "left/reference/lessons-2026-08-11.md", NOW)
+    (root / "clusters" / "2026-08-01").mkdir(parents=True, exist_ok=True)
+    (root / "clusters" / "2026-08-01" / "arc.md").write_text("---\ncluster_id: a\n---\nx")
 
     stage = pipeline.check_index(
         root,
-        {"producers": [{"producer": "brain-lesson", "keys": 1, "rows": 9}], "total_rows": 9},
+        {
+            "producers": [
+                {"producer": "brain-arc", "keys": 4, "rows": 4},
+                {"producer": "brain-lesson", "keys": 0, "rows": 5},
+            ],
+            "total_rows": 9,
+        },
     )
 
+    assert stage["status"] == "fail", "rows>0 with keys=0 means nothing is indexed"
+    assert stage["missing_producers"] == ["brain-lesson"]
+
+
+def test_a_graduated_arc_outside_left_still_counts_as_an_index_source(tmp_path: Path):
+    """Graduation files arcs into any of the six regions, and nested.
+
+    Counting only `left/*.md` reported a completely dead embedder as healthy:
+    five real arcs in right/, zero rows in the index, verdict ok. That is the
+    single worst outcome this report can produce.
+    """
+    root = _vault(tmp_path)
+    (root / "right" / "ideas").mkdir(parents=True)
+    for i in range(5):
+        (root / "right" / "ideas" / f"arc-{i}.md").write_text(
+            f"---\ncluster_id: arc-{i}\nheat: 7\n---\n\nreal content\n"
+        )
+    _feed_file(root, "hot-arcs.md", "hot-arcs", "| 2026-08-12-x | 7 |")
+
+    stage = pipeline.check_index(root, {"producers": [], "total_rows": 0})
+
+    assert stage["status"] == "fail"
+    assert "brain-arc" in stage["missing_producers"]
+
+
+def test_a_scaffolded_vault_that_has_never_ticked_is_not_a_failure(tmp_path: Path):
+    """The shipped scaffold seeds standing region docs before anything runs.
+
+    Those are real embedder input, so they must count as a source — but on a
+    fresh install nothing has ticked yet, and calling a cold index broken is a
+    false alarm on the very first command a new user types.
+    """
+    root = _vault(tmp_path)
+    (root / "bridge").mkdir(exist_ok=True)
+    (root / "bridge" / "vision.md").write_text("---\ntitle: Vision\n---\n\nthe long game\n")
+
+    stage = pipeline.check_index(root, {"producers": [], "total_rows": 0})
+
     assert stage["status"] == "ok"
-    assert stage["producers"]["brain-lesson"] == {"rows": 9, "keys": 1}
+    assert "no tick has run" in stage["note"]
 
 
 def test_unreachable_index_degrades_rather_than_failing(tmp_path: Path):
@@ -431,9 +501,19 @@ def test_a_null_key_count_is_read_as_zero_not_as_healthy(tmp_path: Path):
     """
     root = _vault(tmp_path)
     _lesson_log(root, "left/reference/lessons-2026-08-11.md", NOW)
+    (root / "clusters" / "2026-08-01").mkdir(parents=True, exist_ok=True)
+    (root / "clusters" / "2026-08-01" / "arc.md").write_text("---\ncluster_id: a\n---\nx")
 
+    # brain-arc indexed, so this exercises the per-producer branch rather than
+    # the whole-index-cold one.
     stage = pipeline.check_index(
-        root, {"producers": [{"producer": "brain-lesson", "keys": None, "rows": 0}]}
+        root,
+        {
+            "producers": [
+                {"producer": "brain-arc", "keys": 3, "rows": 3},
+                {"producer": "brain-lesson", "keys": None, "rows": 0},
+            ]
+        },
     )
 
     assert stage["status"] == "fail"

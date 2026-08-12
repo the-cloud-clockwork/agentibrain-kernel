@@ -313,11 +313,15 @@ def _get_json(
         )
     except httpx.HTTPError as e:
         return None, f"{type(e).__name__}: {e}", None
+    # Status is checked BEFORE the body. FastAPI answers an unknown route with
+    # a perfectly valid `{"detail":"Not Found"}`, so parsing first would accept
+    # a 404 as a health report — the caller would then read no stages, no
+    # error, and no explanation of why.
+    if r.status_code >= 400:
+        return None, f"HTTP {r.status_code}: {r.text[:200]}", r.status_code
     try:
         return r.json(), None, r.status_code
     except ValueError:
-        if r.status_code >= 400:
-            return None, f"HTTP {r.status_code}: {r.text[:200]}", r.status_code
         return None, f"non-JSON response: {r.text[:200]}", r.status_code
 
 

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -41,6 +42,14 @@ from .markers import _LESSON_ENTRY_HEADER_RE, _LESSON_ENTRY_SPLIT_RE
 # everything they can do while staying cheap on an NFS mount.
 REGION_DIRS = ("bridge", "left", "right", "frontal-lobe", "pineal", "amygdala")
 CLUSTERS_DIR = "clusters"
+
+# Anchored and date-shaped, matching `services/brain-ops/markers.py::LESSON_LOG_RE`
+# — the pattern the reconcile itself uses to decide what it owns. Duplicated
+# rather than imported because brain-ops ships as a separate image; the two must
+# be changed together. A loose `lessons-*` would flag a file merely named that
+# way (`lessons-learned-notes.md`) as scatter, and no tick would ever clear it,
+# because reconcile correctly refuses to touch a file that is not a lesson log.
+LESSON_LOG_RE = re.compile(r"^lessons-\d{4}-\d{2}-\d{2}\.md$")
 
 # Thresholds. Defaults track the shipped cadences: tick-drain polls every 30s,
 # the brain-ops tick cron fires every 2h.
@@ -72,6 +81,16 @@ def _resolution_time(path: Path) -> float:
     `mv` preserves mtime, so a request file carries its *enqueue* time forever;
     ctime is what moves when the drain files it. Taking the max reads correctly
     on both — and on filesystems where ctime is unavailable or clamped.
+
+    Known blind spot: a whole-vault restore (`cp -a`, tar, rsync, a docker
+    volume copy) stamps a fresh ctime on every record at once, so immediately
+    after one, the relative order of completed/ and failed/ records is the
+    restore tool's traversal order rather than true chronology, and this stage's
+    verdict can flip either way for one tick cycle. `brain_keeper` uses the same
+    recipe but only ever to *retain* a record, where a fresh ctime is the safe
+    direction; here it decides which of two records came last, where it is not.
+    No better signal exists in the record itself — the first real tick after a
+    restore resolves it.
     """
     st = path.stat()
     return max(st.st_mtime, st.st_ctime)
@@ -112,13 +131,14 @@ def _glob(root: Path, pattern: str, limit: int | None = None) -> list[Path]:
     return out
 
 
-def _find_named(base: Path, name_prefix: str, suffix: str, budget: int) -> list[Path]:
-    """Depth-first walk for files matching a prefix, with a hard node budget.
+def _walk(base: Path, keep: Callable[[str], Any], budget: int = MAX_SCAN) -> list[Path]:
+    """Depth-first walk keeping files whose name satisfies `keep`.
 
-    `Path.rglob` walks every directory under `base` before filtering on the
-    name, which over a large vault is a full tree traversal per request.
-    Walking with an explicit budget and pruning `_backups` keeps the cost
-    bounded and skips the reconcile's own safety copies, which are not scatter.
+    Bounded on *nodes visited*, not on matches. `Path.glob` with `**` bounds
+    only the results, so a subtree holding no match still costs a full walk
+    before it can say so — the exact shape that makes an endpoint expensive on
+    an NFS vault. `_backups` is pruned: those are the reconcile's own safety
+    copies, never live content.
     """
     found: list[Path] = []
     stack = [base]
@@ -131,15 +151,42 @@ def _find_named(base: Path, name_prefix: str, suffix: str, budget: int) -> list[
                     visited += 1
                     if visited >= budget:
                         break
-                    name = entry.name
                     if entry.is_dir(follow_symlinks=False):
-                        if name != "_backups":
+                        if entry.name != "_backups":
                             stack.append(Path(entry.path))
-                    elif name.startswith(name_prefix) and name.endswith(suffix):
+                    elif keep(entry.name):
                         found.append(Path(entry.path))
         except OSError:
             continue
     return found
+
+
+def _region_docs(root: Path, budget: int = MAX_SCAN) -> list[Path]:
+    """Every markdown doc the arc embedder would index, wherever it now lives.
+
+    Graduation writes an arc to whichever of the six region roots its own
+    region maps to, and the inbox drain files them into nested subdirectories
+    under those roots. A check that looks only at `left/*.md` therefore sees
+    none of the arcs in `right/`, `bridge/`, `pineal/`, or any subdirectory —
+    and reports a completely dead embedder as healthy, which is the one
+    outcome this whole report exists to prevent.
+
+    The set mirrors `embed_arcs.scan_arcs`: all of REGION_DIRS, recursively,
+    minus lesson logs, which the lesson pass owns.
+    """
+    docs: list[Path] = []
+    for region in REGION_DIRS:
+        base = root / region
+        if not base.is_dir():
+            continue
+        docs.extend(
+            _walk(
+                base,
+                lambda n: n.endswith(".md") and not LESSON_LOG_RE.match(n),
+                budget,
+            )
+        )
+    return docs
 
 
 def _worst(*statuses: str) -> str:
@@ -340,7 +387,7 @@ def check_drain(root: Path, now: datetime) -> dict:
 
 def check_arcs(root: Path, now: datetime) -> dict:
     arcs = _glob(root, f"{CLUSTERS_DIR}/*/*.md")
-    graduated = _glob(root, "left/*.md") + _glob(root, "frontal-lobe/*/*.md")
+    graduated = _region_docs(root)
     newest_arc, newest_ts = _newest(arcs)
 
     hot = root / BRAIN_FEED_DIR / "hot-arcs.md"
@@ -365,7 +412,11 @@ def check_arcs(root: Path, now: datetime) -> dict:
 
     if not arcs and not graduated:
         return {"status": "ok", "note": "no arcs yet — nothing to verify", **detail}
-    if not hot.is_file():
+    # Keyed on *clustered* arcs, deliberately. Region docs include the standing
+    # documents the scaffold ships (bridge/vision.md and its siblings), which a
+    # brand-new vault has before anything has ever been clustered — demanding a
+    # hot-arcs feed on their account would fail every fresh install.
+    if arcs and not hot.is_file():
         return {
             "status": "fail",
             **detail,
@@ -422,12 +473,11 @@ def _scattered_lessons(root: Path) -> list[str]:
     """
     canonical_dir = root / "left" / "reference"
     found: list[str] = []
-    budget = MAX_SCAN
     for region in (*REGION_DIRS, CLUSTERS_DIR):
         base = root / region
         if not base.is_dir():
             continue
-        for p in _find_named(base, "lessons-", ".md", budget):
+        for p in _walk(base, LESSON_LOG_RE.match):
             if p.parent == canonical_dir:
                 continue
             try:
@@ -702,14 +752,21 @@ def check_index(root: Path, index_stats: dict | None) -> dict:
         }
     producers = {p.get("producer"): p for p in raw if isinstance(p, dict)}
 
-    # Only "does any source file exist" matters here, so each probe stops at
-    # the first hit rather than enumerating a directory holding thousands.
+    # `brain-arc` covers every region doc the embedder walks, not just
+    # clusters/ — an arc graduated into right/ or bridge/ is still its input,
+    # and a check that missed those called a dead embedder healthy.
     has_source = {
         "brain-arc": bool(
-            _glob(root, f"{CLUSTERS_DIR}/*/*.md", limit=1) or _glob(root, "left/*.md", limit=1)
+            _glob(root, f"{CLUSTERS_DIR}/*/*.md", limit=1)
+            or _region_docs(root, budget=MAX_SCAN)[:1]
         ),
         "brain-lesson": bool(_glob(root, "left/reference/lessons-*.md", limit=1)),
-        "brain-raw": bool(_glob(root, "raw/**/*.md", limit=1)),
+        # Node-budgeted rather than `raw/**/*.md`: a subtree with no markdown
+        # in it still costs a full walk under a recursive glob before it can
+        # report the absence.
+        "brain-raw": bool(_walk(root / "raw", lambda n: n.endswith(".md"))[:1])
+        if (root / "raw").is_dir()
+        else False,
     }
 
     detail: dict[str, Any] = {
@@ -727,6 +784,22 @@ def check_index(root: Path, index_stats: dict | None) -> dict:
             return int(producers.get(name, {}).get("keys") or 0)
         except (TypeError, ValueError):
             return 0
+
+    # A wholly empty index on a vault that has never ticked is a cold start,
+    # not a fault; on one that has, it is the fault. A written feed file is the
+    # evidence that a tick ran, so it is what separates the two.
+    if not any(_keys(name) for name in has_source) and any(has_source.values()):
+        if not _glob(root / BRAIN_FEED_DIR, "*.md", limit=1):
+            return {"status": "ok", "note": "index not built yet — no tick has run", **detail}
+        return {
+            "status": "fail",
+            **detail,
+            "missing_producers": sorted(n for n, v in has_source.items() if v),
+            "hint": (
+                "a tick has run but the index holds no rows at all — the embedder pass is "
+                "not running, so nothing in this vault can be found by semantic search."
+            ),
+        }
 
     missing = [name for name, present in has_source.items() if present and _keys(name) == 0]
     if missing:

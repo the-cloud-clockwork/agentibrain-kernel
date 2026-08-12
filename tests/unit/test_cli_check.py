@@ -116,10 +116,29 @@ def test_an_unreachable_brain_exits_one_without_the_404_advice(isolated, monkeyp
 
 
 def test_an_old_brain_api_without_the_endpoint_says_so(isolated, monkeypatch):
-    _route(monkeypatch, {"/health/pipeline": _Resp(None, status_code=404)})
+    """FastAPI answers an unknown route with a *valid* JSON body.
+
+    Parsing the body before checking the status accepted `{"detail":"Not
+    Found"}` as a health report: no stages to print, no error to print, and the
+    "your image is too old" advice never reached the operator — they got a bare
+    "status: broken" with nothing to act on.
+    """
+    _route(monkeypatch, {"/health/pipeline": _Resp({"detail": "Not Found"}, status_code=404)})
     result = CliRunner().invoke(cli.main, ["check", "--pipeline-only"])
     assert result.exit_code == 1
     assert "predates" in result.output
+    assert "HTTP 404" in result.output
+
+
+def test_a_markup_shaped_hint_does_not_crash_the_report(isolated, monkeypatch):
+    """A closing tag with no opener raises MarkupError, killing the command
+    mid-render — the operator loses the whole report to a stray bracket."""
+    stages = {"drain": {"status": "fail", "hint": "[/red]INJECTED[bold red]"}}
+    _route(monkeypatch, {"/health/pipeline": _Resp(_pipeline("broken", stages))})
+    result = CliRunner().invoke(cli.main, ["check", "--pipeline-only"])
+    assert result.exit_code == 1, result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "INJECTED" in result.output
 
 
 def test_json_mode_emits_only_json(isolated, monkeypatch):
