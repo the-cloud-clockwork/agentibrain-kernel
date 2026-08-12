@@ -19,6 +19,7 @@ Run from repo root:
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -96,6 +97,20 @@ def test_standing_region_docs_are_not_arcs():
     assert brain_keeper.is_arc(_doc("odd-name.md", {"cluster_id": "c1"})) is True
 
 
+def test_lesson_logs_are_not_arcs():
+    """A lesson log's filename embeds a date, but it is not a work arc.
+
+    Treating it as one let graduation move it out of left/reference and cool it
+    to heat 0, which is how months of lessons became unfindable. The cluster_id
+    case matters too: the exemption must win over it, or a stray id readmits the
+    file to the machinery that scattered it.
+    """
+    assert brain_keeper.is_arc(_doc("lessons-2026-07-02.md", {})) is False
+    assert brain_keeper.is_arc(_doc("lessons-2026-08-11.md", {"cluster_id": "c1"})) is False
+    # Not a lesson log — a real arc that merely mentions lessons in its name.
+    assert brain_keeper.is_arc(_doc("2026-07-02-lessons-learned.md", {})) is True
+
+
 def _vault(tmp_path: Path) -> tuple[Path, Path]:
     vault = tmp_path / "vault"
     (vault / "clusters" / "2026-04-01").mkdir(parents=True)
@@ -156,3 +171,78 @@ def test_tick_is_idempotent_on_a_dated_hot_arc(tmp_path):
 
     brain_keeper.tick(vault, feed)
     assert hot.exists(), "a fresh arc must not be graduated away"
+
+
+def test_full_tick_is_stable_over_lesson_logs(tmp_path: Path, monkeypatch):
+    """A lesson log must not ping-pong between the tick's phases.
+
+    Promotion copies rather than moves and gated on heat alone, so a lesson log
+    left a second copy in conscious/ that the reconcile phase then reclaimed as
+    a stray and deleted — and promotion recreated it on the next tick, writing
+    a backup every cycle and never converging. Heat stamping had the same
+    shape: the tick added `heat:`, the reconcile stripped it back out.
+
+    Verified over full ticks, not quick_refresh ones — quick_refresh skips the
+    heat and promote phases, so it cannot see this class of bug at all.
+
+    The threshold is pinned to 3 because that is what the deployment actually
+    runs — the shipped default of 5 is overridden in the operator's
+    environment. A lesson log computes heat exactly 3 (same-day recency, the
+    only contribution its frontmatter can ever earn), and the promote check is
+    `heat >= threshold`, so 3 >= 3 fired on every tick. At the code default of
+    5 the arithmetic can never reach the bar, which is why a test at defaults
+    passes identically with and without the gate and proves nothing.
+    """
+    monkeypatch.setattr(brain_keeper, "BRAIN_PROMOTE_HEAT", 3)
+    vault = tmp_path / "vault"
+    ref = vault / "left" / "reference"
+    ref.mkdir(parents=True)
+    (vault / "clusters").mkdir()
+    feed = vault / "brain-feed"
+    feed.mkdir()
+    stamp = NOW.strftime("%Y-%m-%d")
+    (ref / f"lessons-{stamp}.md").write_text(
+        f"---\nid: lessons-{stamp}\ntitle: Lessons — {stamp}\n"
+        f"type: lesson-log\ncreated: {stamp}\n---\n\n"
+        f"## {NOW.isoformat()} — agent\n\n"
+        "A lesson with enough substance to earn a slot in the feed.\n"
+    )
+
+    seen = []
+    for _ in range(3):
+        brain_keeper.tick(vault, feed, dry_run=False, quick_refresh=False)
+        logs = sorted(
+            str(p.relative_to(vault))
+            for p in vault.rglob("lessons-*.md")
+            if "_backups" not in p.parts
+        )
+        seen.append((logs, (ref / f"lessons-{stamp}.md").read_text()))
+
+    assert seen[0] == seen[1] == seen[2]
+    assert seen[0][0] == [f"left/reference/lessons-{stamp}.md"]
+    assert "heat:" not in seen[0][1]
+
+
+def test_signals_in_standing_docs_still_age_out(tmp_path: Path):
+    """A signal in a doc with no `created` was immortal at any severity.
+
+    `created` is only backfilled onto real arcs, so a standing region document
+    left `_parent_arc_created` empty — and an empty value skips the age check
+    entirely, which is the "broadcasts forever" behaviour the TTL work set out
+    to kill.
+    """
+    vault, feed = _vault(tmp_path)
+    standing = vault / "bridge" / "vision.md"
+    standing.parent.mkdir(parents=True, exist_ok=True)
+    standing.write_text(
+        "---\ntitle: Vision\n---\n\n"
+        "<!-- @signal severity=warning source=stale-source -->\n"
+        "an ancient warning that should not broadcast forever\n"
+        "<!-- @/signal -->\n"
+    )
+    old = (NOW - timedelta(days=120)).timestamp()
+    os.utime(standing, (old, old))
+
+    brain_keeper.tick(vault, feed, dry_run=False, quick_refresh=False)
+
+    assert "an ancient warning" not in (feed / "signals.md").read_text()

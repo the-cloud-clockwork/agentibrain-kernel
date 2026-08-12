@@ -27,10 +27,20 @@ import time
 import urllib.request
 from pathlib import Path
 
+import markers
+
 
 STATE_FILENAME = ".brain-arc-embed.state.json"
 MAX_TEXT_CHARS = 2000
 REQ_TIMEOUT = 30
+
+# Lesson logs are embedded in the same run under their own producer, so the
+# compose and Helm call sites stay `embed_arcs.py --vault … --prune` unchanged.
+# A separate script would have needed wiring in four places — embed_raw.py
+# already demonstrates how that drifts: it runs under compose and not Helm.
+LESSON_STATE_FILENAME = ".brain-lesson-embed.state.json"
+LESSON_PRODUCER = "brain-lesson"
+LESSON_MAX_TEXT_CHARS = 4000
 
 
 def parse_frontmatter(text: str) -> tuple[dict, str]:
@@ -182,10 +192,36 @@ def _scan_dir(d: Path, recurse: bool = False):
     for md in files:
         if md.name.startswith("_"):
             continue
+        # Lesson logs live under left/reference and would otherwise be indexed
+        # as untitled, region-less, heat-0 arcs — noise that competes with real
+        # arcs and buries the lessons themselves. They get their own producer
+        # below. Excluding them here also drops their stale brain-arc rows out
+        # of keep_keys, so --prune deletes them with no manual DB work.
+        if markers.LESSON_LOG_RE.match(md.name):
+            continue
         stem = md.name[:-3]
         if not md.name.endswith(".merged.md") and stem in merged_stems:
             continue
         yield md
+
+
+def arc_id(md: Path, fm: dict | None = None) -> str:
+    """The pgvector key for an arc file: frontmatter cluster_id, else the stem.
+
+    ``.merged`` must come off the stem. scan_arcs already strips it when
+    deduplicating, so a file without a cluster_id was scanned as ``X`` and
+    stored as ``X.merged`` — two names for one arc. Nothing reconciles them:
+    the incremental-embed state can never match the stored key, so the arc is
+    re-embedded on every run and never recognised as current, and --prune's
+    keep_keys never contains it, so the row is a permanent orphan. The symptom
+    is invisible — search still finds it — while the index drifts further from
+    the vault on every tick.
+    """
+    if fm:
+        cid = fm.get("cluster_id")
+        if cid:
+            return cid
+    return md.stem.replace(".merged", "")
 
 
 def scan_arcs(vault: Path):
@@ -249,7 +285,17 @@ def main() -> int:
         print("ERROR: EMBED_API_KEY not set (use --dry-run for a preview)", file=sys.stderr)
         return 1
 
-    stats = {"scanned": 0, "embedded": 0, "skipped_unchanged": 0, "skipped_noop": 0, "errors": 0}
+    stats = {
+        "scanned": 0,
+        "embedded": 0,
+        "skipped_unchanged": 0,
+        "skipped_noop": 0,
+        "errors": 0,
+        "lesson_scanned": 0,
+        "lesson_embedded": 0,
+        "lesson_skipped_unchanged": 0,
+        "lesson_skipped_noop": 0,
+    }
     # Cluster IDs of every arc we saw on disk — used for the prune call so
     # that pgvector rows whose source file has disappeared get deleted.
     seen_keys: set[str] = set()
@@ -263,7 +309,7 @@ def main() -> int:
             # Still record the cluster_id so prune doesn't delete unchanged arcs.
             try:
                 fm_only, _ = parse_frontmatter(md.read_text(encoding="utf-8"))
-                seen_keys.add(fm_only.get("cluster_id") or md.stem)
+                seen_keys.add(arc_id(md, fm_only))
             except OSError:
                 pass
             stats["skipped_unchanged"] += 1
@@ -279,11 +325,11 @@ def main() -> int:
             continue
 
         if len(content) < 50:
-            seen_keys.add(fm.get("cluster_id") or md.stem)
+            seen_keys.add(arc_id(md, fm))
             stats["skipped_noop"] += 1
             continue
 
-        cluster_id = fm.get("cluster_id") or md.stem
+        cluster_id = arc_id(md, fm)
         seen_keys.add(cluster_id)
         payload = {
             "key": cluster_id,
@@ -321,9 +367,104 @@ def main() -> int:
     if not args.dry_run:
         save_state(state_path, state)
 
+    # ── Lesson logs, second producer, same run ────────────────────────────
+    lessons_dir = vault / "left" / "reference"
+    lesson_state_path = state_path.with_name(LESSON_STATE_FILENAME)
+    lesson_state = {} if args.force_all else load_state(lesson_state_path)
+    lesson_seen: set[str] = set()
+    for md in sorted(lessons_dir.glob("lessons-*.md")) if lessons_dir.is_dir() else []:
+        if not markers.LESSON_LOG_RE.match(md.name):
+            continue
+        stats["lesson_scanned"] += 1
+        rel = str(md.relative_to(vault))
+        key = md.stem
+        lesson_seen.add(key)
+        mtime = md.stat().st_mtime
+        if lesson_state.get(rel) == mtime:
+            stats["lesson_skipped_unchanged"] += 1
+            continue
+        try:
+            fm, body = parse_frontmatter(md.read_text(encoding="utf-8"))
+        except OSError as e:
+            print(f"WARN: cannot read {md}: {e}", file=sys.stderr)
+            stats["errors"] += 1
+            continue
+        title = fm.get("title") or key
+        content = f"Title: {title}\n\n{body.strip()}"[:LESSON_MAX_TEXT_CHARS]
+        if len(content.strip()) < 50:
+            stats["lesson_skipped_noop"] += 1
+            continue
+        payload = {
+            "key": key,
+            "content": content,
+            "producer": LESSON_PRODUCER,
+            "content_type": "lesson-log",
+            "metadata": {
+                "date": fm.get("created", ""),
+                "title": title,
+                "path": rel,
+            },
+        }
+        if args.dry_run:
+            print(f"DRY[lesson]: {key} chars={len(content)}")
+            stats["lesson_embedded"] += 1
+            lesson_state[rel] = mtime
+            continue
+        try:
+            resp = post_embed(args.api_url, args.api_key, payload)
+            stats["lesson_embedded"] += 1
+            lesson_state[rel] = mtime
+            print(f"OK[lesson]: {key} chunks={resp.get('chunks_stored')}")
+        except Exception as e:
+            stats["errors"] += 1
+            print(f"ERR[lesson]: {key}: {e}", file=sys.stderr)
+
+    if not args.dry_run:
+        save_state(lesson_state_path, lesson_state)
+
+    # `prune` deletes every row for the producer that is not in keep_keys, so
+    # an empty keep set wipes the producer entirely. An absent directory or an
+    # empty scan means a fresh vault or a transient mount far more often than
+    # it means "every lesson was deleted" — and the wipe would be permanent,
+    # because the mtime state file above still marks each file as embedded, so
+    # the next run skips them all and never rebuilds. Emptying the producer
+    # deliberately is what --force-all is for.
+    if args.prune and not args.dry_run and not lessons_dir.is_dir():
+        print("PRUNE[lesson]: skipped — left/reference/ absent")
+    elif args.prune and not args.dry_run and not lesson_seen:
+        print("PRUNE[lesson]: skipped — no lesson logs scanned, refusing to empty the producer")
+    elif args.prune and not args.dry_run:
+        try:
+            req = urllib.request.Request(
+                f"{args.api_url.rstrip('/')}/prune",
+                data=json.dumps(
+                    {"producer": LESSON_PRODUCER, "keep_keys": sorted(lesson_seen)}
+                ).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {args.api_key}",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=REQ_TIMEOUT) as resp:
+                pr = json.loads(resp.read())
+            stats["lesson_pruned"] = pr.get("deleted", 0)
+            print(f"PRUNE[lesson]: deleted={pr.get('deleted', 0)} kept={pr.get('kept', 0)}")
+        except Exception as e:
+            stats["lesson_prune_error"] = str(e)
+            print(f"WARN: lesson prune failed: {e}", file=sys.stderr)
+
     # Reaper: delete pgvector rows whose cluster_id no longer maps to an
     # arc file on disk (graduated, renamed, or removed).
-    if args.prune and not args.dry_run:
+    #
+    # An empty keep set is never a legitimate reap here: /prune deletes every
+    # row for the producer that is not in keep_keys, so a scan that came back
+    # empty — an unmounted vault, an NFS blip — would erase the entire arc
+    # index. The state file above still marks every arc as embedded, so nothing
+    # would rebuild it short of --force-all. Refuse instead.
+    if args.prune and not args.dry_run and not seen_keys:
+        print("PRUNE: skipped — no arcs scanned, refusing to empty the producer")
+    elif args.prune and not args.dry_run:
         try:
             prune_payload = {
                 "producer": "brain-arc",

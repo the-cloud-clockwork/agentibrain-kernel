@@ -48,6 +48,25 @@ import brain_tick_prompt
 # INFERENCE_URL is optional — when empty, the AI reasoning phase is skipped and
 # the tick runs deterministic-only. Operators configure this via env.
 INFERENCE_URL = os.getenv("INFERENCE_URL", "")
+# Deadline for the synthesis call.
+#
+# A timeout is a ceiling, not a cost: this is only ever paid when the call
+# would otherwise hang, so a generous value costs a fast model nothing. The two
+# failure directions are wildly asymmetric — too long delays one tick; too
+# short silently destroys the AI phase on every tick, indefinitely, and the
+# only visible symptom is two feed files quietly going stale while everything
+# else looks fresh. That ran for six days on a real deployment before anyone
+# noticed.
+#
+# 600s is sized for the case the kernel actually ships for: a local model on a
+# workstation, which needs several minutes for a full-vault prompt. 120s was
+# sized for a hosted frontier model, and the gap is invisible to a health check
+# — /health/deep proves the gateway serves a five-token ping, never that it can
+# serve THIS workload.
+#
+# Anything that waits on a tick must allow more than this (see the CLI's
+# TICK_WAIT_SECONDS) or a healthy slow tick reports as a timeout.
+BRAIN_LLM_TIMEOUT_SECONDS = int(os.getenv("BRAIN_LLM_TIMEOUT_SECONDS", "600"))
 # CLICKHOUSE_URL is optional. Empty by default so local Docker stacks
 # (where ClickHouse is not running) skip the push entirely instead of
 # burning 5s on a connection-refused timeout every tick. Set this to a
@@ -272,11 +291,20 @@ def call_llm(prompt: str, inference_url: str = INFERENCE_URL) -> str:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=BRAIN_LLM_TIMEOUT_SECONDS) as resp:
             data = json.loads(resp.read())
             return data["choices"][0]["message"]["content"]
-    except (urllib.error.URLError, KeyError, json.JSONDecodeError) as e:
-        return f"ERROR: LLM call failed: {e}"
+    except (OSError, KeyError, ValueError) as e:
+        # OSError, not urllib.error.URLError. A read timeout raises
+        # TimeoutError, which is an OSError but NOT a URLError, so the single
+        # most likely failure of this call — a model too slow for the deadline
+        # — was the one case that escaped. This function is built to degrade:
+        # it returns an ERROR string, run_tick records `ai: {error: True}`, and
+        # the deterministic phases keep their results. Escaping instead killed
+        # the process, so no run report was written at all and every tick on a
+        # slow inference host was recorded as a crash rather than as "the AI
+        # phase could not finish". ValueError covers JSONDecodeError.
+        return f"ERROR: LLM call failed: {type(e).__name__}: {e}"
 
 
 def run_tick(

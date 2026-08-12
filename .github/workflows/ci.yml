@@ -64,6 +64,18 @@ jobs:
       - name: Pytest (brain-ops service)
         run: python -m pytest -q services/brain-ops/tests
 
+      # Neither of these two ran in CI, so both suites had rotted unnoticed —
+      # the marker and ranking regressions this repo just fixed had no gate.
+      - name: Pytest (mcp service)
+        run: |
+          pip install -r services/mcp/requirements.txt
+          python -m pytest -q services/mcp/tests
+
+      - name: Pytest (brain-api service)
+        run: |
+          pip install -r services/brain-api/requirements.txt
+          python -m pytest -q services/brain-api/tests
+
       - name: Pytest (embeddings service)
         env:
           # Pure target_dim + /health/deep tests always run; the DB-backed

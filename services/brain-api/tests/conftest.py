@@ -38,6 +38,9 @@ def client(vault: Path):
         "app.signal",
         "app.markers",
         "app.tick_trigger",
+        # pipeline binds VAULT_ROOT from app.feed at import, so it must reload
+        # after feed or it keeps the previous test's root.
+        "app.pipeline",
         "app.main",
     ]:
         if mod_name in importlib.sys.modules:

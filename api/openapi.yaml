@@ -147,6 +147,53 @@ paths:
                     type: object
                     additionalProperties: true
 
+  /health/pipeline:
+    get:
+      summary: >-
+        Pipeline readiness. Answers a different question from /health/deep:
+        not "can dependencies be reached" but "is data flowing through the
+        loop" — ingest, tick drain, arc ranking, lesson reconcile and feed,
+        signal broadcast, feed injection, and index coverage per producer.
+        Cheap: bounded vault globs plus one grouped count from the embeddings
+        service. No embedding or completion call, so it is safe to poll.
+        A stage with no input reports ok — an unused brain is healthy.
+      responses:
+        "200":
+          description: Per-stage verdicts, each carrying the evidence behind it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, stages]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded, broken]
+                  service:
+                    type: string
+                  vault_root:
+                    type: string
+                  checked_at:
+                    type: string
+                    format: date-time
+                  stages:
+                    type: object
+                    description: >-
+                      Keyed by stage name (ingest, drain, arcs, lessons,
+                      signals, feed, index). Each value carries `status`
+                      (ok | warn | fail), stage-specific evidence fields, and
+                      a `hint` naming the next action when not ok.
+                    additionalProperties:
+                      type: object
+                      required: [status]
+                      properties:
+                        status:
+                          type: string
+                          enum: [ok, warn, fail]
+                        hint:
+                          type: string
+                      additionalProperties: true
+
   /ingest:
     post:
       summary: Classify + fan-out an ingest payload.

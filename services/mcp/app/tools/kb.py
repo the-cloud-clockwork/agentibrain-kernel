@@ -32,9 +32,16 @@ BRAIN_API_TOKEN = (
 INFERENCE_URL = os.getenv("INFERENCE_URL", "")
 INFERENCE_TOKEN_ENV = "INFERENCE_API_KEY"
 BRAIN_BRIEF_MODEL = os.getenv("BRAIN_BRIEF_MODEL", "brain-brief")
+# Reciprocal Rank Fusion constant. 60 is the value from the original RRF paper
+# and the default in every mainstream hybrid-search implementation; it damps
+# the gap between adjacent ranks so neither source can dominate on position
+# alone.
+RRF_K = int(os.getenv("KB_RRF_K", "60"))
 
 
-async def _search_embeddings(query: str, limit: int, min_score: float) -> list[dict]:
+async def _search_embeddings(
+    query: str, limit: int, min_score: float, producer: str = ""
+) -> list[dict]:
     """Call agentibrain-embeddings /search and normalize into common schema."""
     if not EMBEDDINGS_URL or not EMBEDDINGS_API_KEY:
         return []
@@ -43,6 +50,10 @@ async def _search_embeddings(query: str, limit: int, min_score: float) -> list[d
         "Content-Type": "application/json",
     }
     body = {"query": query, "limit": limit, "min_score": min_score}
+    # Only sent when asked for — omitting it keeps the default cross-producer
+    # search, so existing callers see no change.
+    if producer:
+        body["producer"] = producer
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -157,11 +168,20 @@ def register(mcp: FastMCP):
         include_artifact: bool = True,
         include_obsidian: bool = True,
         min_score: float = 0.0,
+        producer: str = "",
     ) -> str:
         """Federated knowledge base search across embeddings (semantic) + Obsidian vault (text).
 
-        Returns merged, score-ranked hits. Schema:
-        {source, ref, title, score, preview, metadata}.
+        Hits from the two sources are fused by Reciprocal Rank Fusion, so a
+        strong semantic match is not outranked by a weak keyword one.
+
+        Schema: {source, ref, title, score, preview, metadata, source_rank,
+        normalized_score}. `score` is the raw per-source value (cosine
+        similarity for artifact hits, a match heuristic for obsidian ones) and
+        is not comparable across sources. `source_rank` is the hit's 1-based
+        position within its own source. `normalized_score` is the fused rank
+        score and is the field results are ordered by.
+
         Use the `ref` to follow up via brain_get_arc (for arcs) or brain-api /vault/read.
 
         Args:
@@ -170,10 +190,12 @@ def register(mcp: FastMCP):
             include_artifact: Search semantic embeddings (default True).
             include_obsidian: Search Obsidian vault files (default True).
             min_score: Minimum score threshold for semantic hits.
+            producer: Restrict semantic hits to one producer, e.g.
+                "brain-arc" or "brain-lesson". Empty searches all.
         """
         tasks = []
         if include_artifact:
-            tasks.append(_search_embeddings(query, limit, min_score))
+            tasks.append(_search_embeddings(query, limit, min_score, producer))
         if include_obsidian:
             tasks.append(_search_vault(query, limit))
         if not tasks:
@@ -184,15 +206,45 @@ def register(mcp: FastMCP):
         for batch in batches:
             merged.extend(batch)
 
+        # Reciprocal Rank Fusion. The two sources score on scales that have no
+        # relationship to each other: the vault's is a match heuristic
+        # (capped line count plus flat filename/all-token bonuses, so 30-40 for
+        # a file that merely repeats a common word), the embeddings' is cosine
+        # similarity in [0,1] (0.33 is a good match). Dividing the vault scores
+        # by their own batch max forced the best lexical hit to 1.0 however
+        # weak it was, so lexical always beat semantic — a search for the
+        # verbatim text of a lesson returned four unrelated documents and not
+        # the lesson.
+        #
+        # RRF uses only each source's internal ordering, so the scales never
+        # meet. It also stays correct if the vault's formula changes, which a
+        # fixed weight or floor would not, and it handles the cases min-max
+        # gets wrong: a source returning a single weak hit no longer becomes a
+        # perfect 1.0, and all-equal scores keep a deterministic order instead
+        # of collapsing into a tie.
+        #
+        # Both lists arrive already sorted by their own source, so rank is
+        # position — no re-sort needed before fusing.
         artifact_hits = [h for h in merged if h.get("source") == "artifact"]
         obsidian_hits = [h for h in merged if h.get("source") == "obsidian"]
-        max_obs = max((h.get("score", 0) for h in obsidian_hits), default=1) or 1
-        for h in obsidian_hits:
-            h["normalized_score"] = float(h.get("score", 0)) / float(max_obs)
-        for h in artifact_hits:
-            h["normalized_score"] = float(h.get("score", 0))
+        for hits in (artifact_hits, obsidian_hits):
+            for rank, h in enumerate(hits, start=1):
+                # Raw per-source `score` is left untouched for debuggability;
+                # `source_rank` is the legible companion, since fused values
+                # are all ~0.008-0.016 and mean nothing at a glance.
+                h["source_rank"] = rank
+                h["normalized_score"] = 1.0 / (RRF_K + rank)
 
-        merged.sort(key=lambda r: -r.get("normalized_score", 0))
+        # Rank 1 of each source scores identically, so the top slot is a tie.
+        # Break it toward the semantic hit explicitly rather than leaving it to
+        # the order tasks happened to be appended in: burying semantic hits
+        # under keyword noise is the failure this whole change exists to fix.
+        merged.sort(
+            key=lambda r: (
+                -r.get("normalized_score", 0),
+                0 if r.get("source") == "artifact" else 1,
+            )
+        )
         merged = merged[: limit * 2]
 
         return json.dumps(
