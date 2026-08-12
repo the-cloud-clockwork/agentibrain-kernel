@@ -25,6 +25,8 @@ console = Console()
 # pickup interval, or a perfectly healthy slow tick reports as a timeout and
 # sends the operator hunting for a fault that is not there.
 TICK_WAIT_SECONDS = int(os.getenv("AGENTIBRAIN_TICK_WAIT_SECONDS", "900"))
+# How often `tick --wait` says it is still alive while the model thinks.
+_TICK_HEARTBEAT_SECONDS = 60
 
 
 def _load_settings() -> BrainSettings:
@@ -538,7 +540,16 @@ def tick_cmd(
     console.print(f"  waiting (≤{TICK_WAIT_SECONDS // 60} min)…")
     import time as _time
 
+    # A tick's AI phase may legitimately run for BRAIN_LLM_TIMEOUT_SECONDS, so
+    # this can be silent for ten minutes. Silence that long is indistinguishable
+    # from a hang, and an operator who cannot tell the difference kills the
+    # command — so narrate: the drain's pickup, then a heartbeat with elapsed
+    # time. Nothing here polls faster than before; only the reporting changed.
     deadline = _time.time() + TICK_WAIT_SECONDS
+    started = _time.time()
+    picked_up = False
+    stall_hinted = False
+    next_beat = started + _TICK_HEARTBEAT_SECONDS
     while _time.time() < deadline:
         try:
             s = httpx.get(f"{base}/tick/{job_id}", headers=headers, timeout=10.0)
@@ -549,13 +560,41 @@ def tick_cmd(
             continue
 
         state = status.get("status")
+        elapsed = _time.time() - started
+
         if state in {"completed", "failed"}:
-            console.print(f"  [bold]{state}[/bold]")
+            console.print(f"  [bold]{state}[/bold] after {round(elapsed)}s")
             console.print(status)
             sys.exit(0 if state == "completed" else 1)
+
+        # The record leaves requested/ the moment the drain claims it, so a
+        # 404-ish "unknown" here means it is mid-run — that is the transition
+        # worth announcing, because it separates "the drain is dead" from "the
+        # model is thinking".
+        if not picked_up and state != "pending":
+            picked_up = True
+            console.print(f"  [cyan]picked up by tick-drain[/cyan] after {round(elapsed)}s")
+        if not stall_hinted and not picked_up and elapsed > 75:
+            stall_hinted = True
+            console.print(
+                "  [yellow]still queued after 75s — tick-drain normally claims a job within "
+                "~30s. Check `agentibrain status` and `agentibrain logs tick-drain --since "
+                "5m`; an image older than the code needs `agentibrain build`.[/yellow]"
+            )
+        if _time.time() >= next_beat:
+            next_beat = _time.time() + _TICK_HEARTBEAT_SECONDS
+            console.print(
+                f"  …still running ({round(elapsed / 60)}m) — the AI phase may take up to "
+                "BRAIN_LLM_TIMEOUT_SECONDS. `agentibrain logs tick-cron --since 5m` shows "
+                "the phase it is in."
+            )
         _time.sleep(3)
 
-    console.print("[yellow]timeout — job still running. Check tick-cron logs.[/yellow]")
+    console.print(
+        f"[yellow]gave up waiting after {TICK_WAIT_SECONDS // 60} min — the tick may still "
+        "be running. `agentibrain logs tick-cron --since 20m` has its phases; raise "
+        "AGENTIBRAIN_TICK_WAIT_SECONDS if your model is slower than that.[/yellow]"
+    )
     sys.exit(2)
 
 
