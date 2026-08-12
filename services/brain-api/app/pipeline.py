@@ -189,6 +189,16 @@ def _region_docs(root: Path, budget: int = MAX_SCAN) -> list[Path]:
     return docs
 
 
+def _authored(paths: list[Path]) -> list[Path]:
+    """Drop the scaffold's own furniture from a set of content files.
+
+    `README.md` documents what a directory is for; it is not something an agent
+    wrote. Counting it inflates every "how much is in here" number and, worse,
+    pins every "how old is the newest" number to the day the vault was created.
+    """
+    return [p for p in paths if p.name != "README.md" and not p.name.startswith(".")]
+
+
 def _worst(*statuses: str) -> str:
     return max(statuses, key=lambda s: _SEVERITY_ORDER.get(s, 0))
 
@@ -209,11 +219,16 @@ def check_ingest(root: Path, now: datetime) -> dict:
     side of the wire that agents are still emitting. The client-side outbox
     buffer is invisible here — `agentibrain check` inspects that locally.
     """
+    # The scaffold seeds a README.md into amygdala/ and daily/. Counting those
+    # as markers made a brand-new brain report "no marker written in 278h" —
+    # measuring the age of the vault itself and calling a fresh install quiet.
+    # Nothing has been written there at all, which is a different statement.
     destinations: dict[str, list[Path]] = {
         "lesson": _glob(root, "left/reference/lessons-*.md"),
-        "signal": _glob(root, "amygdala/*.md"),
+        "signal": _authored(_glob(root, "amygdala/*.md")),
         "decision": _glob(root, "left/decisions/ADR-*.md"),
-        "milestone": _glob(root, "daily/*.md") + _glob(root, "left/projects/*/BLOCKS.md"),
+        "milestone": _authored(_glob(root, "daily/*.md"))
+        + _glob(root, "left/projects/*/BLOCKS.md"),
     }
 
     detail: dict[str, Any] = {}
@@ -583,11 +598,7 @@ def check_signals(root: Path, now: datetime) -> dict:
     # README.md is the directory's own documentation — the scaffold seeds it,
     # and counting it inflated the file count and pinned `oldest` to the day
     # the vault was created rather than to the oldest live alarm.
-    signal_files = [
-        p
-        for p in _glob(root, "amygdala/*.md")
-        if p.name != "README.md" and not p.name.startswith(".")
-    ]
+    signal_files = _authored(_glob(root, "amygdala/*.md"))
     _, newest_ts = _newest(signal_files)
     oldest_ts = (
         min((p.stat().st_mtime for p in signal_files if p.is_file()), default=0.0)

@@ -48,6 +48,12 @@ import brain_tick_prompt
 # INFERENCE_URL is optional — when empty, the AI reasoning phase is skipped and
 # the tick runs deterministic-only. Operators configure this via env.
 INFERENCE_URL = os.getenv("INFERENCE_URL", "")
+# Deadline for the synthesis call. 120s suits a hosted frontier model; a local
+# 7B on a workstation needs several times that for a full-vault prompt, and the
+# gap is invisible to a health check — /health/deep proves the gateway serves a
+# five-token ping, never that it can serve THIS workload. Raise it rather than
+# accept a permanently AI-less tick.
+BRAIN_LLM_TIMEOUT_SECONDS = int(os.getenv("BRAIN_LLM_TIMEOUT_SECONDS", "120"))
 # CLICKHOUSE_URL is optional. Empty by default so local Docker stacks
 # (where ClickHouse is not running) skip the push entirely instead of
 # burning 5s on a connection-refused timeout every tick. Set this to a
@@ -272,11 +278,20 @@ def call_llm(prompt: str, inference_url: str = INFERENCE_URL) -> str:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=BRAIN_LLM_TIMEOUT_SECONDS) as resp:
             data = json.loads(resp.read())
             return data["choices"][0]["message"]["content"]
-    except (urllib.error.URLError, KeyError, json.JSONDecodeError) as e:
-        return f"ERROR: LLM call failed: {e}"
+    except (OSError, KeyError, ValueError) as e:
+        # OSError, not urllib.error.URLError. A read timeout raises
+        # TimeoutError, which is an OSError but NOT a URLError, so the single
+        # most likely failure of this call — a model too slow for the deadline
+        # — was the one case that escaped. This function is built to degrade:
+        # it returns an ERROR string, run_tick records `ai: {error: True}`, and
+        # the deterministic phases keep their results. Escaping instead killed
+        # the process, so no run report was written at all and every tick on a
+        # slow inference host was recorded as a crash rather than as "the AI
+        # phase could not finish". ValueError covers JSONDecodeError.
+        return f"ERROR: LLM call failed: {type(e).__name__}: {e}"
 
 
 def run_tick(

@@ -620,3 +620,25 @@ def test_endpoint_returns_a_full_report(vault: Path, client, path: str):
         "index",
     }
     assert body["status"] in {"ok", "degraded", "broken"}
+
+
+def test_a_scaffolded_vault_with_no_markers_is_quiet_not_stale(tmp_path: Path):
+    """A brand-new brain reported "no marker written in 278h" — it was reading
+    the age of the scaffold's own README files and calling a fresh install
+    silent. Nothing has been written there at all, which is a different
+    statement and must not carry a warning."""
+    import os
+
+    root = _vault(tmp_path)
+    for rel in ("amygdala/README.md", "daily/README.md"):
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("# what lives here\n")
+        os.utime(p, ((NOW - timedelta(days=12)).timestamp(),) * 2)
+
+    stage = pipeline.check_ingest(root, NOW)
+
+    assert stage["status"] == "ok"
+    assert "no markers written yet" in stage["note"]
+    assert stage["destinations"]["signal"]["files"] == 0
+    assert stage["destinations"]["milestone"]["files"] == 0
