@@ -63,6 +63,18 @@ LESSON_WINDOW_DAYS = int(os.getenv("BRAIN_STALE_LESSON_DAYS", "14"))
 # does not grow with the vault. Counts feed threshold comparisons, not an
 # inventory, so truncation changes nothing about the verdicts.
 MAX_SCAN = int(os.getenv("PIPELINE_MAX_SCAN", "5000"))
+# How far the AI-phase feeds may lag the deterministic ones before that gap is
+# itself the finding. Generous, because these two are written only when the
+# reasoning phase has something to say — the signal is a chasm, not a wobble.
+AI_PHASE_LAG_HOURS = int(os.getenv("PIPELINE_AI_PHASE_LAG_HOURS", "24"))
+
+# Feed files the AI reasoning phase owns. Every other feed is written by the
+# deterministic phase, which runs first and independently — so these two aging
+# while the rest stay fresh is the fingerprint of a tick whose reasoning half
+# is failing on every run. It is silent otherwise: the vault keeps its
+# structure, the feeds keep arriving, and nothing anywhere says the brain
+# stopped thinking. On one deployment it ran six days.
+_AI_PHASE_FEED_IDS = frozenset({"operator-intent", "last-tick-diff"})
 
 _SEVERITY_ORDER = {"ok": 0, "warn": 1, "fail": 2}
 
@@ -327,6 +339,22 @@ def check_drain(root: Path, now: datetime) -> dict:
         "last_failed_age_hours": _hours(_age_seconds(last_bad_ts, now)) if last_bad_ts else None,
     }
 
+    # "When did a tick last RUN" is not "when was /tick last called". The cron
+    # invokes brain_tick.py directly and leaves no queue record at all, so a
+    # queue-only measure reports a busy stack as stale. What every tick does
+    # leave behind is a regenerated feed file, so the newest of those is the
+    # honest clock — and the queue's own last success still counts, for a
+    # deployment driven entirely on demand.
+    #
+    # Computed here rather than after the verdicts, deliberately: it used to sit
+    # below the failure branch, so the one number that distinguishes "failing
+    # right now" from "failed once, has ticked fine since" was missing from the
+    # report exactly when the operator needed it to tell those apart.
+    _, newest_feed_ts = _newest(_glob(root / BRAIN_FEED_DIR, "*.md"))
+    last_activity = max(last_ok_ts, newest_feed_ts)
+    activity_hours = _hours(_age_seconds(last_activity, now)) if last_activity else None
+    detail["last_tick_activity_hours"] = activity_hours
+
     if not pending and not completed and not failed:
         return {"status": "ok", "note": "no ticks requested yet — nothing to verify", **detail}
 
@@ -356,38 +384,42 @@ def check_drain(root: Path, now: datetime) -> dict:
                 error_head = " ".join(str(tail).split())[-400:]
             except (OSError, ValueError, json.JSONDecodeError):
                 error_head = ""
+        # A queue record is only written for a tick someone REQUESTED. The cron
+        # leaves none, so an old failure stays the newest record indefinitely
+        # while the stack ticks along fine — and the stage stayed red forever
+        # with no way back to green and no hint that the way back is to request
+        # a tick. When something has demonstrably ticked since the failure, the
+        # honest verdict is "I cannot tell from here", not "broken".
+        ticked_since = last_activity > last_bad_ts
         return {
-            "status": "fail",
+            "status": "warn" if ticked_since else "fail",
             **detail,
             "last_resolution": "failed",
             "last_failed_record": last_bad.name if last_bad else None,
             "error_tail": error_head or None,
             "hint": (
-                "the most recent tick failed — every downstream stage is running on "
-                "whatever the last successful tick left behind. The error_tail above is "
-                "the reason; `agentibrain logs tick-drain --since 1h` has the full trace."
+                (
+                    f"the newest queue record is a failure from {detail['last_failed_age_hours']}h "
+                    f"ago, but something ticked {activity_hours}h ago — scheduled ticks leave no "
+                    "queue record, so this stage cannot see them. Run `agentibrain tick --wait` "
+                    "for a current verdict. The error_tail above is why that older one failed."
+                )
+                if ticked_since
+                else (
+                    "the most recent tick failed — every downstream stage is running on "
+                    "whatever the last successful tick left behind. The error_tail above is "
+                    "the reason; `agentibrain logs tick-drain --since 1h` has the full trace."
+                )
             ),
         }
 
-    # "When did a tick last RUN" is not "when was /tick last called". The 2h
-    # cron invokes brain_tick.py directly and leaves no queue record at all, so
-    # a queue-only measure reports a busy stack as stale. What every tick does
-    # leave behind is a regenerated feed file, so the newest of those is the
-    # honest clock — and the queue's own last success still counts, for a
-    # deployment driven entirely on demand.
-    _, newest_feed_ts = _newest(_glob(root / BRAIN_FEED_DIR, "*.md"))
-    last_activity = max(last_ok_ts, newest_feed_ts)
-    detail["last_tick_activity_hours"] = (
-        _hours(_age_seconds(last_activity, now)) if last_activity else None
-    )
-
-    if last_activity and detail["last_tick_activity_hours"] > TICK_STALE_HOURS:
+    if last_activity and activity_hours > TICK_STALE_HOURS:
         return {
             "status": "warn",
             **detail,
             "last_resolution": "completed" if last_ok_ts else None,
             "hint": (
-                f"nothing has ticked in {detail['last_tick_activity_hours']}h "
+                f"nothing has ticked in {activity_hours}h "
                 f"(threshold {TICK_STALE_HOURS}h) — no completed request and no regenerated "
                 "feed file. The tick cron is not firing; every stage below is as old as this."
             ),
@@ -725,6 +757,29 @@ def check_feed(root: Path, now: datetime) -> dict:
     # been regenerated: the whole directory going cold means no tick has run.
     freshest = _hours(_age_seconds(newest, now)) if newest else None
     detail["freshest_age_hours"] = freshest
+
+    # The reasoning phase failing while the deterministic phase succeeds.
+    lagging = {
+        fid: age
+        for fid, age in ages.items()
+        if fid in _AI_PHASE_FEED_IDS
+        and freshest is not None
+        and age - freshest > AI_PHASE_LAG_HOURS
+    }
+    if lagging:
+        detail["ai_phase_lag_hours"] = lagging
+        return {
+            "status": "warn",
+            **detail,
+            "hint": (
+                "the deterministic half of the tick is running but the reasoning half is "
+                f"not: {', '.join(f'{k} is {v}h old' for k, v in sorted(lagging.items()))} "
+                f"against a freshest feed of {freshest}h. Only the AI phase writes those. "
+                "Check the drain stage's error_tail, or run `agentibrain tick --wait`; a "
+                "model too slow for BRAIN_LLM_TIMEOUT_SECONDS produces exactly this shape."
+            ),
+        }
+
     if freshest is not None and freshest > FEED_STALE_HOURS:
         return {
             "status": "warn",

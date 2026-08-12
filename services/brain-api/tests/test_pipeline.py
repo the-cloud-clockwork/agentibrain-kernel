@@ -642,3 +642,41 @@ def test_a_scaffolded_vault_with_no_markers_is_quiet_not_stale(tmp_path: Path):
     assert "no markers written yet" in stage["note"]
     assert stage["destinations"]["signal"]["files"] == 0
     assert stage["destinations"]["milestone"]["files"] == 0
+
+
+def test_a_stalled_reasoning_phase_is_visible_without_any_queue_record(tmp_path: Path):
+    """The failure that hid for six days on a real deployment.
+
+    The deterministic phase writes hot-arcs/signals/lessons and succeeds; the AI
+    phase writes intent and last-tick-diff and times out. Scheduled ticks leave
+    no queue record, so the drain stage cannot see it at all — the only evidence
+    anywhere is those two files aging while everything beside them stays fresh.
+    """
+    import os
+
+    root = _vault(tmp_path)
+    _feed_file(root, "hot-arcs.md", "hot-arcs", "| 2026-08-12-x | 7 |")
+    _feed_file(root, "signals.md", "signals", "- **[info]** (ci) fine")
+    stale = _feed_file(root, "intent.md", "operator-intent", "what the operator is doing")
+    old = (NOW - timedelta(hours=pipeline.AI_PHASE_LAG_HOURS + 130)).timestamp()
+    os.utime(stale, (old, old))
+
+    stage = pipeline.check_feed(root, NOW)
+
+    assert stage["status"] == "warn"
+    assert "operator-intent" in stage["ai_phase_lag_hours"]
+    assert "reasoning half" in stage["hint"]
+
+
+def test_an_ai_feed_lagging_only_slightly_is_not_flagged(tmp_path: Path):
+    """These two are written when the reasoning phase has something to say, not
+    on a fixed cadence. The signal is a chasm, not a wobble."""
+    import os
+
+    root = _vault(tmp_path)
+    _feed_file(root, "hot-arcs.md", "hot-arcs", "| 2026-08-12-x | 7 |")
+    recent = _feed_file(root, "intent.md", "operator-intent", "still current")
+    old = (NOW - timedelta(hours=pipeline.AI_PHASE_LAG_HOURS - 2)).timestamp()
+    os.utime(recent, (old, old))
+
+    assert pipeline.check_feed(root, NOW)["status"] == "ok"
