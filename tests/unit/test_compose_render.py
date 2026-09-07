@@ -70,6 +70,22 @@ def test_every_first_party_image_uses_the_tag_ci_publishes(tmp_path):
     assert all(i.endswith(":dev") for i in first_party), first_party
 
 
+def test_embeddings_gets_the_variables_the_service_actually_reads(tmp_path):
+    """The service reads LLM_API_KEY / LLM_API_BASE. OPENAI_API_KEY is read by
+    nothing in the stack, so passing it leaves semantic search dead."""
+    data = yaml.safe_load(render_compose(_settings("local", tmp_path / "v")))
+    env = data["services"]["embeddings"]["environment"]
+    assert {"LLM_API_KEY", "LLM_API_BASE", "LLM_EMBED_MODEL"} <= set(env)
+    assert "OPENAI_API_KEY" not in env
+
+
+def test_brain_api_can_authenticate_to_embeddings(tmp_path):
+    data = yaml.safe_load(render_compose(_settings("local", tmp_path / "v")))
+    env = data["services"]["brain-api"]["environment"]
+    assert "EMBEDDINGS_API_KEY" in env
+    assert "OPENAI_API_KEY" not in env
+
+
 def test_the_vault_reaches_every_service_that_writes_it(tmp_path):
     vault = tmp_path / "vault"
     data = yaml.safe_load(render_compose(_settings("local", vault)))

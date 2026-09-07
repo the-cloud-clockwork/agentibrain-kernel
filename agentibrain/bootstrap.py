@@ -99,7 +99,10 @@ def write_env_file(settings: BrainSettings, token: str) -> Path:
         "LOG_LEVEL=INFO",
     ]
     if settings.openai_api_key is not None:
-        lines.append(f"OPENAI_API_KEY={settings.openai_api_key.get_secret_value()}")
+        # LLM_API_KEY is what the embeddings service reads; OPENAI_API_KEY is
+        # read by nothing in the stack.
+        lines.append(f"LLM_API_KEY={settings.openai_api_key.get_secret_value()}")
+        lines.append(f"INFERENCE_API_KEY={settings.openai_api_key.get_secret_value()}")
     if settings.llm_gateway_url:
         lines.append(f"INFERENCE_URL={settings.llm_gateway_url}")
     if settings.mode == "local":
