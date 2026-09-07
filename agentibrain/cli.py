@@ -87,6 +87,7 @@ def init(
 
     token = bootstrap.generate_token()
 
+    settings.vault_path.mkdir(parents=True, exist_ok=True)
     cfg_path = bootstrap.write_config(settings)
     env_path = bootstrap.write_env_file(settings, token)
     rendered = bootstrap.render_compose(settings)
@@ -101,7 +102,8 @@ def init(
     console.print(f"  {token}")
     console.print()
     console.print(
-        "Next: [cyan]agentibrain up[/cyan] to start the stack, then [cyan]agentibrain scaffold[/cyan]."
+        "Next: [cyan]agentibrain scaffold[/cyan] to seed the vault, "
+        "then [cyan]agentibrain up[/cyan] to start the stack."
     )
 
 
