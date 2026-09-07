@@ -35,6 +35,49 @@ def test_render_s3_excludes_minio(tmp_path):
     assert {"brain-api", "embeddings", "postgres", "redis"} <= set(data["services"])
 
 
+# The packaged template renders the whole brain, not just its storage half: a
+# deployment without tick-drain never processes what it ingests, and one
+# without mcp is unreachable from Claude Code.
+_FULL_STACK = {
+    "brain-api",
+    "embeddings",
+    "postgres",
+    "redis",
+    "tick-cron",
+    "tick-drain",
+    "amygdala",
+    "mcp",
+}
+
+
+def test_render_local_is_the_whole_brain(tmp_path):
+    data = yaml.safe_load(render_compose(_settings("local", tmp_path / "v")))
+    assert _FULL_STACK <= set(data["services"])
+
+
+def test_render_s3_is_the_whole_brain(tmp_path):
+    data = yaml.safe_load(render_compose(_settings("s3", tmp_path / "v")))
+    assert _FULL_STACK <= set(data["services"])
+
+
+def test_every_first_party_image_uses_the_tag_ci_publishes(tmp_path):
+    """CI publishes :dev only — :latest has never existed in the registry."""
+    data = yaml.safe_load(render_compose(_settings("local", tmp_path / "v")))
+    first_party = [
+        s["image"] for s in data["services"].values() if "agentibrain-" in s.get("image", "")
+    ]
+    assert first_party
+    assert all(i.endswith(":dev") for i in first_party), first_party
+
+
+def test_the_vault_reaches_every_service_that_writes_it(tmp_path):
+    vault = tmp_path / "vault"
+    data = yaml.safe_load(render_compose(_settings("local", vault)))
+    for name in ("brain-api", "tick-cron", "tick-drain", "amygdala"):
+        mounts = data["services"][name]["volumes"]
+        assert any(str(vault.resolve()) in m for m in mounts), name
+
+
 def test_render_mounts_vault(tmp_path):
     vault = tmp_path / "vault"
     rendered = render_compose(_settings("local", vault))

@@ -296,6 +296,11 @@ services:
         #     attribute cache on a freshly-mounted pod. Not needed here — this
         #     process mounts once and re-lists on every pass.
         #   * Log lines are prefixed "[tick-drain]" here, bare "drain:" there.
+        AI_FLAGS=""
+        if [ -z "$${INFERENCE_URL:-}" ]; then
+          AI_FLAGS="--no-ai"
+          echo "[tick-drain] INFERENCE_URL not set — running deterministic only"
+        fi
         echo "[tick-drain] starting; interval=$${INTERVAL}s"
         while true; do
           # Bucket pending requests by (dry_run, no_ai). Requests of the same
@@ -331,7 +336,7 @@ services:
               TLOG=/tmp/tick-last.log
               if python3 /app/brain_tick.py \
                   --vault /vault --brain-feed /vault/brain-feed \
-                  --inference-url "$${INFERENCE_URL:-}" \
+                  --inference-url "$${INFERENCE_URL:-}" $$AI_FLAGS \
                   --source brain-drain $$kind_flags > "$$TLOG" 2>&1; then
                 dest="$$DONE"; ok=$$((ok+n))
               else
