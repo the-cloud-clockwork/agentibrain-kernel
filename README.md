@@ -297,13 +297,19 @@ Plus an **opt-in `brain-keeper`** agent (ops oracle for triage, enrichment, repl
 
 ```bash
 pip install agentibrain
-agentibrain init                # renders compose.yml + .env into ~/.agentibrain
+agentibrain init --local        # renders compose.yml + .env into ~/.agentibrain
 agentibrain up
+agentibrain scaffold
 ```
 
 The wheel carries the CLI, the vault-layout templates, the compose template and
-the SQL migrations — no clone needed. Clone instead when you intend to build the
-service images from source or edit charts.
+the SQL migrations. What `init` renders is the **storage half** of the brain —
+postgres, redis, minio, `embeddings`, `brain-api` — pulling `:dev` images from
+GHCR. It gives you a reachable vault and API with no clone.
+
+It does **not** render `mcp`, `tick-cron`, `tick-drain` or `amygdala`, so nothing
+processes what you ingest and Claude Code has no MCP endpoint to talk to. For the
+full stack, clone the repo and use its `compose.yml` (section 1).
 
 ### 1. Laptop (Docker Compose)
 
