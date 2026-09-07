@@ -50,6 +50,9 @@ def render_compose(settings: BrainSettings) -> str:
         storage_mode=settings.mode,
         vault_path=str(settings.vault_path.expanduser().resolve()),
         s3_bucket=settings.s3_bucket or "agentibrain-artifacts",
+        ollama=settings.ollama,
+        ollama_chat_model=settings.ollama_chat_model,
+        ollama_embed_model=settings.ollama_embed_model,
     )
 
 
@@ -82,38 +85,116 @@ def write_config(settings: BrainSettings) -> Path:
     return cfg_path
 
 
+def _existing_assignments(env_path: Path) -> dict[str, str]:
+    """Active ``KEY=value`` lines already in the file. Comments are ignored, so
+    a commented placeholder never counts as a value the operator chose."""
+    if not env_path.exists():
+        return {}
+    found: dict[str, str] = {}
+    for line in env_path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        found[key.strip()] = value
+    return found
+
+
 def write_env_file(settings: BrainSettings, token: str) -> Path:
     """Persist runtime secrets + compose credentials to ``<config_dir>/.env``.
 
     This .env is the single source of truth for the stack — compose reads it
     via ``--env-file``. Includes generated defaults for bundled Postgres/MinIO
     so first-run users never have to guess.
+
+    Re-running init MUST NOT cost the operator their configuration. Any key
+    already assigned in the file keeps its value: a rotated KB_ROUTER_TOKEN
+    stays rotated, hand-set provider keys survive, and only names absent from
+    the file are added. Nothing is ever removed. An explicit flag
+    (``--openai-key``, ``--llm-gateway-url``) is the one thing that overrides,
+    because the operator just typed it.
     """
     cfg_dir = settings.config_dir.expanduser()
     cfg_dir.mkdir(parents=True, exist_ok=True)
     env_path = cfg_dir / ".env"
+    existing = _existing_assignments(env_path)
 
-    lines: list[str] = [
-        f"KB_ROUTER_TOKEN={token}",
-        f"POSTGRES_PASSWORD={os.getenv('POSTGRES_PASSWORD', DEFAULT_POSTGRES_PASSWORD)}",
-        "LOG_LEVEL=INFO",
-    ]
+    embeddings_key = existing.get("EMBEDDINGS_API_KEY") or generate_token()
+    generated: dict[str, str] = {
+        "KB_ROUTER_TOKEN": token,
+        "EMBEDDINGS_API_KEY": embeddings_key,
+        "EMBEDDINGS_API_KEYS": embeddings_key,
+        "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD", DEFAULT_POSTGRES_PASSWORD),
+        "LOG_LEVEL": "INFO",
+    }
+    if settings.mode == "local":
+        generated["MINIO_ROOT_USER"] = os.getenv("MINIO_ROOT_USER", DEFAULT_MINIO_USER)
+        generated["MINIO_ROOT_PASSWORD"] = os.getenv("MINIO_ROOT_PASSWORD", DEFAULT_MINIO_PASSWORD)
+
+    # Typed this run, so it wins over whatever the file holds.
+    explicit: dict[str, str] = {}
     if settings.openai_api_key is not None:
         # LLM_API_KEY is what the embeddings service reads; OPENAI_API_KEY is
         # read by nothing in the stack.
-        lines.append(f"LLM_API_KEY={settings.openai_api_key.get_secret_value()}")
-        lines.append(f"INFERENCE_API_KEY={settings.openai_api_key.get_secret_value()}")
+        secret = settings.openai_api_key.get_secret_value()
+        explicit["LLM_API_KEY"] = secret
+        explicit["INFERENCE_API_KEY"] = secret
     if settings.llm_gateway_url:
-        lines.append(f"INFERENCE_URL={settings.llm_gateway_url}")
-    if settings.mode == "local":
-        lines.append(f"MINIO_ROOT_USER={os.getenv('MINIO_ROOT_USER', DEFAULT_MINIO_USER)}")
-        lines.append(
-            f"MINIO_ROOT_PASSWORD={os.getenv('MINIO_ROOT_PASSWORD', DEFAULT_MINIO_PASSWORD)}"
-        )
-    # ARTIFACT_STORE_URL is optional — binary ingest fails clearly when unset.
+        explicit["INFERENCE_URL"] = settings.llm_gateway_url
+
+    resolved = {**generated, **existing, **explicit}
+
+    lines = [f"{key}={value}" for key, value in resolved.items()]
+    lines += _commented_settings(settings, offered=set(resolved))
     env_path.write_text("\n".join(lines) + "\n")
     env_path.chmod(0o600)
     return env_path
+
+
+# Everything the rendered compose reads but init does not set. Emitted
+# commented-out with its effective default, so the file itself says which
+# names exist — a .env holding only generated secrets tells an operator
+# nothing about what they are allowed to configure.
+_OPTIONAL_ENV: tuple[tuple[str, str, str], ...] = (
+    ("LLM_API_KEY", "", "embeddings: key for the embedding provider"),
+    ("LLM_API_BASE", "", "embeddings: OpenAI-compatible base URL"),
+    ("LLM_EMBED_MODEL", "text-embedding-3-small", "embeddings: model"),
+    ("EMBED_DIM", "", "embeddings: pin the vector width for an unrecognised model"),
+    ("INFERENCE_URL", "", "AI tick + kb_brief: OpenAI-compatible base URL"),
+    ("INFERENCE_API_KEY", "", "AI tick + kb_brief: key"),
+    ("BRAIN_CLASSIFY_MODEL", "brain-classify", "model name brain-api sends"),
+    ("BRAIN_BRIEF_MODEL", "brain-brief", "model name the tick and mcp send"),
+    ("EMBEDDINGS_API_KEY", "", "brain-api → embeddings auth; pairs with EMBEDDINGS_API_KEYS"),
+    ("EMBEDDINGS_API_KEYS", "", "embeddings: accepted keys, empty means unauthenticated"),
+    ("TICK_INTERVAL_SECONDS", "7200", "scheduled tick cadence"),
+    ("TICK_DRAIN_INTERVAL_SECONDS", "30", "on-demand tick poll interval"),
+    ("BRAIN_LLM_TIMEOUT_SECONDS", "600", "deadline for the AI synthesis call"),
+    ("ARTIFACT_STORE_URL", "", "optional; binary ingest fails clearly when unset"),
+)
+
+
+def _commented_settings(settings: BrainSettings, offered: set[str] | None = None) -> list[str]:
+    """The optional block appended to .env, minus anything already assigned."""
+    written = set(offered or ())
+    if settings.ollama:
+        # The compose defaults already point these at the bundled Ollama;
+        # uncommenting a blank here would override them back to nothing.
+        written |= {
+            "LLM_API_KEY",
+            "LLM_API_BASE",
+            "LLM_EMBED_MODEL",
+            "EMBED_DIM",
+            "INFERENCE_URL",
+            "BRAIN_CLASSIFY_MODEL",
+            "BRAIN_BRIEF_MODEL",
+        }
+    out = ["", "# --- optional: uncomment to change ---"]
+    for name, default, note in _OPTIONAL_ENV:
+        if name in written:
+            continue
+        out.append(f"# {note}")
+        out.append(f"#{name}={default}")
+    return out
 
 
 def write_compose(settings: BrainSettings, rendered: str) -> Path:

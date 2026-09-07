@@ -86,6 +86,37 @@ def test_brain_api_can_authenticate_to_embeddings(tmp_path):
     assert "OPENAI_API_KEY" not in env
 
 
+def test_ollama_mode_needs_no_api_key_anywhere(tmp_path):
+    s = BrainSettings(mode="local", vault_path=tmp_path / "v", ollama=True, _env_file=None)
+    data = yaml.safe_load(render_compose(s))
+    assert {"ollama", "ollama-init"} <= set(data["services"])
+
+    emb = data["services"]["embeddings"]["environment"]
+    assert "ollama:11434" in emb["LLM_API_BASE"]
+    # nomic-embed-text is not a family the service recognises, so an unpinned
+    # dimension makes it refuse to start.
+    assert "768" in emb["EMBED_DIM"]
+
+    # tick-drain was added after local/compose.ollama.yml was written; leaving
+    # it out makes on-demand ticks run --no-ai while scheduled ticks use AI.
+    for name in ("brain-api", "mcp", "tick-cron", "tick-drain"):
+        assert "ollama:11434" in data["services"][name]["environment"]["INFERENCE_URL"], name
+
+
+def test_the_chat_model_is_overridable_by_env(tmp_path, monkeypatch):
+    """Settings carry the BRAIN_ prefix; a bare OLLAMA_CHAT_MODEL is ignored."""
+    monkeypatch.setenv("BRAIN_OLLAMA_CHAT_MODEL", "qwen2.5:14b")
+    s = BrainSettings(mode="local", vault_path=tmp_path / "v", ollama=True, _env_file=None)
+    data = yaml.safe_load(render_compose(s))
+    assert "qwen2.5:14b" in data["services"]["ollama-init"]["command"][0]
+
+
+def test_without_ollama_nothing_points_at_a_local_model(tmp_path):
+    data = yaml.safe_load(render_compose(_settings("local", tmp_path / "v")))
+    assert "ollama" not in data["services"]
+    assert "ollama" not in data["services"]["embeddings"]["environment"]["LLM_API_BASE"]
+
+
 def test_the_vault_reaches_every_service_that_writes_it(tmp_path):
     vault = tmp_path / "vault"
     data = yaml.safe_load(render_compose(_settings("local", vault)))

@@ -85,6 +85,17 @@ class BrainSettings(BaseSettings):
         ),
     )
 
+    # --- Bundled local inference (Ollama) ---
+    ollama: bool = Field(
+        default=False,
+        description=(
+            "Render a bundled Ollama and point both chat and embeddings at it, "
+            "so the stack needs no API key at all."
+        ),
+    )
+    ollama_chat_model: str = Field(default="llama3.2:3b")
+    ollama_embed_model: str = Field(default="nomic-embed-text")
+
     # --- Kernel HTTP API ---
     port_brain_api: int = Field(
         default=8103,

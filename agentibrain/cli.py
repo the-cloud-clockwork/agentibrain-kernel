@@ -55,6 +55,12 @@ def main() -> None:
 @click.option("--redis-url", help="External Redis URL. Defaults to bundled.")
 @click.option("--openai-key", help="OpenAI API key.", envvar="OPENAI_API_KEY")
 @click.option("--llm-gateway-url", help="Optional inference-gateway URL (operator path).")
+@click.option(
+    "--ollama",
+    "use_ollama",
+    is_flag=True,
+    help="Bundle Ollama and point chat + embeddings at it. No API key needed.",
+)
 def init(
     vault: str | None,
     local_mode: bool,
@@ -64,6 +70,7 @@ def init(
     redis_url: str | None,
     openai_key: str | None,
     llm_gateway_url: str | None,
+    use_ollama: bool,
 ) -> None:
     """Initialize a new brain deployment (writes config + prepares compose)."""
     mode = "local" if local_mode else "s3"
@@ -82,6 +89,7 @@ def init(
         redis_url=redis_url,
         openai_api_key=SecretStr(openai_key) if openai_key else None,
         llm_gateway_url=llm_gateway_url,
+        ollama=use_ollama,
         _env_file=None,
     )
 
@@ -97,6 +105,12 @@ def init(
     console.print(f"[green]✓[/green] env        → {env_path}  (chmod 600)")
     console.print(f"[green]✓[/green] compose    → {compose_path}")
     console.print(f"[green]✓[/green] vault path → {settings.vault_path}")
+    if use_ollama:
+        console.print(
+            f"[green]✓[/green] inference  → bundled Ollama "
+            f"({settings.ollama_chat_model} + {settings.ollama_embed_model}, "
+            "pulled on first `up`)"
+        )
     console.print()
     console.print("[bold]KB_ROUTER_TOKEN[/bold] (save this):")
     console.print(f"  {token}")

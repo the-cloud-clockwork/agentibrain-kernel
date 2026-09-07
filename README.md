@@ -67,9 +67,31 @@ every tick — the stack is useful out of the box. `agentibrain check` reports
 `broken` until you set keys, because two dependencies are genuinely
 unconfigured: semantic search and AI synthesis. Both are off, nothing else is.
 
+### No API key? Bundle a local model
+
+```bash
+agentibrain init --local --ollama
+agentibrain scaffold
+agentibrain up          # pulls llama3.2:3b + nomic-embed-text on first start
+```
+
+This points **both** halves at a bundled Ollama — chat (AI ticks, `kb_brief`)
+and embeddings (semantic search) — so the stack needs no API key anywhere.
+`llama3.2:3b` runs on an 8 GB machine. For a larger one, set
+`BRAIN_OLLAMA_CHAT_MODEL` before `init` (`llama3.1:8b` at 16 GB, `qwen2.5:14b`
+at 32 GB+) — settings take the `BRAIN_` prefix.
+
+The first `up` downloads roughly 2.5 GB of weights and the models stay in a
+named volume across restarts.
+
 ### Configure your LLM provider (optional)
 
-Edit `~/.agentibrain/.env` — set at minimum one API key to enable semantic search:
+`init` writes `~/.agentibrain/.env` with the generated secrets, then lists every
+other variable the stack reads — commented out, with its default and what it
+does. Uncomment what you need; the names are not guessable (the embeddings
+service reads `LLM_API_KEY`, never `OPENAI_API_KEY`).
+
+Set at minimum one API key to enable semantic search:
 
 ```env
 # Required for embeddings (semantic search) — OpenAI or any compatible provider
@@ -81,13 +103,18 @@ INFERENCE_URL=https://api.openai.com/v1
 INFERENCE_API_KEY=<your-openai-key>
 ```
 
-**No API key at all?** The brain still works — `brain_ingest`, `kb_search` (vault text), `brain_get_arc` all function. Only semantic search and AI synthesis are disabled.
+**No provider configured and no `--ollama`?** The brain still works — `brain_ingest`, `kb_search` (vault text), `brain_get_arc` all function. Only semantic search and AI synthesis are off.
 
-**Free local alternative (Ollama):**
+**Free local alternative:** `agentibrain init --local --ollama` (above) on the
+pip path. On the clone path, use the overlay:
+
 ```bash
 docker compose -f compose.yml -f local/compose.ollama.yml up -d
 docker compose exec ollama ollama pull llama3.2
 ```
+
+The overlay wires chat only; semantic search still needs an embeddings key.
+`--ollama` wires both.
 
 ### Wire Claude Code
 

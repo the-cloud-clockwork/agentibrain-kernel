@@ -84,6 +84,40 @@ services:
     networks: [agentibrain_net]
 {% endif %}
 
+{% if ollama %}
+  ollama:
+    image: ollama/ollama:latest
+    container_name: agentibrain_ollama
+    restart: unless-stopped
+    volumes:
+      - agentibrain_ollama_data:/root/.ollama
+    ports:
+      - "{{ ollama_port | default(11434) }}:11434"
+    networks: [agentibrain_net]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: agentibrain_ollama_init
+    depends_on:
+      ollama: { condition: service_healthy }
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    # Both pulls are required: the chat model answers ticks and kb_brief, the
+    # embed model backs semantic search. Without the second, /health/deep
+    # reports embeddings unconfigured on a stack that looks complete.
+    command:
+      - |
+        ollama pull {{ ollama_chat_model }}
+        ollama pull {{ ollama_embed_model }}
+    networks: [agentibrain_net]
+{% endif %}
   embeddings:
     image: {{ embeddings_image | default("ghcr.io/the-cloud-clockwork/agentibrain-embeddings:dev") }}
     container_name: agentibrain_embeddings
@@ -92,12 +126,16 @@ services:
       postgres: { condition: service_healthy }
     environment:
       POSTGRES_URL: postgresql://agentibrain:${POSTGRES_PASSWORD:-agentibrain}@postgres:5432/agentibrain
-      LLM_API_BASE: ${LLM_API_BASE:-}
+{% if ollama %}      LLM_API_BASE: ${LLM_API_BASE:-http://ollama:11434/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-ollama}
+      LLM_EMBED_MODEL: ${LLM_EMBED_MODEL:-{{ ollama_embed_model }}}
+{% else %}      LLM_API_BASE: ${LLM_API_BASE:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_EMBED_MODEL: ${LLM_EMBED_MODEL:-text-embedding-3-small}
+{% endif %}
       # Pin the vector dimension when LLM_EMBED_MODEL is not a recognised
       # family; required for unknown models (the service refuses to guess).
-      EMBED_DIM: ${EMBED_DIM:-}
+      EMBED_DIM: ${EMBED_DIM:-{% if ollama %}768{% endif %}}
       EMBED_DIM_FORCE_MIGRATE: ${EMBED_DIM_FORCE_MIGRATE:-}
       API_KEYS: ${EMBEDDINGS_API_KEYS:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -122,9 +160,9 @@ services:
       RAW_INBOX_PREFIX: raw/inbox
       EMBEDDINGS_URL: http://embeddings:8080
       EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
-      INFERENCE_URL: ${INFERENCE_URL:-}
-      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
-      BRAIN_CLASSIFY_MODEL: ${BRAIN_CLASSIFY_MODEL:-brain-classify}
+      INFERENCE_URL: ${INFERENCE_URL:-{% if ollama %}http://ollama:11434/v1{% endif %}}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-{% if ollama %}ollama{% endif %}}
+      BRAIN_CLASSIFY_MODEL: ${BRAIN_CLASSIFY_MODEL:-{% if ollama %}{{ ollama_chat_model }}{% else %}brain-classify{% endif %}}
       LOCAL_READ_ROOTS: ${LOCAL_READ_ROOTS:-/workspace,/mnt/ingest}
       KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -188,9 +226,9 @@ services:
         done
 {% endraw %}    environment:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/11}
-      INFERENCE_URL: ${INFERENCE_URL:-}
-      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
-      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}
+      INFERENCE_URL: ${INFERENCE_URL:-{% if ollama %}http://ollama:11434/v1{% endif %}}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-{% if ollama %}ollama{% endif %}}
+      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-{% if ollama %}{{ ollama_chat_model }}{% else %}brain-brief{% endif %}}
       EMBEDDINGS_URL: http://embeddings:8080
       EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
       TICK_INTERVAL_SECONDS: ${TICK_INTERVAL_SECONDS:-7200}
@@ -292,9 +330,9 @@ services:
           sleep "$$INTERVAL"
         done
 {% endraw %}    environment:
-      INFERENCE_URL: ${INFERENCE_URL:-}
-      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
-      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}
+      INFERENCE_URL: ${INFERENCE_URL:-{% if ollama %}http://ollama:11434/v1{% endif %}}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-{% if ollama %}ollama{% endif %}}
+      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-{% if ollama %}{{ ollama_chat_model }}{% else %}brain-brief{% endif %}}
       EMBEDDINGS_URL: http://embeddings:8080
       EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
       TICK_DRAIN_INTERVAL_SECONDS: ${TICK_DRAIN_INTERVAL_SECONDS:-30}
@@ -346,9 +384,9 @@ services:
     depends_on:
       brain-api: { condition: service_healthy }
     environment:
-      INFERENCE_URL: ${INFERENCE_URL:-}
-      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
-      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}
+      INFERENCE_URL: ${INFERENCE_URL:-{% if ollama %}http://ollama:11434/v1{% endif %}}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-{% if ollama %}ollama{% endif %}}
+      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-{% if ollama %}{{ ollama_chat_model }}{% else %}brain-brief{% endif %}}
       BRAIN_API_URL: http://brain-api:8080
       KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN:-}
       EMBEDDINGS_URL: http://embeddings:8080
@@ -360,7 +398,8 @@ services:
     networks: [agentibrain_net]
 
 volumes:
-  agentibrain_pg_data:
+{% if ollama %}  agentibrain_ollama_data:
+{% endif %}  agentibrain_pg_data:
   agentibrain_redis_data:
 {% if storage_mode == "local" %}
   agentibrain_minio_data:
