@@ -201,6 +201,22 @@ async def search_content(
     return {"query": req.query, "results": results, "count": len(results)}
 
 
+@app.get("/stats")
+def stats(_token: str = Depends(auth.require_api_key)):
+    """Per-producer index coverage.
+
+    Cheap (one grouped count, no embedding call) and therefore safe to poll,
+    unlike /health/deep. Exists so a caller can tell "this producer has no
+    rows" apart from "this query has no matches" — a distinction search
+    results cannot express.
+    """
+    try:
+        return db.get_producer_stats()
+    except Exception as e:
+        log.error(f"stats_failed error={e}")
+        raise HTTPException(500, f"Stats failed: {e}")
+
+
 @app.post("/prune")
 async def prune_orphans(
     req: PruneRequest,

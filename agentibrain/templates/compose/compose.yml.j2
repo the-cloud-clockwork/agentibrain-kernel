@@ -78,7 +78,7 @@ services:
 {% endif %}
 
   embeddings:
-    image: {{ embeddings_image | default("ghcr.io/the-cloud-clockwork/agentibrain-embeddings:latest") }}
+    image: {{ embeddings_image | default("ghcr.io/the-cloud-clockwork/agentibrain-embeddings:dev") }}
     container_name: agentibrain_embeddings
     restart: unless-stopped
     depends_on:
@@ -96,7 +96,7 @@ services:
       start_period: 15s
 
   brain-api:
-    image: {{ brain_api_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-api:latest") }}
+    image: {{ brain_api_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-api:dev") }}
     container_name: agentibrain_brain_api
     restart: unless-stopped
     depends_on:

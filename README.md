@@ -154,11 +154,21 @@ The `tick-drain` service polls `brain-feed/ticks/requested/` every 30s, coalesce
 **Verify the whole stack in one command:**
 
 ```bash
-agentibrain check          # exit 0 = healthy, 1 = degraded (targets localhost:8103 by default)
+agentibrain check          # 0 clean · 1 broken · 2 degraded (targets localhost:8103)
 ```
 
-Deep check: real vault write, embeddings → Postgres round-trip with dimension
-validation, inference-gateway auth. Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
+Two questions, because a stack can pass one and fail the other:
+
+- **Dependencies** — a real vault write, an embeddings → Postgres round-trip
+  with dimension validation, a real completion through the inference gateway.
+- **Pipeline** — whether data is actually moving: markers arriving, the tick
+  queue draining and succeeding, arcs ranked, lessons reconciled and fed back,
+  signals broadcasting, the feed reaching a session, every producer present in
+  the index. Each stage reports the evidence behind its verdict.
+
+Both run server-side, so `--brain-url` answers for a brain on another machine.
+`--deps-only`, `--pipeline-only` and `--json` narrow or machine-read it. Full
+CLI reference: [`docs/CLI.md`](docs/CLI.md).
 
 See [`local/README.md`](local/README.md) for full local docs, troubleshooting, port overrides, and inference modes.
 
@@ -282,6 +292,24 @@ Plus an **opt-in `brain-keeper`** agent (ops oracle for triage, enrichment, repl
 ---
 
 ## Install
+
+### 0. CLI only (PyPI)
+
+```bash
+pip install agentibrain
+agentibrain init --local        # renders compose.yml + .env into ~/.agentibrain
+agentibrain up
+agentibrain scaffold
+```
+
+The wheel carries the CLI, the vault-layout templates, the compose template and
+the SQL migrations. What `init` renders is the **storage half** of the brain —
+postgres, redis, minio, `embeddings`, `brain-api` — pulling `:dev` images from
+GHCR. It gives you a reachable vault and API with no clone.
+
+It does **not** render `mcp`, `tick-cron`, `tick-drain` or `amygdala`, so nothing
+processes what you ingest and Claude Code has no MCP endpoint to talk to. For the
+full stack, clone the repo and use its `compose.yml` (section 1).
 
 ### 1. Laptop (Docker Compose)
 

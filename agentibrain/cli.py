@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -11,12 +12,21 @@ import httpx
 import yaml
 from pydantic import SecretStr
 from rich.console import Console
+from rich.markup import escape
 
 from agentibrain import __version__, bootstrap
 from agentibrain import scaffold as _scaffold
 from agentibrain.config import DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_PATH, BrainSettings
 
 console = Console()
+
+# How long `tick --wait` / `sync --check` block before calling a tick stalled.
+# MUST exceed brain-ops' BRAIN_LLM_TIMEOUT_SECONDS (600s) plus the drain's
+# pickup interval, or a perfectly healthy slow tick reports as a timeout and
+# sends the operator hunting for a fault that is not there.
+TICK_WAIT_SECONDS = int(os.getenv("AGENTIBRAIN_TICK_WAIT_SECONDS", "900"))
+# How often `tick --wait` says it is still alive while the model thinks.
+_TICK_HEARTBEAT_SECONDS = 60
 
 
 def _load_settings() -> BrainSettings:
@@ -223,94 +233,262 @@ def status_cmd() -> None:
         console.print(f"[red]health check failed: {e}[/red]")
 
 
+def _resolve_token(settings: BrainSettings, token: str | None) -> str:
+    """Bearer token from the flag/env, else the deployment's own .env, else exit 2."""
+    if token:
+        return token
+    env_path = settings.config_dir.expanduser() / ".env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if line.startswith("KB_ROUTER_TOKEN="):
+                found = line.split("=", 1)[1].strip()
+                if found:
+                    return found
+    console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
+    sys.exit(2)
+
+
+_STAGE_MARK = {
+    "ok": "[green]✓[/green]",
+    "warn": "[yellow]![/yellow]",
+    "fail": "[red]✗[/red]",
+}
+
+
+def _render_kv(value: Any, indent: str = "    ") -> None:
+    """Print a stage's evidence, one fact per line, nested dicts flattened.
+
+    Server text is printed with markup disabled. Rich reads square brackets as
+    style tags, and this content is full of them — `[nuclear]` severities, file
+    paths, Python tracebacks in error_tail. Interpreted as markup they either
+    vanish from the output or raise on an unknown style, losing the very
+    evidence the report exists to carry.
+    """
+    for key, val in value.items():
+        if key in {"status", "hint"}:
+            continue
+        if isinstance(val, dict):
+            if not val:
+                continue
+            inner = " ".join(f"{k}={v}" for k, v in val.items())
+            console.print(f"{indent}{key}: {inner}", markup=False)
+        elif isinstance(val, list):
+            if not val:
+                continue
+            console.print(f"{indent}{key}: {', '.join(str(v) for v in val[:8])}", markup=False)
+        elif val is not None:
+            console.print(f"{indent}{key}: {val}", markup=False)
+
+
+def _local_buffers() -> tuple[int, list[str]]:
+    """Count markers still sitting in the agentihooks outbox on THIS machine.
+
+    Invisible to the server: a buffered marker has not been sent, so brain-api
+    cannot know it exists. A brain that looks quiet because the writer is
+    buffering is a different fault from a brain that is not being written to,
+    and only the client can tell them apart.
+    """
+    import os as _os
+
+    outbox = Path(
+        _os.environ.get(
+            "BRAIN_WRITER_OUTBOX",
+            str(Path.home() / ".agentihooks" / "brain-outbox"),
+        )
+    ).expanduser()
+    dirs = [outbox, outbox.with_name(outbox.name + "-backlog")]
+    total = 0
+    detail: list[str] = []
+    for d in dirs:
+        n = len(list(d.glob("*.json"))) if d.is_dir() else 0
+        total += n
+        detail.append(f"{d.name}={n}")
+    return total, detail
+
+
+def _get_json(
+    base: str, path: str, token: str, timeout: float
+) -> tuple[dict | None, str | None, int | None]:
+    """GET a health endpoint.
+
+    Returns (payload, error, http_status). A degraded endpoint that answers
+    with JSON is a result, not an error. The status code comes back separately
+    so the caller can tell "this build has no such endpoint" (404) from "this
+    host is unreachable" — advice for one is wrong for the other.
+    """
+    try:
+        r = httpx.get(
+            f"{base}{path}", headers={"Authorization": f"Bearer {token}"}, timeout=timeout
+        )
+    except httpx.HTTPError as e:
+        return None, f"{type(e).__name__}: {e}", None
+    # Status is checked BEFORE the body. FastAPI answers an unknown route with
+    # a perfectly valid `{"detail":"Not Found"}`, so parsing first would accept
+    # a 404 as a health report — the caller would then read no stages, no
+    # error, and no explanation of why.
+    if r.status_code >= 400:
+        return None, f"HTTP {r.status_code}: {r.text[:200]}", r.status_code
+    try:
+        return r.json(), None, r.status_code
+    except ValueError:
+        return None, f"non-JSON response: {r.text[:200]}", r.status_code
+
+
 @main.command("check")
+@click.option("--deps-only", is_flag=True, help="Only the dependency check (/health/deep).")
+@click.option("--pipeline-only", is_flag=True, help="Only the pipeline check (/health/pipeline).")
+@click.option("--json", "as_json", is_flag=True, help="Emit both payloads as JSON.")
 @click.option("--brain-url", envvar="BRAIN_URL", help="Override brain-api base URL.")
 @click.option(
     "--token",
     envvar="KB_ROUTER_TOKEN",
     help="Bearer token (defaults to env / settings).",
 )
-def check_cmd(brain_url: str | None, token: str | None) -> None:
-    """Deep sanity check — verify every dependency actually works.
+def check_cmd(
+    deps_only: bool,
+    pipeline_only: bool,
+    as_json: bool,
+    brain_url: str | None,
+    token: str | None,
+) -> None:
+    """Verify the brain works — dependencies AND the loop that runs on them.
 
-    Calls brain-api /health/deep, which round-trips a vault write, asks the
-    embeddings service to hit its DB and run a real embedding call (checking
-    the model's output dimension against the pgvector schema), and verifies
-    the inference gateway accepts the configured key.
+    Two questions, both answered server-side so this works against a remote
+    deployment as well as a local one:
 
-    Exit 0 when everything passes, 1 when any check is degraded.
+    \b
+      dependencies (/health/deep)  — can every dependency be reached: a real
+        vault write, a real embedding with a dimension check, a real one-token
+        completion through the inference gateway.
+      pipeline (/health/pipeline)  — is data actually moving: markers arriving,
+        the tick queue draining and succeeding, arcs ranked, lessons reconciled
+        and fed back, signals broadcasting and expiring, the feed reaching a
+        session, and every producer present in the index.
+
+    Plus one check the server cannot make: markers still buffered in this
+    machine's agentihooks outbox, which look like silence from the other side.
+
+    Exit 0 clean · 1 broken · 2 degraded.
     """
-    settings = _load_settings()
-    base = (brain_url or settings.brain_url).rstrip("/")
+    import json as _json
 
-    if not token:
-        env_path = settings.config_dir.expanduser() / ".env"
-        if env_path.exists():
-            for line in env_path.read_text().splitlines():
-                if line.startswith("KB_ROUTER_TOKEN="):
-                    token = line.split("=", 1)[1].strip()
-                    break
-    if not token:
-        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
+    if deps_only and pipeline_only:
+        console.print("[red]--deps-only and --pipeline-only are mutually exclusive[/red]")
         sys.exit(2)
 
-    try:
-        r = httpx.get(
-            f"{base}/health/deep",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=60.0,
-        )
-        r.raise_for_status()
-    except httpx.HTTPError as e:
-        # A degraded endpoint returns 500-with-JSON in some deployments; try to
-        # render its body before giving up so the operator sees the reason.
-        body = None
-        resp = getattr(e, "response", None)
-        if resp is not None:
-            try:
-                body = resp.json()
-            except ValueError:
-                body = None
-        console.print(f"[red]GET {base}/health/deep failed: {e}[/red]")
-        if isinstance(body, dict) and body.get("detail"):
-            console.print(f"[red]  {body['detail']}[/red]")
-        sys.exit(1)
+    settings = _load_settings()
+    base = (brain_url or settings.brain_url).rstrip("/")
+    token = _resolve_token(settings, token)
 
-    try:
-        payload = r.json()
-    except ValueError:
-        console.print(f"[red]non-JSON response from {base}/health/deep:[/red]")
-        console.print(r.text[:500])
-        sys.exit(1)
+    run_deps = not pipeline_only
+    run_pipeline = not deps_only
 
-    overall = payload.get("status", "unknown")
-    checks = payload.get("checks", {})
+    deps: dict | None = None
+    deps_err: str | None = None
+    pipe: dict | None = None
+    pipe_err: str | None = None
+    pipe_status: int | None = None
 
-    for name, detail in checks.items():
-        if not isinstance(detail, dict):
-            console.print(f"[red]✗[/red] [bold]{name}[/bold]: {detail}")
-            continue
-        mark = "[green]✓[/green]" if detail.get("ok") else "[red]✗[/red]"
-        console.print(f"{mark} [bold]{name}[/bold]")
-        for key, value in detail.items():
-            if key == "ok":
-                continue
-            if key == "checks" and isinstance(value, dict):
-                for sub_name, sub in value.items():
-                    if not isinstance(sub, dict):
-                        console.print(f"    {sub_name}: {sub}")
+    if run_deps:
+        deps, deps_err, _ = _get_json(base, "/health/deep", token, 60.0)
+    if run_pipeline:
+        pipe, pipe_err, pipe_status = _get_json(base, "/health/pipeline", token, 30.0)
+
+    if as_json:
+        payload: dict[str, Any] = {"brain_url": base}
+        if run_deps:
+            payload["dependencies"] = deps if deps is not None else {"error": deps_err}
+        if run_pipeline:
+            payload["pipeline"] = pipe if pipe is not None else {"error": pipe_err}
+        console.print_json(_json.dumps(payload))
+    else:
+        if run_deps:
+            console.print("[bold]dependencies[/bold]")
+            if deps is None:
+                console.print(
+                    f"  [red]✗ GET {base}/health/deep failed: {escape(str(deps_err))}[/red]"
+                )
+            else:
+                for name, detail in (deps.get("checks") or {}).items():
+                    if not isinstance(detail, dict):
+                        console.print(f"  [red]✗[/red] [bold]{name}[/bold]: {escape(str(detail))}")
                         continue
-                    sub_mark = "[green]✓[/green]" if sub.get("ok") else "[red]✗[/red]"
-                    sub_detail = " ".join(f"{k}={v}" for k, v in sub.items() if k != "ok")
-                    console.print(f"    {sub_mark} {sub_name}: {sub_detail}")
-                continue
-            console.print(f"    {key}: {value}")
+                    mark = "[green]✓[/green]" if detail.get("ok") else "[red]✗[/red]"
+                    console.print(f"  {mark} [bold]{name}[/bold]")
+                    for key, value in detail.items():
+                        if key == "ok":
+                            continue
+                        if key == "checks" and isinstance(value, dict):
+                            for sub_name, sub in value.items():
+                                if not isinstance(sub, dict):
+                                    console.print(f"      {sub_name}: {sub}", markup=False)
+                                    continue
+                                sub_mark = "[green]✓[/green]" if sub.get("ok") else "[red]✗[/red]"
+                                sub_detail = " ".join(
+                                    f"{k}={v}" for k, v in sub.items() if k != "ok"
+                                )
+                                console.print(
+                                    f"      {sub_mark} {escape(f'{sub_name}: {sub_detail}')}"
+                                )
+                            continue
+                        console.print(f"      {key}: {value}", markup=False)
 
-    if overall == "ok":
+        if run_pipeline:
+            console.print("\n[bold]pipeline[/bold]")
+            if pipe is None:
+                console.print(
+                    f"  [red]✗ GET {base}/health/pipeline failed: {escape(str(pipe_err))}[/red]"
+                )
+                if pipe_status == 404:
+                    console.print(
+                        "  [yellow]this brain-api predates /health/pipeline — "
+                        "`agentibrain build` to update it[/yellow]"
+                    )
+            else:
+                for name, stage in (pipe.get("stages") or {}).items():
+                    if not isinstance(stage, dict):
+                        console.print(f"  [red]✗[/red] [bold]{name}[/bold]: {escape(str(stage))}")
+                        continue
+                    status = stage.get("status", "fail")
+                    console.print(f"  {_STAGE_MARK.get(status, '?')} [bold]{name}[/bold]")
+                    _render_kv(stage, indent="      ")
+                    hint = stage.get("hint")
+                    if hint:
+                        colour = "red" if status == "fail" else "yellow"
+                        console.print(f"      [{colour}]→ {escape(str(hint))}[/{colour}]")
+
+        buffered, buf_detail = _local_buffers()
+        mark = "[yellow]![/yellow]" if buffered else "[green]✓[/green]"
+        console.print(f"\n{mark} [bold]local outbox[/bold] ({' '.join(buf_detail)})")
+        if buffered:
+            console.print(
+                f"      [yellow]→ {buffered} marker(s) buffered on this machine and not yet "
+                "sent — run `agentibrain sync` to replay them[/yellow]"
+            )
+
+    # Exit contract mirrors `sync`: 0 clean, 1 hard failure, 2 degraded.
+    if (run_deps and deps is None) or (run_pipeline and pipe is None):
+        sys.exit(1)
+    states = []
+    if run_deps and deps:
+        # A dependency that does not work is a hard failure, not a degradation:
+        # /health/deep only reports "degraded", and the pre-existing contract
+        # for that was exit 1. Degraded is reserved for the pipeline, where it
+        # means "flowing, but behind".
+        states.append("ok" if deps.get("status") == "ok" else "broken")
+    if run_pipeline and pipe:
+        states.append(pipe.get("status", "unknown"))
+    if "broken" in states or "unknown" in states:
+        if not as_json:
+            console.print("[red]status: broken[/red]")
+        sys.exit(1)
+    if "degraded" in states:
+        if not as_json:
+            console.print("[yellow]status: degraded[/yellow]")
+        sys.exit(2)
+    if not as_json:
         console.print("[green]all checks passed[/green]")
-        sys.exit(0)
-    console.print(f"[red]status: {overall}[/red]")
-    sys.exit(1)
+    sys.exit(0)
 
 
 @main.command("tick")
@@ -338,17 +516,7 @@ def tick_cmd(
     settings = _load_settings()
     base = (brain_url or settings.brain_url).rstrip("/")
 
-    if not token:
-        env_path = settings.config_dir.expanduser() / ".env"
-        if env_path.exists():
-            for line in env_path.read_text().splitlines():
-                if line.startswith("KB_ROUTER_TOKEN="):
-                    token = line.split("=", 1)[1].strip()
-                    break
-    if not token:
-        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
-        sys.exit(2)
-
+    token = _resolve_token(settings, token)
     headers = {"Authorization": f"Bearer {token}"}
     params = {"dry_run": str(dry_run).lower(), "no_ai": str(no_ai).lower(), "source": "cli"}
 
@@ -369,10 +537,19 @@ def tick_cmd(
         )
         return
 
-    console.print("  waiting (≤5 min)…")
+    console.print(f"  waiting (≤{TICK_WAIT_SECONDS // 60} min)…")
     import time as _time
 
-    deadline = _time.time() + 300
+    # A tick's AI phase may legitimately run for BRAIN_LLM_TIMEOUT_SECONDS, so
+    # this can be silent for ten minutes. Silence that long is indistinguishable
+    # from a hang, and an operator who cannot tell the difference kills the
+    # command — so narrate: the drain's pickup, then a heartbeat with elapsed
+    # time. Nothing here polls faster than before; only the reporting changed.
+    deadline = _time.time() + TICK_WAIT_SECONDS
+    started = _time.time()
+    picked_up = False
+    stall_hinted = False
+    next_beat = started + _TICK_HEARTBEAT_SECONDS
     while _time.time() < deadline:
         try:
             s = httpx.get(f"{base}/tick/{job_id}", headers=headers, timeout=10.0)
@@ -383,13 +560,41 @@ def tick_cmd(
             continue
 
         state = status.get("status")
+        elapsed = _time.time() - started
+
         if state in {"completed", "failed"}:
-            console.print(f"  [bold]{state}[/bold]")
+            console.print(f"  [bold]{state}[/bold] after {round(elapsed)}s")
             console.print(status)
             sys.exit(0 if state == "completed" else 1)
+
+        # The record leaves requested/ the moment the drain claims it, so a
+        # 404-ish "unknown" here means it is mid-run — that is the transition
+        # worth announcing, because it separates "the drain is dead" from "the
+        # model is thinking".
+        if not picked_up and state != "pending":
+            picked_up = True
+            console.print(f"  [cyan]picked up by tick-drain[/cyan] after {round(elapsed)}s")
+        if not stall_hinted and not picked_up and elapsed > 75:
+            stall_hinted = True
+            console.print(
+                "  [yellow]still queued after 75s — tick-drain normally claims a job within "
+                "~30s. Check `agentibrain status` and `agentibrain logs tick-drain --since "
+                "5m`; an image older than the code needs `agentibrain build`.[/yellow]"
+            )
+        if _time.time() >= next_beat:
+            next_beat = _time.time() + _TICK_HEARTBEAT_SECONDS
+            console.print(
+                f"  …still running ({round(elapsed / 60)}m) — the AI phase may take up to "
+                "BRAIN_LLM_TIMEOUT_SECONDS. `agentibrain logs tick-cron --since 5m` shows "
+                "the phase it is in."
+            )
         _time.sleep(3)
 
-    console.print("[yellow]timeout — job still running. Check tick-cron logs.[/yellow]")
+    console.print(
+        f"[yellow]gave up waiting after {TICK_WAIT_SECONDS // 60} min — the tick may still "
+        "be running. `agentibrain logs tick-cron --since 20m` has its phases; raise "
+        "AGENTIBRAIN_TICK_WAIT_SECONDS if your model is slower than that.[/yellow]"
+    )
     sys.exit(2)
 
 
@@ -504,16 +709,7 @@ def sync_cmd(wait: bool, check: bool, brain_url: str | None, token: str | None) 
     settings = _load_settings()
     base = (brain_url or settings.brain_url).rstrip("/")
 
-    if not token:
-        env_path = settings.config_dir.expanduser() / ".env"
-        if env_path.exists():
-            for line in env_path.read_text().splitlines():
-                if line.startswith("KB_ROUTER_TOKEN="):
-                    token = line.split("=", 1)[1].strip()
-                    break
-    if not token:
-        console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
-        sys.exit(2)
+    token = _resolve_token(settings, token)
     headers = {"Authorization": f"Bearer {token}"}
 
     outbox = Path(
@@ -560,10 +756,10 @@ def sync_cmd(wait: bool, check: bool, brain_url: str | None, token: str | None) 
     if not wait:
         sys.exit(2 if totals["failed"] else 0)
 
-    console.print("  waiting (≤5 min)…")
+    console.print(f"  waiting (≤{TICK_WAIT_SECONDS // 60} min)…")
     import time as _time
 
-    deadline = _time.time() + 300
+    deadline = _time.time() + TICK_WAIT_SECONDS
     started = _time.time()
     last_state = ""
     stall_hinted = False

@@ -97,6 +97,22 @@ services:
       BRAIN_CLASSIFY_MODEL: ${BRAIN_CLASSIFY_MODEL:-brain-classify}
       VAULT_ROOT: /vault
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # /health/pipeline thresholds. Defaults track the cadences below:
+      # tick-drain polls every TICK_DRAIN_INTERVAL_SECONDS (30s), tick-cron
+      # fires every TICK_INTERVAL_SECONDS (2h). Raise these on a deployment
+      # that ticks less often, or the report warns about a healthy stack.
+      PIPELINE_PENDING_STUCK_SECONDS: ${PIPELINE_PENDING_STUCK_SECONDS:-300}
+      PIPELINE_TICK_STALE_HOURS: ${PIPELINE_TICK_STALE_HOURS:-6}
+      PIPELINE_FEED_STALE_HOURS: ${PIPELINE_FEED_STALE_HOURS:-6}
+      PIPELINE_MARKER_QUIET_HOURS: ${PIPELINE_MARKER_QUIET_HOURS:-72}
+      # Newest-first cap on the signal dedup scan performed per marker
+      # write. Bounds the cost against a directory that would otherwise
+      # grow without limit.
+      SIGNAL_DEDUP_SCAN_MAX: ${SIGNAL_DEDUP_SCAN_MAX:-300}
+      # Shared with brain-ops: the pipeline check reads the same lesson-feed
+      # cap and window the tick writes with, so a mismatch reads as a defect.
+      BRAIN_LESSON_FEED_MAX: ${BRAIN_LESSON_FEED_MAX:-6}
+      BRAIN_STALE_LESSON_DAYS: ${BRAIN_STALE_LESSON_DAYS:-14}
     volumes:
       - ${VAULT_ROOT_HOST:-~/agentibrain-vault}:/vault
     ports:
@@ -215,6 +231,16 @@ services:
       BRAIN_TICK_COMPLETED_RETAIN_DAYS: ${BRAIN_TICK_COMPLETED_RETAIN_DAYS:-7}
       BRAIN_TICK_FAILED_RETAIN_DAYS: ${BRAIN_TICK_FAILED_RETAIN_DAYS:-30}
       BRAIN_TICK_QUEUE_KEEP_MIN: ${BRAIN_TICK_QUEUE_KEEP_MIN:-20}
+      # amygdala/ retention. Signal files are archived under _backups/,
+      # never deleted — a signal records what caught fire and often what
+      # was done about it. A closed incident becomes history sooner than
+      # an open one. 0 on either disables that half of the sweep.
+      BRAIN_SIGNAL_RETAIN_DAYS: ${BRAIN_SIGNAL_RETAIN_DAYS:-90}
+      BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS: ${BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS:-14}
+      BRAIN_SIGNAL_KEEP_MIN: ${BRAIN_SIGNAL_KEEP_MIN:-25}
+      # Deadline for the AI synthesis call. 120s suits a hosted frontier
+      # model; a local 7B needs several times that for a full-vault prompt.
+      BRAIN_LLM_TIMEOUT_SECONDS: ${BRAIN_LLM_TIMEOUT_SECONDS:-600}
       BRAIN_LESSON_FEED_MAX: ${BRAIN_LESSON_FEED_MAX:-6}
       # Heat thresholds govern which arcs sit in frontal-lobe/conscious. Unset
       # here they fell through to the code defaults (promote 5 / demote 3),
@@ -368,6 +394,16 @@ services:
       BRAIN_TICK_COMPLETED_RETAIN_DAYS: ${BRAIN_TICK_COMPLETED_RETAIN_DAYS:-7}
       BRAIN_TICK_FAILED_RETAIN_DAYS: ${BRAIN_TICK_FAILED_RETAIN_DAYS:-30}
       BRAIN_TICK_QUEUE_KEEP_MIN: ${BRAIN_TICK_QUEUE_KEEP_MIN:-20}
+      # amygdala/ retention. Signal files are archived under _backups/,
+      # never deleted — a signal records what caught fire and often what
+      # was done about it. A closed incident becomes history sooner than
+      # an open one. 0 on either disables that half of the sweep.
+      BRAIN_SIGNAL_RETAIN_DAYS: ${BRAIN_SIGNAL_RETAIN_DAYS:-90}
+      BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS: ${BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS:-14}
+      BRAIN_SIGNAL_KEEP_MIN: ${BRAIN_SIGNAL_KEEP_MIN:-25}
+      # Deadline for the AI synthesis call. 120s suits a hosted frontier
+      # model; a local 7B needs several times that for a full-vault prompt.
+      BRAIN_LLM_TIMEOUT_SECONDS: ${BRAIN_LLM_TIMEOUT_SECONDS:-600}
       BRAIN_LESSON_FEED_MAX: ${BRAIN_LESSON_FEED_MAX:-6}
       # Same reason these must mirror tick-cron: a drain-triggered tick that
       # promoted/demoted on different thresholds would fight the scheduled one.

@@ -90,6 +90,9 @@ Dev-first flow:
   PR, it publishes no image and deploys nothing. Treat it as a checkpoint log.
 - Image builds go to `ghcr.io/the-cloud-clockwork/agentibrain-*`. `:dev` is the
   only tag CI publishes — there is no `:latest`.
+- `Release` (manual dispatch, bump patch/minor/major) bumps `pyproject.toml`,
+  tags, cuts the GitHub release, then dispatches `publish-pypi.yml` at the tag —
+  that job is the only publisher of `agentibrain` on PyPI.
 
 ## Redeploying after a code change
 

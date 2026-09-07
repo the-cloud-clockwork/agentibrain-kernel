@@ -116,6 +116,13 @@ env:
   BRAIN_TICK_COMPLETED_RETAIN_DAYS: "7"
   BRAIN_TICK_FAILED_RETAIN_DAYS: "30"
   BRAIN_TICK_QUEUE_KEEP_MIN: "20"
+  # amygdala/ retention — archived under _backups/, never deleted.
+  # A closed incident becomes history sooner than an open one.
+  BRAIN_SIGNAL_RETAIN_DAYS: "90"
+  BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS: "14"
+  BRAIN_SIGNAL_KEEP_MIN: "25"
+  # Deadline for the AI synthesis call — raise it for a slow local model.
+  BRAIN_LLM_TIMEOUT_SECONDS: "600"
   BRAIN_LESSON_FEED_MAX: "6"
   BRAIN_DECAY_START_DAYS: "2"
   BRAIN_DECAY_INTERVAL_DAYS: "2"
