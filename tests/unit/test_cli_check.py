@@ -29,6 +29,12 @@ class _Resp:
         return self._payload
 
 
+def _flat(output: str) -> str:
+    """Rich soft-wraps at the terminal width (80 in CI), so a phrase that fits
+    on one line locally arrives split across two. Assert against this."""
+    return " ".join(output.split())
+
+
 _DEPS_OK = {"status": "ok", "checks": {"vault": {"ok": True, "root": "/vault"}}}
 
 
@@ -70,7 +76,7 @@ def test_clean_run_exits_zero(isolated, monkeypatch):
     )
     result = CliRunner().invoke(cli.main, ["check"])
     assert result.exit_code == 0, result.output
-    assert "all checks passed" in result.output
+    assert "all checks passed" in _flat(result.output)
 
 
 def test_a_degraded_pipeline_exits_two_not_one(isolated, monkeypatch):
@@ -127,7 +133,7 @@ def test_an_old_brain_api_without_the_endpoint_says_so(isolated, monkeypatch):
     result = CliRunner().invoke(cli.main, ["check", "--pipeline-only"])
     assert result.exit_code == 1
     assert "predates" in result.output
-    assert "HTTP 404" in result.output
+    assert "HTTP 404" in _flat(result.output)
 
 
 def test_a_markup_shaped_hint_does_not_crash_the_report(isolated, monkeypatch):
@@ -198,7 +204,7 @@ def test_buffered_markers_are_reported_because_the_server_cannot_see_them(
     result = CliRunner().invoke(cli.main, ["check", "--pipeline-only"])
 
     assert "outbox=1" in result.output
-    assert "agentibrain sync" in result.output
+    assert "agentibrain sync" in _flat(result.output)
 
 
 # ---------------------------------------------------------------------------
