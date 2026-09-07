@@ -293,6 +293,18 @@ Plus an **opt-in `brain-keeper`** agent (ops oracle for triage, enrichment, repl
 
 ## Install
 
+### 0. CLI only (PyPI)
+
+```bash
+pip install agentibrain
+agentibrain init                # renders compose.yml + .env into ~/.agentibrain
+agentibrain up
+```
+
+The wheel carries the CLI, the vault-layout templates, the compose template and
+the SQL migrations — no clone needed. Clone instead when you intend to build the
+service images from source or edit charts.
+
 ### 1. Laptop (Docker Compose)
 
 ```bash
