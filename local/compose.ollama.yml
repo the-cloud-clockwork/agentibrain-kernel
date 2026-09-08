@@ -46,6 +46,13 @@ services:
       ollama:
         condition: service_healthy
 
+  tick-drain:
+    environment:
+      INFERENCE_URL: http://ollama:11434/v1
+    depends_on:
+      ollama:
+        condition: service_healthy
+
   mcp:
     environment:
       INFERENCE_URL: http://ollama:11434/v1

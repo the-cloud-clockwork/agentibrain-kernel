@@ -4,50 +4,94 @@
 
 ## Quick Start
 
-**One-time** (fresh machine: `git clone` first; existing deployment: `git pull`):
+Two ways in. Pick by whether you intend to change the kernel's code.
+
+### Run it (pip — no clone)
+
+```bash
+pip install agentibrain
+agentibrain init --local        # writes ~/.agentibrain/{config.yaml,.env,compose.yml} + creates the vault
+agentibrain scaffold            # seed the vault tree (30 folders, 52 files)
+agentibrain up                  # pull images from GHCR, start 9 services, run migrations
+agentibrain check               # verify
+```
+
+That is the whole brain: `postgres`, `redis`, `minio`, `embeddings`,
+`brain-api`, `tick-cron`, `tick-drain`, `amygdala`, `mcp`. Images come from
+`ghcr.io/the-cloud-clockwork/agentibrain-*:dev` — public, no login. Nothing is
+built locally.
+
+Order matters: `scaffold` before `up`. The vault is a bind-mount source, so a
+container that reaches it first would own it as root.
+
+### Develop it (clone — builds from source)
 
 ```bash
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
 pip install -e .                # installs the `agentibrain` CLI
 bash local/bootstrap.sh         # NO sudo — pins repo path + vault (~/agentibrain-vault), migrates if needed
-agentibrain build               # rebuild + restart the stack (replaces docker compose up -d --build)
+agentibrain build               # build images from ./services, then start
 ```
 
-If the vault is still empty, seed once from your Claude Code transcripts:
+This path also mounts your Claude Code transcripts and the agentihooks marker
+outbox, which the pip path leaves out. To seed the vault from those transcripts:
 
 ```bash
 EXTRACT_ON_BOOT=1 agentibrain build tick-cron
 agentibrain logs tick-cron --since 5m      # look for "[tick-cron] extraction:"
 ```
 
-**Daily driver — from any directory, no flags, no ports:**
+`~/.agentihooks` must exist before the first `up` on this path (bootstrap.sh
+creates it); otherwise Docker auto-creates it root-owned and agentihooks
+cannot write to it.
+
+### Daily driver — from any directory, no flags, no ports
 
 ```bash
 agentibrain check               # deep verify: vault write, hello-embedding, pong completion
 agentibrain status              # compose ps + shallow health
 agentibrain logs <service> -f   # e.g. tick-cron, brain-api
-agentibrain build               # after any git pull / code change
+agentibrain build               # after any git pull / code change (clone path)
 agentibrain sync --check        # re-ingest everything: buffers + raw/, narrated progress
 ```
 
-- `build`/`up`/`down`/`logs`/`status` auto-locate the stack (checkout you're
-  standing in → pinned repo → init-rendered), so they work from `~` or
-  anywhere else.
-- Marker capture into the vault needs `BRAIN_URL=http://127.0.0.1:8103` in
-  your agentihooks env (one-time, `~/.agentihooks/.env`).
-- No host crons: `tick-cron` drains `~/.agentihooks/brain-outbox` (and any
-  `-backlog` pile) and re-indexes vault `raw/` on its own every tick interval.
-  `sync` just does it now instead of at the next interval.
-- `~/.agentihooks` must exist before the first `up` (bootstrap.sh creates it);
-  otherwise Docker auto-creates it root-owned and agentihooks can't write to it.
+`build`/`up`/`down`/`logs`/`status` auto-locate the stack (checkout you are
+standing in → pinned repo → init-rendered), so they work from `~` or anywhere
+else. Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
 
-After the one-time block, `agentibrain build` / `check` / `logs` are the whole
-workflow. Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
+### What works before you add any API key
+
+Ingest, vault-text `kb_search`, `brain_get_arc`, and the deterministic half of
+every tick — the stack is useful out of the box. `agentibrain check` reports
+`broken` until you set keys, because two dependencies are genuinely
+unconfigured: semantic search and AI synthesis. Both are off, nothing else is.
+
+### No API key? Bundle a local model
+
+```bash
+agentibrain init --local --ollama
+agentibrain scaffold
+agentibrain up          # pulls llama3.2:3b + nomic-embed-text on first start
+```
+
+This points **both** halves at a bundled Ollama — chat (AI ticks, `kb_brief`)
+and embeddings (semantic search) — so the stack needs no API key anywhere.
+`llama3.2:3b` runs on an 8 GB machine. For a larger one, set
+`BRAIN_OLLAMA_CHAT_MODEL` before `init` (`llama3.1:8b` at 16 GB, `qwen2.5:14b`
+at 32 GB+) — settings take the `BRAIN_` prefix.
+
+The first `up` downloads roughly 2.5 GB of weights and the models stay in a
+named volume across restarts.
 
 ### Configure your LLM provider (optional)
 
-Edit `~/.agentibrain/.env` — set at minimum one API key to enable semantic search:
+`init` writes `~/.agentibrain/.env` with the generated secrets, then lists every
+other variable the stack reads — commented out, with its default and what it
+does. Uncomment what you need; the names are not guessable (the embeddings
+service reads `LLM_API_KEY`, never `OPENAI_API_KEY`).
+
+Set at minimum one API key to enable semantic search:
 
 ```env
 # Required for embeddings (semantic search) — OpenAI or any compatible provider
@@ -59,13 +103,18 @@ INFERENCE_URL=https://api.openai.com/v1
 INFERENCE_API_KEY=<your-openai-key>
 ```
 
-**No API key at all?** The brain still works — `brain_ingest`, `kb_search` (vault text), `brain_get_arc` all function. Only semantic search and AI synthesis are disabled.
+**No provider configured and no `--ollama`?** The brain still works — `brain_ingest`, `kb_search` (vault text), `brain_get_arc` all function. Only semantic search and AI synthesis are off.
 
-**Free local alternative (Ollama):**
+**Free local alternative:** `agentibrain init --local --ollama` (above) on the
+pip path. On the clone path, use the overlay:
+
 ```bash
 docker compose -f compose.yml -f local/compose.ollama.yml up -d
 docker compose exec ollama ollama pull llama3.2
 ```
+
+The overlay wires chat only; semantic search still needs an embeddings key.
+`--ollama` wires both.
 
 ### Wire Claude Code
 
@@ -124,7 +173,7 @@ What this gives you:
 ### Test it (raw HTTP)
 
 ```bash
-TOK=$(grep ^KB_ROUTER_TOKEN .env | cut -d= -f2)
+TOK=$(grep ^KB_ROUTER_TOKEN ~/.agentibrain/.env | cut -d= -f2)   # clone path: ./.env
 
 # Write something to the brain
 curl -X POST http://localhost:8103/ingest \
@@ -143,7 +192,6 @@ Content lands in the vault at `raw/inbox/` (`~/agentibrain-vault` by default). T
 **Force a tick on demand** (don't wait for the 2h scheduled cycle):
 
 ```bash
-pip install -e .                          # one-time, installs the `agentibrain` CLI
 agentibrain tick --no-ai --wait                 # deterministic-only, blocks until done
 agentibrain tick --wait                         # full AI tick
 agentibrain tick --dry-run --wait               # read-only verify, no writes
@@ -295,21 +343,9 @@ Plus an **opt-in `brain-keeper`** agent (ops oracle for triage, enrichment, repl
 
 ### 0. CLI only (PyPI)
 
-```bash
-pip install agentibrain
-agentibrain init --local        # renders compose.yml + .env into ~/.agentibrain
-agentibrain up
-agentibrain scaffold
-```
-
-The wheel carries the CLI, the vault-layout templates, the compose template and
-the SQL migrations. What `init` renders is the **storage half** of the brain —
-postgres, redis, minio, `embeddings`, `brain-api` — pulling `:dev` images from
-GHCR. It gives you a reachable vault and API with no clone.
-
-It does **not** render `mcp`, `tick-cron`, `tick-drain` or `amygdala`, so nothing
-processes what you ingest and Claude Code has no MCP endpoint to talk to. For the
-full stack, clone the repo and use its `compose.yml` (section 1).
+See [Quick Start](#run-it-pip--no-clone) — `pip install agentibrain` is the
+supported way to run the kernel without a clone. The wheel carries the CLI, the
+vault-layout templates, the compose template and the SQL migrations.
 
 ### 1. Laptop (Docker Compose)
 
@@ -325,7 +361,7 @@ docker compose up -d           # 8 containers come up
 Smoke test:
 
 ```bash
-TOK=$(grep ^KB_ROUTER_TOKEN .env | cut -d= -f2)
+TOK=$(grep ^KB_ROUTER_TOKEN ~/.agentibrain/.env | cut -d= -f2)   # clone path: ./.env
 curl -H "Authorization: Bearer $TOK" http://localhost:8103/feed | jq .
 ```
 

@@ -5,6 +5,13 @@
 #   storage_mode: "local" → spin up MinIO alongside the stack
 #
 # Service URLs resolve over the shared ``agentibrain_net`` bridge network.
+#
+# This renders the whole brain: storage (postgres, redis, minio), the API and
+# index (brain-api, embeddings), the maintenance loop (tick-cron, tick-drain,
+# amygdala) and the Claude Code adapter (mcp). The repo's own compose.yml
+# additionally mounts the host's Claude transcripts and agentihooks outbox for
+# extraction and marker drain; both are host integrations, so a packaged
+# deployment leaves them out and tick-cron skips those passes.
 
 services:
   postgres:
@@ -77,6 +84,40 @@ services:
     networks: [agentibrain_net]
 {% endif %}
 
+{% if ollama %}
+  ollama:
+    image: ollama/ollama:latest
+    container_name: agentibrain_ollama
+    restart: unless-stopped
+    volumes:
+      - agentibrain_ollama_data:/root/.ollama
+    ports:
+      - "{{ ollama_port | default(11434) }}:11434"
+    networks: [agentibrain_net]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: agentibrain_ollama_init
+    depends_on:
+      ollama: { condition: service_healthy }
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    # Both pulls are required: the chat model answers ticks and kb_brief, the
+    # embed model backs semantic search. Without the second, /health/deep
+    # reports embeddings unconfigured on a stack that looks complete.
+    command:
+      - |
+        ollama pull {{ ollama_chat_model }}
+        ollama pull {{ ollama_embed_model }}
+    networks: [agentibrain_net]
+{% endif %}
   embeddings:
     image: {{ embeddings_image | default("ghcr.io/the-cloud-clockwork/agentibrain-embeddings:dev") }}
     container_name: agentibrain_embeddings
@@ -85,7 +126,18 @@ services:
       postgres: { condition: service_healthy }
     environment:
       POSTGRES_URL: postgresql://agentibrain:${POSTGRES_PASSWORD:-agentibrain}@postgres:5432/agentibrain
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+{% if ollama %}      LLM_API_BASE: ${LLM_API_BASE:-http://ollama:11434/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-ollama}
+      LLM_EMBED_MODEL: ${LLM_EMBED_MODEL:-{{ ollama_embed_model }}}
+{% else %}      LLM_API_BASE: ${LLM_API_BASE:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_EMBED_MODEL: ${LLM_EMBED_MODEL:-text-embedding-3-small}
+{% endif %}
+      # Pin the vector dimension when LLM_EMBED_MODEL is not a recognised
+      # family; required for unknown models (the service refuses to guess).
+      EMBED_DIM: ${EMBED_DIM:-{% if ollama %}768{% endif %}}
+      EMBED_DIM_FORCE_MIGRATE: ${EMBED_DIM_FORCE_MIGRATE:-}
+      API_KEYS: ${EMBEDDINGS_API_KEYS:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     networks: [agentibrain_net]
     healthcheck:
@@ -107,13 +159,25 @@ services:
       VAULT_ROOT: /vault
       RAW_INBOX_PREFIX: raw/inbox
       EMBEDDINGS_URL: http://embeddings:8080
-      INFERENCE_URL: ${INFERENCE_URL:-}
-      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
-      BRAIN_CLASSIFY_MODEL: ${BRAIN_CLASSIFY_MODEL:-brain-classify}
+      EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
+      INFERENCE_URL: ${INFERENCE_URL:-{% if ollama %}http://ollama:11434/v1{% endif %}}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-{% if ollama %}ollama{% endif %}}
+      BRAIN_CLASSIFY_MODEL: ${BRAIN_CLASSIFY_MODEL:-{% if ollama %}{{ ollama_chat_model }}{% else %}brain-classify{% endif %}}
       LOCAL_READ_ROOTS: ${LOCAL_READ_ROOTS:-/workspace,/mnt/ingest}
       KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # /health/pipeline thresholds. Defaults track the cadences here:
+      # tick-drain polls every TICK_DRAIN_INTERVAL_SECONDS (30s), tick-cron
+      # fires every TICK_INTERVAL_SECONDS (2h).
+      PIPELINE_PENDING_STUCK_SECONDS: ${PIPELINE_PENDING_STUCK_SECONDS:-300}
+      PIPELINE_TICK_STALE_HOURS: ${PIPELINE_TICK_STALE_HOURS:-6}
+      PIPELINE_FEED_STALE_HOURS: ${PIPELINE_FEED_STALE_HOURS:-6}
+      PIPELINE_MARKER_QUIET_HOURS: ${PIPELINE_MARKER_QUIET_HOURS:-72}
+      SIGNAL_DEDUP_SCAN_MAX: ${SIGNAL_DEDUP_SCAN_MAX:-300}
+      # Shared with brain-ops: the pipeline check reads the same lesson-feed
+      # cap and window the tick writes with, so a mismatch reads as a defect.
+      BRAIN_LESSON_FEED_MAX: ${BRAIN_LESSON_FEED_MAX:-6}
+      BRAIN_STALE_LESSON_DAYS: ${BRAIN_STALE_LESSON_DAYS:-14}
     volumes:
       - "{{ vault_path }}:/vault:rw"
     ports:
@@ -126,8 +190,216 @@ services:
       retries: 3
       start_period: 10s
 
+  tick-cron:
+    image: {{ brain_ops_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev") }}
+    container_name: agentibrain_tick_cron
+    restart: unless-stopped
+    depends_on:
+      redis: { condition: service_healthy }
+      brain-api: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+{% raw %}        set -e
+        INTERVAL="$${TICK_INTERVAL_SECONDS:-7200}"
+        echo "[tick-cron] starting; interval=$${INTERVAL}s"
+        FLAGS=""
+        if [ -z "$${INFERENCE_URL}" ]; then
+          FLAGS="--no-ai"
+          echo "[tick-cron] INFERENCE_URL not set — running deterministic only"
+        fi
+        while true; do
+          mkdir -p "/vault/clusters/$$(date -u +%Y-%m-%d)" 2>/dev/null || true
+          python3 /app/brain_tick.py \
+            --vault /vault \
+            --brain-feed /vault/brain-feed \
+            $${FLAGS} \
+            || echo "[tick-cron] brain_tick failed (continuing)"
+          if [ -n "$${EMBEDDINGS_API_KEY}" ]; then
+            python3 /app/embed_arcs.py --vault /vault --prune \
+              || echo "[tick-cron] embed_arcs failed (non-fatal)"
+            python3 /app/embed_raw.py --vault /vault --prune \
+              || echo "[tick-cron] embed_raw failed (non-fatal)"
+          fi
+          echo "[tick-cron] sleeping $${INTERVAL}s until next tick"
+          sleep "$${INTERVAL}"
+        done
+{% endraw %}    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/11}
+      INFERENCE_URL: ${INFERENCE_URL:-{% if ollama %}http://ollama:11434/v1{% endif %}}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-{% if ollama %}ollama{% endif %}}
+      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-{% if ollama %}{{ ollama_chat_model }}{% else %}brain-brief{% endif %}}
+      EMBEDDINGS_URL: http://embeddings:8080
+      EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
+      TICK_INTERVAL_SECONDS: ${TICK_INTERVAL_SECONDS:-7200}
+      BRAIN_LLM_TIMEOUT_SECONDS: ${BRAIN_LLM_TIMEOUT_SECONDS:-600}
+      BRAIN_PROMOTE_HEAT: ${BRAIN_PROMOTE_HEAT:-5}
+      BRAIN_DEMOTE_HEAT: ${BRAIN_DEMOTE_HEAT:-3}
+      BRAIN_GRADUATE_HEAT: ${BRAIN_GRADUATE_HEAT:-1}
+      BRAIN_GRADUATE_AGE_DAYS: ${BRAIN_GRADUATE_AGE_DAYS:-14}
+      BRAIN_MAX_SYNTH_ARCS: ${BRAIN_MAX_SYNTH_ARCS:-25}
+      BRAIN_API_URL: http://brain-api:8080
+      KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - "{{ vault_path }}:/vault:rw"
+    networks: [agentibrain_net]
+
+  tick-drain:
+    image: {{ brain_ops_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev") }}
+    container_name: agentibrain_tick_drain
+    restart: unless-stopped
+    depends_on:
+      brain-api: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+{% raw %}        set -eu
+        INTERVAL="$${TICK_DRAIN_INTERVAL_SECONDS:-30}"
+        REQ=/vault/brain-feed/ticks/requested
+        DONE=/vault/brain-feed/ticks/completed
+        FAIL=/vault/brain-feed/ticks/failed
+        mkdir -p "$$REQ" "$$DONE" "$$FAIL"
+        AI_FLAGS=""
+        if [ -z "$${INFERENCE_URL:-}" ]; then
+          AI_FLAGS="--no-ai"
+          echo "[tick-drain] INFERENCE_URL not set — running deterministic only"
+        fi
+        echo "[tick-drain] starting; interval=$${INTERVAL}s"
+        while true; do
+          # Requests of the same kind are interchangeable, so N of them
+          # collapse into ONE tick — an agent calling brain_tick repeatedly
+          # must not queue N full ticks.
+          b00=""; b01=""; b10=""; b11=""; total=0
+          for f in "$$REQ"/*.json; do
+            [ -e "$$f" ] || break
+            dry=$$(python3 -c "import json;print('1' if json.load(open('$$f')).get('dry_run') else '0')" 2>/dev/null || echo 0)
+            noai=$$(python3 -c "import json;print('1' if json.load(open('$$f')).get('no_ai') else '0')" 2>/dev/null || echo 0)
+            total=$$((total+1))
+            case "$${dry}$${noai}" in
+              00) b00="$$b00 $$f" ;;
+              01) b01="$$b01 $$f" ;;
+              10) b10="$$b10 $$f" ;;
+              11) b11="$$b11 $$f" ;;
+            esac
+          done
+          if [ "$$total" -gt 0 ]; then
+            ok=0; ko=0; ticks=0; stuck=0
+            run_kind() {
+              kind_flags="$$1"; kind_files="$$2"
+              [ -n "$$kind_files" ] || return 0
+              n=$$(echo $$kind_files | wc -w)
+              ticks=$$((ticks+1))
+              echo "[tick-drain] coalescing $$n request(s) into one tick [flags='$$kind_flags']"
+              TLOG=/tmp/tick-last.log
+              if python3 /app/brain_tick.py \
+                  --vault /vault --brain-feed /vault/brain-feed \
+                  --inference-url "$${INFERENCE_URL:-}" $$AI_FLAGS \
+                  --source brain-drain $$kind_flags > "$$TLOG" 2>&1; then
+                dest="$$DONE"; ok=$$((ok+n))
+              else
+                dest="$$FAIL"; ko=$$((ko+n))
+              fi
+              cat "$$TLOG"
+              # A failed mv must NOT abort the batch: the tick already mutated
+              # the vault and other buckets are still queued.
+              for f in $$kind_files; do
+                if ! mv "$$f" "$$dest/$$(basename "$$f")"; then
+                  stuck=$$((stuck+1))
+                  echo "[tick-drain] WARN: could not move $$(basename "$$f") to $$dest — retrying next pass"
+                elif [ "$$dest" = "$$FAIL" ]; then
+                  python3 /app/annotate_fail.py "$$dest/$$(basename "$$f")" "$$TLOG" || true
+                fi
+              done
+              return 0
+            }
+            run_kind "" "$$b00"
+            run_kind "--no-ai" "$$b01"
+            run_kind "--dry-run" "$$b10"
+            run_kind "--dry-run --no-ai" "$$b11"
+            echo "[tick-drain] drain-summary: total=$$total ticks=$$ticks ok=$$ok failed=$$ko stuck=$$stuck"
+            # Without this the tick rewrites the vault but pgvector stays
+            # stale, so kb_search cannot see the new content.
+            if [ "$$ok" -gt 0 ] && [ -n "$${EMBEDDINGS_API_KEY:-}" ]; then
+              python3 /app/embed_arcs.py --vault /vault --prune \
+                || echo "[tick-drain] embed_arcs failed (non-fatal)"
+              python3 /app/embed_raw.py --vault /vault --prune \
+                || echo "[tick-drain] embed_raw failed (non-fatal)"
+            fi
+          fi
+          sleep "$$INTERVAL"
+        done
+{% endraw %}    environment:
+      INFERENCE_URL: ${INFERENCE_URL:-{% if ollama %}http://ollama:11434/v1{% endif %}}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-{% if ollama %}ollama{% endif %}}
+      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-{% if ollama %}{{ ollama_chat_model }}{% else %}brain-brief{% endif %}}
+      EMBEDDINGS_URL: http://embeddings:8080
+      EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
+      TICK_DRAIN_INTERVAL_SECONDS: ${TICK_DRAIN_INTERVAL_SECONDS:-30}
+      BRAIN_LLM_TIMEOUT_SECONDS: ${BRAIN_LLM_TIMEOUT_SECONDS:-600}
+      # Must mirror tick-cron: a drain-triggered tick and a scheduled tick have
+      # to promote/demote arcs identically, or heat oscillates between them.
+      BRAIN_PROMOTE_HEAT: ${BRAIN_PROMOTE_HEAT:-5}
+      BRAIN_DEMOTE_HEAT: ${BRAIN_DEMOTE_HEAT:-3}
+      BRAIN_GRADUATE_HEAT: ${BRAIN_GRADUATE_HEAT:-1}
+      BRAIN_GRADUATE_AGE_DAYS: ${BRAIN_GRADUATE_AGE_DAYS:-14}
+      BRAIN_MAX_SYNTH_ARCS: ${BRAIN_MAX_SYNTH_ARCS:-25}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - "{{ vault_path }}:/vault:rw"
+    networks: [agentibrain_net]
+
+  amygdala:
+    image: {{ brain_ops_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev") }}
+    container_name: agentibrain_amygdala
+    restart: unless-stopped
+    depends_on:
+      redis: { condition: service_healthy }
+    # The DB override lives in amygdala.py (--db / AMYGDALA_DB), not in a shell
+    # rewrite here: `${URL%/*}/11` turns a legal `redis://host:6379` into
+    # `redis://11` and connects to a host named "11".
+    command:
+      - /app/amygdala.py
+      - --continuous
+      - --poll-interval
+      - "5"
+      - --vault
+      - /vault
+      - --brain-feed
+      - /vault/brain-feed
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/11}
+      AMYGDALA_DB: ${AMYGDALA_DB:-11}
+      AMYGDALA_STREAMS: ${AMYGDALA_STREAMS:-events:health,events:host,events:deploy,events:system,events:brain}
+      AMYGDALA_CONSUMER: ${AMYGDALA_CONSUMER:-amygdala-local}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - "{{ vault_path }}:/vault:rw"
+    networks: [agentibrain_net]
+
+  mcp:
+    image: {{ mcp_image | default("ghcr.io/the-cloud-clockwork/agentibrain-mcp:dev") }}
+    container_name: agentibrain_mcp
+    restart: unless-stopped
+    depends_on:
+      brain-api: { condition: service_healthy }
+    environment:
+      INFERENCE_URL: ${INFERENCE_URL:-{% if ollama %}http://ollama:11434/v1{% endif %}}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-{% if ollama %}ollama{% endif %}}
+      BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-{% if ollama %}{{ ollama_chat_model }}{% else %}brain-brief{% endif %}}
+      BRAIN_API_URL: http://brain-api:8080
+      KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN:-}
+      EMBEDDINGS_URL: http://embeddings:8080
+      EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
+      MCP_PROXY_API_KEY: ""
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "{{ mcp_port | default(8104) }}:8080"
+    networks: [agentibrain_net]
+
 volumes:
-  agentibrain_pg_data:
+{% if ollama %}  agentibrain_ollama_data:
+{% endif %}  agentibrain_pg_data:
   agentibrain_redis_data:
 {% if storage_mode == "local" %}
   agentibrain_minio_data:
