@@ -14,8 +14,7 @@ copies. See the top-level README for the full install pattern.
 
 ## What lives here
 
-- `brain/.claude/rules/01-brain-markers.md` — when and how to emit markers.
-- `brain/.claude/rules/02-broadcast-protocol.md` — read/write broadcast semantics.
+- Markers, tools and channel discipline all live in `brain/CLAUDE.md`; the profile ships no separate rules.
 - `brain/profile.yml` — overlay metadata + activation conditions.
 - `brain-keeper/CLAUDE.md` — keeper agent behavioral guide.
 - `brain-keeper/profile.yml` — keeper profile metadata.
