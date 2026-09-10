@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from agentibrain import cli
+from agentibrain import cli, hooks_env
 
 PROFILE_FILES = (
     "profile.yml",
@@ -54,7 +54,25 @@ def test_install_dry_run_hands_agentihooks_the_packaged_path(monkeypatch):
     assert "--name brain" in flat
 
 
-def test_install_forwards_target_and_no_init(monkeypatch):
+@pytest.fixture
+def install_env(tmp_path, monkeypatch):
+    """install now drives a whole machine — isolate every side effect."""
+    from agentibrain.config import BrainSettings
+
+    monkeypatch.setenv("AGENTIHOOKS_HOME", str(tmp_path / ".agentihooks"))
+    monkeypatch.setattr(
+        cli, "_load_settings", lambda: BrainSettings(config_dir=tmp_path, _env_file=None)
+    )
+    monkeypatch.setattr(cli, "_token_from_env_file", lambda settings: "t0ken")
+    monkeypatch.setattr(
+        cli._scaffold,
+        "scaffold",
+        lambda path, **kw: {"vault": str(path), "folders_created": 0, "files_written": 0},
+    )
+    return tmp_path
+
+
+def test_install_forwards_target_and_no_init(install_env, monkeypatch):
     captured: dict[str, list[str]] = {}
 
     class _Done:
@@ -67,17 +85,38 @@ def test_install_forwards_target_and_no_init(monkeypatch):
     monkeypatch.setattr(cli, "_agentihooks_bin", lambda: "/usr/bin/agentihooks")
     monkeypatch.setattr(cli.subprocess, "run", _record)
 
-    result = CliRunner().invoke(cli.main, ["install", "--for-target", "codex", "--no-init"])
+    result = CliRunner().invoke(
+        cli.main, ["install", "--no-stack", "--for-target", "codex", "--no-init"]
+    )
 
-    assert result.exit_code == 0
+    assert result.exit_code == 0, result.output
     assert captured["cmd"][-3:] == ["--for-target", "codex", "--no-init"]
 
 
-def test_install_exits_when_agentihooks_is_absent(monkeypatch, tmp_path):
+def test_install_publishes_the_token_into_the_agentihooks_chain(install_env, monkeypatch):
+    """The step that was missing: the kernel's token reaching the hook's env."""
+    monkeypatch.setattr(cli, "_agentihooks_bin", lambda: "/usr/bin/agentihooks")
+
+    result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
+
+    assert result.exit_code == 0, result.output
+    written = hooks_env.managed_env_path()
+    assert written.is_file()
+    assigned = dict(
+        line.split("=", 1)
+        for line in written.read_text().splitlines()
+        if line and not line.startswith("#")
+    )
+    assert assigned["BRAIN_HTTP_TOKEN"] == "t0ken"
+    assert assigned["BRAIN_ENABLED"] == "true"
+    assert assigned["BRAIN_WRITER_ENABLED"] == "true"
+
+
+def test_install_exits_when_agentihooks_is_absent(install_env, monkeypatch, tmp_path):
     monkeypatch.setattr(cli.sys, "executable", str(tmp_path / "python"))
     monkeypatch.setattr(cli.shutil, "which", lambda _: None)
 
-    result = CliRunner().invoke(cli.main, ["install"])
+    result = CliRunner().invoke(cli.main, ["install", "--no-stack"])
 
     assert result.exit_code == 1
     assert "agentihooks not found" in _flat(result.output)

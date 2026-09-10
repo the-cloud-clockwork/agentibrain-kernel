@@ -161,11 +161,23 @@ pip install agentihooks
 Then link the brain profile so your agents get brain MCP tools + marker rules + broadcast channel config:
 
 ```bash
-agentibrain install
+agentibrain install              # or: agentibrain install --ollama
 ```
 
-`install` links the profile that ships inside the installed `agentibrain`
-package, so it works the same from a PyPI wheel and from a source checkout.
+One command sets the machine up: it reuses or renders a local stack, scaffolds
+the vault, starts it, publishes `BRAIN_URL` and the bearer token into the
+**agentihooks** env chain, creates the marker outbox, and links the brain
+profile that ships inside the installed package — identical from a PyPI wheel
+and from a source checkout. `--ollama` bundles Ollama for chat and embeddings,
+so the stack needs no API key and makes no external call.
+
+The fourth step is the one that is easy to miss by hand. agentihooks resolves
+its config from `~/.agentihooks/*.env`, the kernel from `~/.agentibrain/.env`,
+and nothing bridges them: a token written only to the kernel's file
+authenticates every `agentibrain` command while every marker POST from the
+hook answers 401. `agentibrain check` probes that path with the hook's own
+token rather than the kernel's, so the two can never silently disagree.
+
 Point agentihooks at an arbitrary directory instead with
 `agentihooks link-profile link <path>`.
 

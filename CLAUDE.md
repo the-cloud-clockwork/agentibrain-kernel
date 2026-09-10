@@ -169,5 +169,8 @@ docker compose logs --since 2m <service>     # or: kubectl logs
 - Downstream platform repos — use the kernel's Helm charts with environment-specific values.
 - `agentihub` — clones `agents/brain-keeper/` at install time.
 - `agentihooks-bundle` — clones `agentibrain/profiles/brain/` at install time.
-- Wheel installs get the same profile via `agentibrain install`, which links the packaged copy into the agentihooks chain.
+- Wheel installs get the same profile via `agentibrain install`, which also publishes
+  `BRAIN_URL` + the bearer into `~/.agentihooks/agentibrain.env`. agentihooks resolves
+  its config from that chain, never from `~/.agentibrain/.env` — a token in only one of
+  the two is why markers 401 while the CLI works.
 - External users — `git clone` → `./local/bootstrap.sh` → `docker compose up -d` (or use the Helm charts for K8s).

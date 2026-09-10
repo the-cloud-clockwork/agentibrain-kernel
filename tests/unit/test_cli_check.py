@@ -52,6 +52,21 @@ def isolated(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("KB_ROUTER_TOKEN", "t0ken")
     monkeypatch.setenv("BRAIN_WRITER_OUTBOX", str(tmp_path / "nonexistent-outbox"))
     monkeypatch.setattr(cli, "_load_settings", lambda: cli.BrainSettings(_env_file=None))
+    # The agentihooks probe resolves THIS machine's real env chain and would
+    # otherwise fire an unrouted GET /feed at whatever brain the operator runs.
+    monkeypatch.setattr(
+        cli._hooks_env,
+        "resolve_consumer_config",
+        lambda: {
+            "source": "stub",
+            "brain_url": "http://brain.test",
+            "reader_enabled": True,
+            "writer_enabled": True,
+            "token": "t0ken",
+            "token_present": True,
+        },
+    )
+    monkeypatch.setattr(cli, "_probe_hooks_auth", lambda cfg: {"status": "ok", "http": 200})
     return tmp_path
 
 
@@ -166,6 +181,66 @@ def test_json_omits_a_probe_that_was_not_run(isolated, monkeypatch):
     parsed = json.loads(result.output)
     assert "pipeline" in parsed
     assert "dependencies" not in parsed
+
+
+def test_a_rejected_hook_token_breaks_the_check(isolated, monkeypatch):
+    """The writer's 401 is invisible to every server-side stage: brain-api sees
+    no marker arrive and reports a quiet brain, which reads as idle agents."""
+    monkeypatch.setattr(
+        cli,
+        "_probe_hooks_auth",
+        lambda cfg: {
+            "status": "fail",
+            "http": 401,
+            "reason": "brain-api rejected the hook's token (HTTP 401)",
+        },
+    )
+    _route(monkeypatch, {"/health/pipeline": _Resp(_pipeline("ok"))})
+
+    result = CliRunner().invoke(cli.main, ["check", "--pipeline-only"])
+
+    assert result.exit_code == 1, result.output
+    flat = _flat(result.output)
+    assert "rejected the hook's token" in flat
+    assert "agentibrain install" in flat
+
+
+def test_an_unreachable_brain_does_not_blame_the_configuration(isolated, monkeypatch):
+    """Republishing the token fixes nothing when the stack is simply down."""
+    monkeypatch.setattr(
+        cli,
+        "_probe_hooks_auth",
+        lambda cfg: {"status": "warn", "reason": "ConnectTimeout: timed out"},
+    )
+    _route(monkeypatch, {"/health/pipeline": _Resp(_pipeline("ok"))})
+
+    result = CliRunner().invoke(cli.main, ["check", "--pipeline-only"])
+
+    flat = _flat(result.output)
+    assert "ConnectTimeout" in flat
+    assert "republish" not in flat
+
+
+def test_a_disabled_writer_is_reported_even_when_auth_passes(isolated, monkeypatch):
+    monkeypatch.setattr(
+        cli._hooks_env,
+        "resolve_consumer_config",
+        lambda: {
+            "source": "stub",
+            "brain_url": "http://brain.test",
+            "reader_enabled": True,
+            "writer_enabled": False,
+            "token": "t0ken",
+            "token_present": True,
+        },
+    )
+    _route(monkeypatch, {"/health/pipeline": _Resp(_pipeline("ok"))})
+
+    result = CliRunner().invoke(cli.main, ["check", "--pipeline-only"])
+
+    flat = _flat(result.output)
+    assert "writer: OFF" in flat
+    assert "agentibrain install" in flat
 
 
 def test_the_two_scope_flags_are_mutually_exclusive(isolated):
