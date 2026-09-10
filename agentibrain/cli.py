@@ -19,7 +19,7 @@ from rich.markup import escape
 from agentibrain import __version__, bootstrap
 from agentibrain import hooks_env as _hooks_env
 from agentibrain import scaffold as _scaffold
-from agentibrain.config import DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_PATH, BrainSettings
+from agentibrain.config import BrainSettings, config_dir, config_path
 
 console = Console()
 
@@ -35,10 +35,11 @@ _TICK_HEARTBEAT_SECONDS = 60
 def _load_settings() -> BrainSettings:
     """Load BrainSettings from ``~/.agentibrain/config.yaml`` plus env."""
     payload: dict[str, Any] = {}
-    if DEFAULT_CONFIG_PATH.exists():
-        raw = yaml.safe_load(DEFAULT_CONFIG_PATH.read_text()) or {}
+    cfg_path = config_path()
+    if cfg_path.exists():
+        raw = yaml.safe_load(cfg_path.read_text()) or {}
         payload = {k: v for k, v in raw.items() if v is not None}
-    env_path = DEFAULT_CONFIG_DIR / ".env"
+    env_path = config_dir() / ".env"
     env_file = str(env_path) if env_path.exists() else None
     return BrainSettings(**payload, _env_file=env_file)
 

@@ -49,3 +49,40 @@ def _no_real_deployment(monkeypatch):
     from agentibrain import bootstrap
 
     monkeypatch.setattr(bootstrap, "find_deployment", lambda *a, **kw: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_home(monkeypatch, tmp_path):
+    """No test may write into the operator's real ~/.agentibrain.
+
+    Patching Path.home is necessary but not sufficient. config_dir and
+    vault_path used to capture Path.home() at import, freezing it into the
+    settings class's field defaults where nothing set later could move it —
+    which is how this suite overwrote an operator's real config.yaml, leaving
+    vault_path on a pytest tmp dir and sending the next scaffold into /tmp.
+    Both now resolve per call, config_dir from AGENTIBRAIN_HOME, so setting
+    that variable is what actually isolates the write.
+    """
+    from pathlib import Path
+
+    from agentibrain import config as _config
+
+    real_home = Path.home()
+    fake_home = tmp_path / "_home"
+    (fake_home / ".agentibrain").mkdir(parents=True)
+
+    monkeypatch.setenv("HOME", str(fake_home))
+    # AGENTIBRAIN_HOME is what config_dir() actually reads, and it is resolved
+    # per call — patching the module constants alone is cosmetic, and patching
+    # the pydantic field default is inert without a model_rebuild.
+    monkeypatch.setenv("AGENTIBRAIN_HOME", str(fake_home / ".agentibrain"))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+    monkeypatch.setattr(_config, "DEFAULT_CONFIG_DIR", fake_home / ".agentibrain")
+    monkeypatch.setattr(_config, "DEFAULT_CONFIG_PATH", fake_home / ".agentibrain" / "config.yaml")
+
+    assert Path.home() != real_home, "Path.home() still returns the real home — refusing to run"
+    resolved = _config.config_dir()
+    assert real_home not in resolved.parents, (
+        f"config_dir() still resolves under the real home ({resolved}) — refusing to run"
+    )
+    yield
