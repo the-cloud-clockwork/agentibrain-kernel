@@ -183,18 +183,21 @@ agentibrain install              # or: agentibrain install --ollama
 ```
 
 One command sets the machine up: it reuses or renders a local stack, scaffolds
-the vault, starts it, publishes `BRAIN_URL` and the bearer token into the
-**agentihooks** env chain, creates the marker outbox, and links the brain
-profile that ships inside the installed package — identical from a PyPI wheel
-and from a source checkout. `--ollama` bundles Ollama for chat and embeddings,
-so the stack needs no API key and makes no external call.
+the vault, starts it, completes `~/.agentibrain/.env` with `BRAIN_URL` beside
+the bearer, creates the marker outbox, and links the brain profile that ships
+inside the installed package — identical from a PyPI wheel and from a source
+checkout. `--ollama` bundles Ollama for chat and embeddings, so the stack needs
+no API key and makes no external call.
 
-The fourth step is the one that is easy to miss by hand. agentihooks resolves
-its config from `~/.agentihooks/*.env`, the kernel from `~/.agentibrain/.env`,
-and nothing bridges them: a token written only to the kernel's file
-authenticates every `agentibrain` command while every marker POST from the
-hook answers 401. `agentibrain check` probes that path with the hook's own
-token rather than the kernel's, so the two can never silently disagree.
+There is one config file, and it is the brain's own. `~/.agentibrain/.env`
+already feeds docker compose; agentihooks reads it too (`AGENTIBRAIN_HOME`,
+default `~/.agentibrain`) and adopts `BRAIN_URL` and `KB_ROUTER_TOKEN` from it,
+so the bearer is never copied and a rotation cannot go stale somewhere else.
+Only those connection keys are adopted — that file's database, object-store and
+provider credentials never enter a session's environment. An explicit setting in
+`~/.agentihooks/*.env` still outranks the discovery, and the process environment
+outranks both. `agentibrain check` reports what agentihooks itself resolved and
+probes it with the hook's own bearer.
 
 Point agentihooks at an arbitrary directory instead with
 `agentihooks link-profile link <path>`.
@@ -214,10 +217,12 @@ agentibrain install --brain-url http://<host>:8103 --token <bearer>
 ```
 
 `--brain-url` makes the install client-only: it skips the stack and the vault,
-writes the hook config, and links the profile. `--token` also reads
-`KB_ROUTER_TOKEN` from the environment, the same as `check`, `tick` and `sync`.
-The bearer is whatever `KB_ROUTER_TOKEN` the hosting machine generated — copy it
-from that machine's `~/.agentibrain/.env`.
+writes that machine's own `~/.agentibrain/.env` with just the URL and the
+bearer, and links the profile. `--token` also reads `KB_ROUTER_TOKEN` from the
+environment, the same as `check`, `tick` and `sync`. The bearer is whatever
+`KB_ROUTER_TOKEN` the hosting machine generated — copy it from that machine's
+`~/.agentibrain/.env`. To repoint a client later, edit its own file; there is
+nothing to reinstall.
 
 What this gives you:
 - **SessionStart** — `brain_adapter` calls `/feed` and injects hot arcs, signals, operator intent, and tick diffs as `BROADCAST` blocks into every agent session

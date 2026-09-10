@@ -1120,7 +1120,7 @@ def install_cmd(
     else:
         _start_stack(settings)
 
-    console.print("\n[bold]4. agentihooks config[/bold]")
+    console.print("\n[bold]4. brain config[/bold]")
     if not remote:
         found_url, found_token = bootstrap.resolve_endpoint(settings, deployment)
         settings.brain_url = found_url
@@ -1130,21 +1130,28 @@ def install_cmd(
         fix = (
             "pass --token, or set KB_ROUTER_TOKEN"
             if remote
-            else f"no KB_ROUTER_TOKEN in "
-            f"{bootstrap.deployment_env_path(settings, deployment)} — run `agentibrain init`"
+            else f"no KB_ROUTER_TOKEN in {bootstrap.deployment_env_path(settings, deployment)}"
         )
         console.print(f"  [red]✗ no bearer token for {settings.brain_url} — {fix}[/red]")
         sys.exit(2)
+
+    brain_env = bootstrap.deployment_env_path(settings, deployment)
     if dry_run:
-        console.print(f"  would write {_hooks_env.managed_env_path()}")
+        console.print(f"  would complete {brain_env}")
     else:
         for outbox in _hooks_env.ensure_outbox_dirs():
             console.print(f"  [green]✓[/green] outbox → {outbox}")
-        env_path = _hooks_env.write_hooks_env(brain_url=settings.brain_url, token=token)
-        console.print(f"  [green]✓[/green] env    → {env_path}  (chmod 600)")
+        added = bootstrap.upsert_env_values(
+            brain_env, {"BRAIN_URL": settings.brain_url, "KB_ROUTER_TOKEN": token}
+        )
+        console.print(f"  [green]✓[/green] brain env → {brain_env}  (chmod 600)")
+        if added:
+            console.print(f"       added {', '.join(added)}", markup=False)
+        swept = _hooks_env.sweep_managed_file()
+        if swept:
+            console.print(f"  [green]✓[/green] removed duplicated copy → {swept}")
         console.print(
-            f"       BRAIN_URL={settings.brain_url} · BRAIN_ENABLED=true · "
-            "BRAIN_WRITER_ENABLED=true",
+            "       agentihooks reads this file directly — nothing is copied into ~/.agentihooks",
             markup=False,
         )
 

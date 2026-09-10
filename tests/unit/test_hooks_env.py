@@ -14,7 +14,7 @@ import sys
 import pytest
 from click.testing import CliRunner
 
-from agentibrain import cli, hooks_env
+from agentibrain import bootstrap, cli, hooks_env
 
 
 @pytest.fixture
@@ -47,85 +47,10 @@ def _assignments(path):
     )
 
 
-def test_managed_file_carries_every_key_the_hooks_need(hooks_home):
-    path = hooks_env.write_hooks_env(brain_url="http://127.0.0.1:8103", token="t0ken")
-
-    assigned = _assignments(path)
-    assert assigned["BRAIN_URL"] == "http://127.0.0.1:8103"
-    assert assigned["BRAIN_HTTP_TOKEN"] == "t0ken"
-    assert assigned["BRAIN_ENABLED"] == "true"
-    assert assigned["BRAIN_WRITER_ENABLED"] == "true"
-    assert assigned["BRAIN_WRITER_OUTBOX"].endswith("brain-outbox")
-
-
-def test_managed_file_is_secret_mode(hooks_home):
-    path = hooks_env.write_hooks_env(brain_url="http://x", token="t0ken")
-    assert path.stat().st_mode & 0o777 == 0o600
-
-
-def test_rewriting_does_not_accumulate_duplicates(hooks_home):
-    hooks_env.write_hooks_env(brain_url="http://first", token="a")
-    path = hooks_env.write_hooks_env(brain_url="http://second", token="b")
-
-    keys = [line.split("=", 1)[0] for line in path.read_text().splitlines() if "=" in line]
-    assert len(keys) == len(set(keys))
-    assert _assignments(path)["BRAIN_URL"] == "http://second"
-
-
-def test_managed_name_sorts_after_dotenv_and_before_a_zz_companion(hooks_home):
-    """Load order is the whole contract: the operator keeps a way to override."""
-    assert ".env" < hooks_env.MANAGED_ENV_NAME < "zz-operator.env"
-
-
 def test_outbox_dirs_are_created_user_owned(hooks_home):
     created = hooks_env.ensure_outbox_dirs()
     assert [d.name for d in created] == ["brain-outbox", "brain-outbox-backlog"]
     assert all(d.is_dir() for d in created)
-
-
-def test_written_config_reads_back_as_enabled(hooks_home, no_agentihooks):
-    hooks_env.write_hooks_env(brain_url="http://127.0.0.1:8103", token="t0ken")
-
-    cfg = hooks_env.resolve_consumer_config()
-    assert cfg["brain_url"] == "http://127.0.0.1:8103"
-    assert cfg["reader_enabled"] is True
-    assert cfg["writer_enabled"] is True
-    assert cfg["token_present"] is True
-
-
-def test_a_later_companion_overrides_the_managed_file(hooks_home, no_agentihooks):
-    hooks_env.write_hooks_env(brain_url="http://managed", token="t0ken")
-    (hooks_home / "zz-operator.env").write_text("BRAIN_URL=http://operator\n")
-
-    assert hooks_env.resolve_consumer_config()["brain_url"] == "http://operator"
-
-
-def test_process_env_beats_every_file(hooks_home, no_agentihooks, monkeypatch):
-    hooks_env.write_hooks_env(brain_url="http://managed", token="t0ken")
-    monkeypatch.setenv("BRAIN_URL", "http://from-process")
-
-    assert hooks_env.resolve_consumer_config()["brain_url"] == "http://from-process"
-
-
-def test_kb_router_token_is_accepted_as_the_fallback_name(hooks_home, no_agentihooks):
-    (hooks_home / ".env").write_text("BRAIN_URL=http://x\nKB_ROUTER_TOKEN=legacy\n")
-
-    assert hooks_env.resolve_consumer_config()["token_present"] is True
-
-
-def test_a_url_without_a_token_is_reported_as_missing(hooks_home, no_agentihooks):
-    (hooks_home / ".env").write_text("BRAIN_URL=http://x\n")
-
-    cfg = hooks_env.resolve_consumer_config()
-    assert cfg["token_present"] is False
-    assert cfg["reader_enabled"] is True
-
-
-def test_explicit_false_survives_the_bridge(hooks_home, no_agentihooks):
-    hooks_env.write_hooks_env(brain_url="http://x", token="t")
-    (hooks_home / "zz-operator.env").write_text("BRAIN_ENABLED=false\n")
-
-    assert hooks_env.resolve_consumer_config()["reader_enabled"] is False
 
 
 # ── the probe that check runs ─────────────────────────────────────────
@@ -173,7 +98,7 @@ def test_install_dry_run_changes_nothing(hooks_home, tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
-    for step in ("1. deployment", "2. vault", "3. stack", "4. agentihooks config", "5. profile"):
+    for step in ("1. deployment", "2. vault", "3. stack", "4. brain config", "5. profile"):
         assert step in flat
     assert not hooks_env.managed_env_path().exists()
 
@@ -199,59 +124,6 @@ def client_only(hooks_home, tmp_path, monkeypatch):
         cli._scaffold, "scaffold", lambda path, **kw: touched.setdefault("scaffolded", True)
     )
     return touched
-
-
-def test_a_remote_brain_url_builds_no_local_stack(client_only):
-    """Inference and the vault live on the brain's machine, not this one."""
-    result = CliRunner().invoke(
-        cli.main,
-        ["install", "--no-link", "--brain-url", "http://central:8103", "--token", "remote-t"],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert client_only == {}, f"client-only install touched the machine: {client_only}"
-
-
-def test_a_remote_install_points_the_hooks_at_that_brain(client_only):
-    CliRunner().invoke(
-        cli.main,
-        ["install", "--no-link", "--brain-url", "http://central:8103/", "--token", "remote-t"],
-    )
-
-    assigned = dict(
-        line.split("=", 1)
-        for line in hooks_env.managed_env_path().read_text().splitlines()
-        if line and not line.startswith("#")
-    )
-    assert assigned["BRAIN_URL"] == "http://central:8103"
-    assert assigned["BRAIN_HTTP_TOKEN"] == "remote-t"
-    assert assigned["BRAIN_WRITER_ENABLED"] == "true"
-
-
-def test_the_token_may_come_from_the_environment(client_only, monkeypatch):
-    """Parity with check/tick/sync, which all read KB_ROUTER_TOKEN."""
-    monkeypatch.setenv("KB_ROUTER_TOKEN", "from-env")
-
-    result = CliRunner().invoke(
-        cli.main, ["install", "--no-link", "--brain-url", "http://central:8103"]
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "BRAIN_HTTP_TOKEN=from-env" in hooks_env.managed_env_path().read_text()
-
-
-def test_a_remote_install_without_a_token_says_which_flag_to_pass(client_only, monkeypatch):
-    monkeypatch.delenv("KB_ROUTER_TOKEN", raising=False)
-
-    result = CliRunner().invoke(
-        cli.main, ["install", "--no-link", "--brain-url", "http://central:8103"]
-    )
-
-    assert result.exit_code == 2
-    flat = " ".join(result.output.split())
-    assert "--token" in flat
-    # `agentibrain init` would render a stack this machine explicitly does not want.
-    assert "init" not in flat
 
 
 # ── the local case: the machine already knows both values ────────────
@@ -286,37 +158,69 @@ def _managed():
     return hooks_env.managed_env_path().read_text()
 
 
-def test_the_token_comes_from_the_deployment_that_is_running(running_checkout):
-    """config_dir holds nothing; the compose stack's own .env holds everything."""
+# ── one file: the brain's own .env ───────────────────────────────────
+
+
+def _assignments(path):
+    return dict(
+        line.split("=", 1)
+        for line in path.read_text().splitlines()
+        if line and not line.startswith("#")
+    )
+
+
+def test_upsert_adds_only_what_is_missing(tmp_path):
+    env = tmp_path / ".env"
+    bootstrap.upsert_env_values(env, {"BRAIN_URL": "http://a", "KB_ROUTER_TOKEN": "t1"})
+    added = bootstrap.upsert_env_values(env, {"BRAIN_URL": "http://b", "OTHER": "x"})
+
+    assert added == ["OTHER"]
+    # A value already in the file is never rewritten — a rotation stays rotated.
+    assert _assignments(env)["BRAIN_URL"] == "http://a"
+    assert env.stat().st_mode & 0o777 == 0o600
+
+
+def test_install_completes_the_brain_env_and_copies_nothing(running_checkout):
     (running_checkout / ".env").write_text("KB_ROUTER_TOKEN=from-deployment\n")
 
     result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
 
     assert result.exit_code == 0, result.output
-    assert "BRAIN_HTTP_TOKEN=from-deployment" in _managed()
+    assigned = _assignments(running_checkout / ".env")
+    assert assigned["KB_ROUTER_TOKEN"] == "from-deployment"
+    assert assigned["BRAIN_URL"].startswith("http://")
+    assert not hooks_env.managed_env_path().exists()
 
 
-def test_a_relocated_port_is_honoured(running_checkout):
-    """PORT_BRAIN_API is what compose publishes; 8103 is only its default."""
-    (running_checkout / ".env").write_text("KB_ROUTER_TOKEN=t\nPORT_BRAIN_API=9999\n")
+def test_a_remote_install_writes_the_client_its_own_brain_env(client_only, tmp_path):
+    CliRunner().invoke(
+        cli.main,
+        ["install", "--no-link", "--brain-url", "http://central:8103", "--token", "remote-t"],
+    )
+
+    assigned = _assignments(tmp_path / ".env")
+    assert assigned["BRAIN_URL"] == "http://central:8103"
+    assert assigned["KB_ROUTER_TOKEN"] == "remote-t"
+    assert client_only == {}
+
+
+def test_the_stale_projected_copy_is_swept(running_checkout):
+    (running_checkout / ".env").write_text("KB_ROUTER_TOKEN=t\n")
+    stale = hooks_env.managed_env_path()
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    stale.write_text("# Managed by `agentibrain install` — old copy\nBRAIN_URL=http://stale\n")
 
     CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
 
-    assert "BRAIN_URL=http://localhost:9999" in _managed()
+    assert not stale.exists()
 
 
-def test_an_explicit_token_still_wins(running_checkout):
-    (running_checkout / ".env").write_text("KB_ROUTER_TOKEN=from-deployment\n")
+def test_a_file_the_operator_wrote_is_not_swept(running_checkout):
+    (running_checkout / ".env").write_text("KB_ROUTER_TOKEN=t\n")
+    mine = hooks_env.managed_env_path()
+    mine.parent.mkdir(parents=True, exist_ok=True)
+    mine.write_text("BRAIN_REFRESH_INTERVAL=5\n")
 
-    CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link", "--token", "typed-by-hand"])
+    CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
 
-    assert "BRAIN_HTTP_TOKEN=typed-by-hand" in _managed()
-
-
-def test_a_missing_token_names_the_file_it_looked_in(running_checkout):
-    (running_checkout / ".env").write_text("PORT_BRAIN_API=8103\n")
-
-    result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
-
-    assert result.exit_code == 2
-    assert str(running_checkout / ".env") in " ".join(result.output.split())
+    assert mine.exists()

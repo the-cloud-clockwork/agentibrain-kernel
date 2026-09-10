@@ -7,11 +7,10 @@ written only to the kernel's file authenticates every ``agentibrain`` command
 while every marker POST from the hook answers 401 — the deployment looks
 healthy from the side that owns the check.
 
-``agentibrain install`` is the only writer of the managed file. Resolution
-mirrors agentihooks' own loader: ``.env`` first, then ``*.env`` sorted, later
+Nothing is copied here any more: agentihooks reads the brain's own .env
+directly, so the bearer has exactly one home. What remains is reading back
+what the consumer resolved. Resolution mirrors agentihooks' own loader: ``.env`` first, then ``*.env`` sorted, later
 files winning, and the surrounding process environment beating all of them.
-The managed name sorts after ``.env`` and before ``zz-*.env``, so an operator
-keeps a companion file that overrides it.
 """
 
 from __future__ import annotations
@@ -21,12 +20,6 @@ from pathlib import Path
 
 MANAGED_ENV_NAME = "agentibrain.env"
 OUTBOX_DIRS = ("brain-outbox", "brain-outbox-backlog")
-
-_HEADER = """\
-# Managed by `agentibrain install` — rewritten in full on every run.
-# Override in a later-sorting companion (~/.agentihooks/zz-*.env) or the
-# process environment; both beat this file in agentihooks' loader.
-"""
 
 
 def hooks_home() -> Path:
@@ -52,20 +45,23 @@ def ensure_outbox_dirs() -> list[Path]:
     return created
 
 
-def write_hooks_env(*, brain_url: str, token: str) -> Path:
-    """Publish the reader/writer config into the agentihooks env chain."""
+def sweep_managed_file() -> Path | None:
+    """Remove the projected copy earlier versions wrote into agentihooks' chain.
+
+    agentihooks now reads the brain's own .env, so that file is a second copy of
+    the bearer whose only future is to go stale on the next rotation. Only a
+    file carrying this project's header is removed; anything the operator wrote
+    is left alone.
+    """
     path = managed_env_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [
-        _HEADER,
-        f"BRAIN_URL={brain_url}",
-        f"BRAIN_HTTP_TOKEN={token}",
-        "BRAIN_ENABLED=true",
-        "BRAIN_WRITER_ENABLED=true",
-        f"BRAIN_WRITER_OUTBOX={hooks_home() / OUTBOX_DIRS[0]}",
-    ]
-    path.write_text("\n".join(lines) + "\n")
-    path.chmod(0o600)
+    if not path.is_file():
+        return None
+    try:
+        if "Managed by `agentibrain install`" not in path.read_text(encoding="utf-8"):
+            return None
+        path.unlink()
+    except OSError:
+        return None
     return path
 
 

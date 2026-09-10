@@ -98,23 +98,22 @@ def test_install_forwards_target_and_no_init(install_env, monkeypatch):
     assert captured["cmd"][-3:] == ["--for-target", "codex", "--no-init"]
 
 
-def test_install_publishes_the_token_into_the_agentihooks_chain(install_env, monkeypatch):
-    """The step that was missing: the kernel's token reaching the hook's env."""
+def test_install_completes_the_brain_env(install_env, monkeypatch):
+    """The bearer gets exactly one home — the brain's own file, which
+    agentihooks reads directly. Nothing is projected into ~/.agentihooks."""
     monkeypatch.setattr(cli, "_agentihooks_bin", lambda: "/usr/bin/agentihooks")
 
     result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
 
     assert result.exit_code == 0, result.output
-    written = hooks_env.managed_env_path()
-    assert written.is_file()
     assigned = dict(
         line.split("=", 1)
-        for line in written.read_text().splitlines()
+        for line in (install_env / ".env").read_text().splitlines()
         if line and not line.startswith("#")
     )
-    assert assigned["BRAIN_HTTP_TOKEN"] == "t0ken"
-    assert assigned["BRAIN_ENABLED"] == "true"
-    assert assigned["BRAIN_WRITER_ENABLED"] == "true"
+    assert assigned["KB_ROUTER_TOKEN"] == "t0ken"
+    assert assigned["BRAIN_URL"].startswith("http://")
+    assert not hooks_env.managed_env_path().exists()
 
 
 def test_install_exits_when_agentihooks_is_absent(install_env, monkeypatch, tmp_path):

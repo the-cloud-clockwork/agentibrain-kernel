@@ -122,6 +122,9 @@ def write_env_file(settings: BrainSettings, token: str) -> Path:
     embeddings_key = existing.get("EMBEDDINGS_API_KEY") or generate_token()
     generated: dict[str, str] = {
         "KB_ROUTER_TOKEN": token,
+        # agentihooks reads this file to learn where the brain is; without the
+        # URL beside the bearer the file is only half the answer.
+        "BRAIN_URL": settings.brain_url,
         "EMBEDDINGS_API_KEY": embeddings_key,
         "EMBEDDINGS_API_KEYS": embeddings_key,
         "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD", DEFAULT_POSTGRES_PASSWORD),
@@ -171,6 +174,27 @@ _OPTIONAL_ENV: tuple[tuple[str, str, str], ...] = (
     ("BRAIN_LLM_TIMEOUT_SECONDS", "600", "deadline for the AI synthesis call"),
     ("ARTIFACT_STORE_URL", "", "optional; binary ingest fails clearly when unset"),
 )
+
+
+def upsert_env_values(env_path: Path, values: dict[str, str]) -> list[str]:
+    """Add missing assignments to an env file, preserving everything else.
+
+    A key already carrying a value is never touched — a rotated token stays
+    rotated and a hand-edited URL stays hand-edited. Returns the names added.
+    """
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = _existing_assignments(env_path)
+    missing = {k: v for k, v in values.items() if v and not existing.get(k, "").strip()}
+    if missing:
+        body = env_path.read_text() if env_path.exists() else ""
+        if body and not body.endswith("\n"):
+            body += "\n"
+        body += "".join(f"{k}={v}\n" for k, v in missing.items())
+        env_path.write_text(body)
+    else:
+        env_path.touch(exist_ok=True)
+    env_path.chmod(0o600)
+    return list(missing)
 
 
 def _commented_settings(settings: BrainSettings, offered: set[str] | None = None) -> list[str]:
