@@ -12,6 +12,7 @@ Two ways in. Pick by whether you intend to change the kernel's code.
 pip install agentibrain agentihooks
 agentibrain install             # or: agentibrain install --ollama   (no API key needed)
 agentibrain check               # verify
+agentibrain update              # later: upgrade from PyPI (--check to look first)
 ```
 
 `install` is `init --local` + `scaffold` + `up`, in that order, plus the
@@ -411,6 +412,17 @@ Plus an **opt-in `brain-keeper`** agent (ops oracle for triage, enrichment, repl
 See [Quick Start](#run-it-pip--no-clone) — `pip install agentibrain` is the
 supported way to run the kernel without a clone. The wheel carries the CLI, the
 vault-layout templates, the compose template and the SQL migrations.
+
+`agentibrain update` keeps it current. It resolves how this copy was installed —
+venv/pip, `uv tool`, pipx, or an editable checkout — and upgrades that one,
+comparing against PyPI first so an up-to-date install runs nothing. An editable
+checkout is left alone; update it with `git pull`.
+
+```bash
+agentibrain update                     # upgrade if PyPI has a newer release
+agentibrain update --check             # report only, install nothing
+agentibrain update --index-url <url>   # upgrade from a custom package index
+```
 
 ### 1. Laptop (Docker Compose)
 

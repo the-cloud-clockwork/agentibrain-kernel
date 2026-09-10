@@ -1183,5 +1183,17 @@ def version_cmd() -> None:
     console.print(__version__)
 
 
+@main.command("update")
+@click.option("--check", is_flag=True, help="Report whether an update exists; install nothing.")
+@click.option("--index-url", default=None, help="Custom package index URL to upgrade from.")
+def update_cmd(check: bool, index_url: str | None) -> None:
+    """Upgrade agentibrain to the latest release on PyPI."""
+    from agentibrain.updater import run_update
+
+    rc = run_update(check_only=check, index_url=index_url)
+    if rc:
+        sys.exit(rc)
+
+
 if __name__ == "__main__":
     main()
