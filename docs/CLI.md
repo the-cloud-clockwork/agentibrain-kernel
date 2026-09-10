@@ -42,6 +42,24 @@ where the deployment lives, from any cwd:
 No deployment anywhere → exit 2 with the bootstrap/init hint. You never need
 to remember where the compose file is or type `docker compose` yourself.
 
+## Network exposure and auth
+
+Set by the compose template and the root `compose.yml`; no flag needed.
+
+| Service | Published on | Why |
+|---|---|---|
+| `postgres`, `redis`, `minio`, `embeddings`, `ollama` | `127.0.0.1` | Reached over the compose network. Nothing outside the machine needs them, and some carry generated default credentials. |
+| `brain-api` (8103), `mcp` (8104) | `${BIND_HOST:-0.0.0.0}` | The two a client-only install has to reach. Set `BIND_HOST=127.0.0.1` to keep them local and front them with a proxy. |
+
+A bare `HOST:CONTAINER` mapping binds every interface, and Docker's DNAT rules
+sit ahead of a host firewall — which is why the datastores are pinned rather
+than left to a default.
+
+**brain-api fails closed.** Without `KB_ROUTER_TOKEN` (or `KB_ROUTER_TOKENS`)
+every endpoint answers `503`, including `/health/deep` and `/feed`. `init` and
+`install` always generate a bearer, so an empty set is a misconfiguration, not
+a decision to be public. `agentibrain check` surfaces it as a hard failure.
+
 ## Testing a running brain
 
 ```bash

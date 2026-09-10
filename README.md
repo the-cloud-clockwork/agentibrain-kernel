@@ -459,7 +459,24 @@ actually live: [`local/README.md`](local/README.md#updating-to-a-newer-version).
 
 ### 2. Server (Docker Compose, headless)
 
-Same `compose.yml` works on any Linux box with Docker. Bind the vault to a real path, expose `8103` behind your reverse proxy of choice (Traefik, Caddy, nginx), point your fleet at it via `BRAIN_URL`. No Kubernetes required.
+Same `compose.yml` works on any Linux box with Docker. Bind the vault to a real path, point your fleet at it via `BRAIN_URL`. No Kubernetes required.
+
+**What is reachable, and what is not.** Postgres, Redis, MinIO, embeddings and
+Ollama bind `127.0.0.1` — nothing outside the machine has any business reaching
+them, and several still carry generated default credentials. Only `brain-api`
+(8103) and `mcp` (8104) are published on all interfaces, because a client-only
+install needs exactly those two. Narrow them with `BIND_HOST`:
+
+```bash
+BIND_HOST=127.0.0.1 docker compose up -d   # loopback only; put a proxy in front
+```
+
+**Auth fails closed.** brain-api refuses to serve without a bearer: every
+endpoint answers `503` until `KB_ROUTER_TOKEN` (or `KB_ROUTER_TOKENS`, a
+comma-separated list) is set. `init` and `install` always generate one, so an
+empty token set means the deployment is misconfigured — never that it wanted to
+be public. Put a reverse proxy in front for TLS if you expose it beyond a
+trusted network; the bearer is authentication, not transport security.
 
 ### 3. Kubernetes (Helm)
 
