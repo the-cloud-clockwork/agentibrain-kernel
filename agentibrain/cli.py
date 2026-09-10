@@ -1017,6 +1017,16 @@ def _start_stack(settings: BrainSettings) -> None:
     help="Bundle Ollama for chat + embeddings. No API key, no external calls.",
 )
 @click.option(
+    "--brain-url",
+    envvar="BRAIN_URL",
+    help="Wire this machine to an existing brain instead of giving it one of its own.",
+)
+@click.option(
+    "--token",
+    envvar="KB_ROUTER_TOKEN",
+    help="Bearer for that brain. Defaults to the local deployment's .env.",
+)
+@click.option(
     "--name", default="brain", show_default=True, help="Alias to register with agentihooks."
 )
 @click.option(
@@ -1038,6 +1048,8 @@ def _start_stack(settings: BrainSettings) -> None:
 def install_cmd(
     vault: str | None,
     use_ollama: bool,
+    brain_url: str | None,
+    token: str | None,
     name: str,
     profile_name: str,
     for_target: str | None,
@@ -1049,26 +1061,40 @@ def install_cmd(
     """Set this machine up end to end: stack, vault, agentihooks config, profile.
 
     Idempotent — an existing deployment is reused, the vault is never
-    overwritten, and the profile link is upserted. The step that is easy to
-    miss by hand is the fourth: agentihooks reads a different env chain than
-    the kernel, so the token has to be published into it or every marker POST
-    answers 401 while every `agentibrain` command authenticates fine.
+    overwritten, and the profile link is upserted.
+
+    `--brain-url` wires the machine to a brain that already runs somewhere else.
+    Inference and the vault belong to that stack, so this machine needs neither
+    a stack of its own nor an API key: only the URL, the bearer, and the hook
+    config. Without it the machine gets its own brain.
     """
     settings = _load_settings()
     profile_dir = _packaged_profile(profile_name)
+    remote = bool(brain_url)
+    if remote:
+        settings.brain_url = brain_url.rstrip("/")
 
     console.print("[bold]1. deployment[/bold]")
-    deployment = bootstrap.find_deployment(settings)
-    if deployment is not None:
-        mode, compose_dir = deployment
-        console.print(f"  [green]✓[/green] reusing {mode} @ {compose_dir}")
-    elif no_stack:
-        console.print(f"  [yellow]![/yellow] none found; configuring against {settings.brain_url}")
+    if remote:
+        console.print(f"  [--] client-only — using the brain at {settings.brain_url}")
     else:
-        settings = _create_deployment(settings, vault=vault, use_ollama=use_ollama, dry_run=dry_run)
+        deployment = bootstrap.find_deployment(settings)
+        if deployment is not None:
+            mode, compose_dir = deployment
+            console.print(f"  [green]✓[/green] reusing {mode} @ {compose_dir}")
+        elif no_stack:
+            console.print(
+                f"  [yellow]![/yellow] none found; configuring against {settings.brain_url}"
+            )
+        else:
+            settings = _create_deployment(
+                settings, vault=vault, use_ollama=use_ollama, dry_run=dry_run
+            )
 
     console.print("\n[bold]2. vault[/bold]")
-    if dry_run:
+    if remote:
+        console.print("  [--] skipped — the vault belongs to the brain's own machine")
+    elif dry_run:
         console.print(f"  would scaffold {settings.vault_path}")
     else:
         try:
@@ -1082,7 +1108,9 @@ def install_cmd(
         )
 
     console.print("\n[bold]3. stack[/bold]")
-    if no_stack:
+    if remote:
+        console.print("  [--] skipped — client-only")
+    elif no_stack:
         console.print("  [--] skipped (--no-stack)")
     elif dry_run:
         console.print("  would start the compose stack")
@@ -1090,11 +1118,10 @@ def install_cmd(
         _start_stack(settings)
 
     console.print("\n[bold]4. agentihooks config[/bold]")
-    token = _token_from_env_file(settings)
+    token = token or _token_from_env_file(settings)
     if not token and not dry_run:
-        console.print(
-            "  [red]✗ no KB_ROUTER_TOKEN in the deployment env — run `agentibrain init` first[/red]"
-        )
+        fix = "pass --token, or set KB_ROUTER_TOKEN" if remote else "run `agentibrain init` first"
+        console.print(f"  [red]✗ no bearer token for {settings.brain_url} — {fix}[/red]")
         sys.exit(2)
     if dry_run:
         console.print(f"  would write {_hooks_env.managed_env_path()}")

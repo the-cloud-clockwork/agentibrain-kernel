@@ -9,7 +9,16 @@ Two ways in. Pick by whether you intend to change the kernel's code.
 ### Run it (pip — no clone)
 
 ```bash
-pip install agentibrain
+pip install agentibrain agentihooks
+agentibrain install             # or: agentibrain install --ollama   (no API key needed)
+agentibrain check               # verify
+```
+
+`install` is `init --local` + `scaffold` + `up`, in that order, plus the
+agentihooks wiring most people forget. Run the steps yourself when you need to
+edit `~/.agentibrain/.env` between rendering the stack and starting it:
+
+```bash
 agentibrain init --local        # writes ~/.agentibrain/{config.yaml,.env,compose.yml} + creates the vault
 agentibrain scaffold            # seed the vault tree (30 folders, 52 files)
 agentibrain up                  # pull images from GHCR, start 9 services, run migrations
@@ -22,7 +31,8 @@ That is the whole brain: `postgres`, `redis`, `minio`, `embeddings`,
 built locally.
 
 Order matters: `scaffold` before `up`. The vault is a bind-mount source, so a
-container that reaches it first would own it as root.
+container that reaches it first would own it as root. `install` sequences them
+in that order for you.
 
 ### Develop it (clone — builds from source)
 
@@ -70,16 +80,24 @@ unconfigured: semantic search and AI synthesis. Both are off, nothing else is.
 ### No API key? Bundle a local model
 
 ```bash
+agentibrain install --ollama    # pulls llama3.2:3b + nomic-embed-text on first start
+```
+
+or the same thing step by step:
+
+```bash
 agentibrain init --local --ollama
 agentibrain scaffold
-agentibrain up          # pulls llama3.2:3b + nomic-embed-text on first start
+agentibrain up
 ```
 
 This points **both** halves at a bundled Ollama — chat (AI ticks, `kb_brief`)
 and embeddings (semantic search) — so the stack needs no API key anywhere.
-`llama3.2:3b` runs on an 8 GB machine. For a larger one, set
-`BRAIN_OLLAMA_CHAT_MODEL` before `init` (`llama3.1:8b` at 16 GB, `qwen2.5:14b`
-at 32 GB+) — settings take the `BRAIN_` prefix.
+`llama3.2:3b` runs on an 8 GB machine. For a larger one, export
+`BRAIN_OLLAMA_CHAT_MODEL` before whichever command *creates* the deployment —
+`init` or `install` (`llama3.1:8b` at 16 GB, `qwen2.5:14b` at 32 GB+); settings
+take the `BRAIN_` prefix. Once the stack exists both commands reuse it, so the
+model is fixed at creation and `--ollama` on a later `install` does nothing.
 
 The first `up` downloads roughly 2.5 GB of weights and the models stay in a
 named volume across restarts.
@@ -180,6 +198,26 @@ token rather than the kernel's, so the two can never silently disagree.
 
 Point agentihooks at an arbitrary directory instead with
 `agentihooks link-profile link <path>`.
+
+#### One brain, many machines
+
+Inference belongs to the **stack**, not to the machine running Claude Code. You
+do not need an API key, a gateway or Ollama on every laptop — you need one brain
+that has them, and a `BRAIN_URL` on everything else.
+
+```bash
+# the machine that hosts the brain
+agentibrain install                          # or --ollama if it has no provider
+
+# every other machine — no stack, no vault, no key
+agentibrain install --brain-url http://<host>:8103 --token <bearer>
+```
+
+`--brain-url` makes the install client-only: it skips the stack and the vault,
+writes the hook config, and links the profile. `--token` also reads
+`KB_ROUTER_TOKEN` from the environment, the same as `check`, `tick` and `sync`.
+The bearer is whatever `KB_ROUTER_TOKEN` the hosting machine generated — copy it
+from that machine's `~/.agentibrain/.env`.
 
 What this gives you:
 - **SessionStart** — `brain_adapter` calls `/feed` and injects hot arcs, signals, operator intent, and tick diffs as `BROADCAST` blocks into every agent session

@@ -176,3 +176,79 @@ def test_install_dry_run_changes_nothing(hooks_home, tmp_path, monkeypatch):
     for step in ("1. deployment", "2. vault", "3. stack", "4. agentihooks config", "5. profile"):
         assert step in flat
     assert not hooks_env.managed_env_path().exists()
+
+
+# ── client-only: a machine that talks to a brain it does not host ─────
+
+
+@pytest.fixture
+def client_only(hooks_home, tmp_path, monkeypatch):
+    """No local deployment, no vault, no keys — only a URL and a bearer."""
+    from agentibrain.config import BrainSettings
+
+    monkeypatch.setattr(
+        cli, "_load_settings", lambda: BrainSettings(config_dir=tmp_path, _env_file=None)
+    )
+    monkeypatch.setattr(cli, "_agentihooks_bin", lambda: "/usr/bin/agentihooks")
+    touched: dict[str, bool] = {}
+    monkeypatch.setattr(
+        cli, "_create_deployment", lambda *a, **kw: touched.setdefault("created", True)
+    )
+    monkeypatch.setattr(cli, "_start_stack", lambda settings: touched.setdefault("started", True))
+    monkeypatch.setattr(
+        cli._scaffold, "scaffold", lambda path, **kw: touched.setdefault("scaffolded", True)
+    )
+    return touched
+
+
+def test_a_remote_brain_url_builds_no_local_stack(client_only):
+    """Inference and the vault live on the brain's machine, not this one."""
+    result = CliRunner().invoke(
+        cli.main,
+        ["install", "--no-link", "--brain-url", "http://central:8103", "--token", "remote-t"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert client_only == {}, f"client-only install touched the machine: {client_only}"
+
+
+def test_a_remote_install_points_the_hooks_at_that_brain(client_only):
+    CliRunner().invoke(
+        cli.main,
+        ["install", "--no-link", "--brain-url", "http://central:8103/", "--token", "remote-t"],
+    )
+
+    assigned = dict(
+        line.split("=", 1)
+        for line in hooks_env.managed_env_path().read_text().splitlines()
+        if line and not line.startswith("#")
+    )
+    assert assigned["BRAIN_URL"] == "http://central:8103"
+    assert assigned["BRAIN_HTTP_TOKEN"] == "remote-t"
+    assert assigned["BRAIN_WRITER_ENABLED"] == "true"
+
+
+def test_the_token_may_come_from_the_environment(client_only, monkeypatch):
+    """Parity with check/tick/sync, which all read KB_ROUTER_TOKEN."""
+    monkeypatch.setenv("KB_ROUTER_TOKEN", "from-env")
+
+    result = CliRunner().invoke(
+        cli.main, ["install", "--no-link", "--brain-url", "http://central:8103"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "BRAIN_HTTP_TOKEN=from-env" in hooks_env.managed_env_path().read_text()
+
+
+def test_a_remote_install_without_a_token_says_which_flag_to_pass(client_only, monkeypatch):
+    monkeypatch.delenv("KB_ROUTER_TOKEN", raising=False)
+
+    result = CliRunner().invoke(
+        cli.main, ["install", "--no-link", "--brain-url", "http://central:8103"]
+    )
+
+    assert result.exit_code == 2
+    flat = " ".join(result.output.split())
+    assert "--token" in flat
+    # `agentibrain init` would render a stack this machine explicitly does not want.
+    assert "init" not in flat
