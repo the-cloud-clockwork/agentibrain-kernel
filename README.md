@@ -190,14 +190,19 @@ checkout. `--ollama` bundles Ollama for chat and embeddings, so the stack needs
 no API key and makes no external call.
 
 There is one config file, and it is the brain's own. `~/.agentibrain/.env`
-already feeds docker compose; agentihooks reads it too (`AGENTIBRAIN_HOME`,
-default `~/.agentibrain`) and adopts `BRAIN_URL` and `KB_ROUTER_TOKEN` from it,
+already feeds docker compose; agentihooks reads it too and adopts `BRAIN_URL`
+and `KB_ROUTER_TOKEN` from it,
 so the bearer is never copied and a rotation cannot go stale somewhere else.
 Only those connection keys are adopted — that file's database, object-store and
 provider credentials never enter a session's environment. An explicit setting in
 `~/.agentihooks/*.env` still outranks the discovery, and the process environment
 outranks both. `agentibrain check` reports what agentihooks itself resolved and
 probes it with the hook's own bearer.
+
+`AGENTIBRAIN_HOME` moves that directory, and both projects honour it — the
+kernel resolves it on every call, so exporting it relocates the config, the
+rendered stack and the file agentihooks reads, together. It defaults to
+`~/.agentibrain`.
 
 Point agentihooks at an arbitrary directory instead with
 `agentihooks link-profile link <path>`.
