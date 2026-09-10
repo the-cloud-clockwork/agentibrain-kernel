@@ -161,8 +161,13 @@ pip install agentihooks
 Then link the brain profile so your agents get brain MCP tools + marker rules + broadcast channel config:
 
 ```bash
-agentihooks link-profile link "$(pwd)/profiles/brain"
+agentibrain install
 ```
+
+`install` links the profile that ships inside the installed `agentibrain`
+package, so it works the same from a PyPI wheel and from a source checkout.
+Point agentihooks at an arbitrary directory instead with
+`agentihooks link-profile link <path>`.
 
 What this gives you:
 - **SessionStart** — `brain_adapter` calls `/feed` and injects hot arcs, signals, operator intent, and tick diffs as `BROADCAST` blocks into every agent session
@@ -505,7 +510,7 @@ Inject `MCP_PROXY_API_KEY` via `envFrom: secretRef:` from the K8s Secret backing
 
 ```bash
 pip install agentihooks
-agentihooks link-profile link /path/to/agentibrain-kernel/profiles/brain
+agentibrain install
 ```
 
 The brain profile registers three hooks:
@@ -516,7 +521,7 @@ The brain profile registers three hooks:
 | `amygdala_hook` | Every turn | Polls `/signal` for nuclear/critical severity, injects `BROADCAST [CRITICAL]` |
 
 > **The bundled profile ships the local SSE server only.**
-> `profiles/brain/.claude/.mcp.json` contains a single entry —
+> `agentibrain/profiles/brain/.claude/.mcp.json` contains a single entry —
 > `agentibrain-local` (`type: sse` → `http://localhost:8104/sse`), pointing at
 > the local Docker-Compose stack. No remote entry is bundled: the `mcp` chart's
 > Service is `ClusterIP` with no Ingress, so `agentibrain-mcp.<ns>.svc:8080`
@@ -731,7 +736,7 @@ Workflow: `dev` is the working branch and the deploy branch. CI on `dev` ships `
 
 **v0.1.x — stable.** Six Helm charts. Four service images auto-published to GHCR (`:dev` only — nothing publishes `:latest`). HTTP contract frozen at v1. Generic OpenAI gateway — kernel speaks chat-completions to any compatible upstream (LiteLLM, OpenAI, Ollama, vLLM, …). Brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds; every embed flows through `POST /index_artifact`). Vault read/write absorbed into brain-api directly via `vault_reader` module — no separate reader service.
 
-The kernel is self-contained and the canonical source of truth for everything brain-related — services, Helm charts, brain-keeper agent definition (`agents/brain-keeper/`), brain profile overlays (`profiles/brain/`, `profiles/brain-keeper/`), and the vault layout schema. All deployment-specific plumbing (cluster namespaces, model name aliases, secret-store paths, NFS hosts) lives in your own platform repo, not here.
+The kernel is self-contained and the canonical source of truth for everything brain-related — services, Helm charts, brain-keeper agent definition (`agents/brain-keeper/`), brain profile overlays (`agentibrain/profiles/brain/`), and the vault layout schema. All deployment-specific plumbing (cluster namespaces, model name aliases, secret-store paths, NFS hosts) lives in your own platform repo, not here.
 
 Maturity tracking is published in
 [`docs/architecture/MATURITY.md`](docs/architecture/MATURITY.md).

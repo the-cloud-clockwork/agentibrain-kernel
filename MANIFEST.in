@@ -1,0 +1,4 @@
+recursive-include agentibrain/profiles *
+recursive-include agentibrain/templates *
+recursive-include agentibrain/migrations *
+global-exclude __pycache__/* *.py[cod]
