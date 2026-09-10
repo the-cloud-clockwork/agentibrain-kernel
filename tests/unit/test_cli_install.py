@@ -60,6 +60,10 @@ def install_env(tmp_path, monkeypatch):
     from agentibrain.config import BrainSettings
 
     monkeypatch.setenv("AGENTIHOOKS_HOME", str(tmp_path / ".agentihooks"))
+    # install's --token/--brain-url carry envvars, so an unscrubbed environment
+    # lets the operator's real values override every stub below.
+    for leaked in ("KB_ROUTER_TOKEN", "BRAIN_URL", "BRAIN_HTTP_TOKEN"):
+        monkeypatch.delenv(leaked, raising=False)
     monkeypatch.setattr(
         cli, "_load_settings", lambda: BrainSettings(config_dir=tmp_path, _env_file=None)
     )
