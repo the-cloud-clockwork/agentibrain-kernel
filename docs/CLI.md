@@ -23,7 +23,7 @@ agentibrain --version
 | `agentibrain check` | **Deep verification** — see below. |
 | `agentibrain tick [--dry-run] [--no-ai] [--wait]` | Enqueue a brain tick; `--wait` blocks until it completes. |
 | `agentibrain sync [--wait\|--check]` | **Re-ingest everything** — replay buffered markers (`~/.agentihooks/brain-outbox` + `-backlog`) into `POST /marker`, then enqueue a tick so replays cluster and the `raw/` index refreshes. Idempotent; original timestamps preserved. `--wait` blocks until the tick completes; `--check` does the same but narrates: per-buffer progress counters, tick state changes, and a final summary with remaining buffered files. Exit: 0 clean, 1 hard failure, 2 degraded. |
-| `agentibrain install` | Link the packaged brain profile (`agentibrain/profiles/brain`) into the agentihooks chain via `agentihooks link-profile link`. Resolves the path inside the installed package, so a PyPI wheel links the same profile a source checkout does. `--name`, `--profile`, `--for-target`, `--no-init`, `--dry-run`. |
+| `agentibrain install` | **Whole-machine setup, idempotent.** Five steps: reuse or render a local stack — rendering is exactly `init --local`, so storage is always bundled MinIO and `--ollama` is the `init --local --ollama` path (export `BRAIN_OLLAMA_CHAT_MODEL` first to size the model; it is fixed at creation, and `--ollama` against an existing stack does nothing), scaffold the vault, start the stack, complete the brain's own `~/.agentibrain/.env` with `BRAIN_URL` beside the bearer (chmod 600; an existing value is never rewritten) and create the marker outbox — agentihooks reads that file directly, so nothing is copied and any earlier projected copy is swept, then link the packaged brain profile. Step four is the one nobody does by hand: without `BRAIN_URL` beside the bearer the brain's file is only half the answer, which is how a machine ends up authenticating every `agentibrain` command while every marker POST answers 401. `--brain-url` (envvar `BRAIN_URL`) makes it **client-only** — wire this machine to a brain that runs elsewhere, skipping the stack and the vault, since inference and storage belong to that stack; pair it with `--token` (envvar `KB_ROUTER_TOKEN`), matching `check` / `tick` / `sync`. Flags: `--brain-url`, `--token`, `--vault`, `--ollama`, `--name`, `--profile`, `--for-target`, `--no-stack`, `--no-link`, `--no-init`, `--dry-run`. |
 | `agentibrain scaffold [PATH]` | Write/repair the vault layout schema. Authoritative writer of `.brain-schema`. |
 | `agentibrain version` | Print version. |
 
@@ -41,6 +41,24 @@ where the deployment lives, from any cwd:
 
 No deployment anywhere → exit 2 with the bootstrap/init hint. You never need
 to remember where the compose file is or type `docker compose` yourself.
+
+## Network exposure and auth
+
+Set by the compose template and the root `compose.yml`; no flag needed.
+
+| Service | Published on | Why |
+|---|---|---|
+| `postgres`, `redis`, `minio`, `embeddings`, `ollama` | `127.0.0.1` | Reached over the compose network. Nothing outside the machine needs them, and some carry generated default credentials. |
+| `brain-api` (8103), `mcp` (8104) | `${BIND_HOST:-0.0.0.0}` | The two a client-only install has to reach. Set `BIND_HOST=127.0.0.1` to keep them local and front them with a proxy. |
+
+A bare `HOST:CONTAINER` mapping binds every interface, and Docker's DNAT rules
+sit ahead of a host firewall — which is why the datastores are pinned rather
+than left to a default.
+
+**brain-api fails closed.** Without `KB_ROUTER_TOKEN` (or `KB_ROUTER_TOKENS`)
+every endpoint answers `503`, including `/health/deep` and `/feed`. `init` and
+`install` always generate a bearer, so an empty set is a misconfiguration, not
+a decision to be public. `agentibrain check` surfaces it as a hard failure.
 
 ## Testing a running brain
 

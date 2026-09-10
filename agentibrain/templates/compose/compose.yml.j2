@@ -25,7 +25,7 @@ services:
     volumes:
       - agentibrain_pg_data:/var/lib/postgresql/data
     ports:
-      - "{{ postgres_port | default(5432) }}:5432"
+      - "127.0.0.1:{{ postgres_port | default(5432) }}:5432"
     networks: [agentibrain_net]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U agentibrain"]
@@ -40,7 +40,7 @@ services:
     volumes:
       - agentibrain_redis_data:/data
     ports:
-      - "{{ redis_port | default(6379) }}:6379"
+      - "127.0.0.1:{{ redis_port | default(6379) }}:6379"
     networks: [agentibrain_net]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -60,7 +60,7 @@ services:
     volumes:
       - agentibrain_minio_data:/data
     ports:
-      - "{{ minio_port | default(9000) }}:9000"
+      - "127.0.0.1:{{ minio_port | default(9000) }}:9000"
       - "{{ minio_console_port | default(9001) }}:9001"
     networks: [agentibrain_net]
     healthcheck:
@@ -92,7 +92,7 @@ services:
     volumes:
       - agentibrain_ollama_data:/root/.ollama
     ports:
-      - "{{ ollama_port | default(11434) }}:11434"
+      - "127.0.0.1:{{ ollama_port | default(11434) }}:11434"
     networks: [agentibrain_net]
     healthcheck:
       test: ["CMD", "ollama", "list"]
@@ -181,7 +181,7 @@ services:
     volumes:
       - "{{ vault_path }}:/vault:rw"
     ports:
-      - "{{ brain_api_port | default(8103) }}:8080"
+      - "{{ bind_host | default('0.0.0.0') }}:{{ brain_api_port | default(8103) }}:8080"
     networks: [agentibrain_net]
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
@@ -394,7 +394,7 @@ services:
       MCP_PROXY_API_KEY: ""
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
-      - "{{ mcp_port | default(8104) }}:8080"
+      - "{{ bind_host | default('0.0.0.0') }}:{{ mcp_port | default(8104) }}:8080"
     networks: [agentibrain_net]
 
 volumes:

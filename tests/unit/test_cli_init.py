@@ -16,8 +16,10 @@ from agentibrain import cli
 
 def _init(tmp_path: Path, monkeypatch, *args: str):
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-    monkeypatch.setattr(cli, "DEFAULT_CONFIG_DIR", tmp_path / ".agentibrain")
-    monkeypatch.setattr(cli, "DEFAULT_CONFIG_PATH", tmp_path / ".agentibrain" / "config.yaml")
+    # AGENTIBRAIN_HOME is what config_dir() reads, and it is read per call.
+    # Patching module constants here did nothing: init builds BrainSettings,
+    # whose config_dir default was captured at import from the real home.
+    monkeypatch.setenv("AGENTIBRAIN_HOME", str(tmp_path / ".agentibrain"))
     return CliRunner().invoke(cli.main, ["init", "--local", *args])
 
 

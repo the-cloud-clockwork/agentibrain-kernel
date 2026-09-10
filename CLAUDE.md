@@ -169,5 +169,8 @@ docker compose logs --since 2m <service>     # or: kubectl logs
 - Downstream platform repos — use the kernel's Helm charts with environment-specific values.
 - `agentihub` — clones `agents/brain-keeper/` at install time.
 - `agentihooks-bundle` — clones `agentibrain/profiles/brain/` at install time.
-- Wheel installs get the same profile via `agentibrain install`, which links the packaged copy into the agentihooks chain.
+- Wheel installs get the same profile via `agentibrain install`, which also completes
+  `~/.agentibrain/.env` with `BRAIN_URL` beside the bearer. agentihooks reads that file
+  directly (`AGENTIBRAIN_HOME`, default `~/.agentibrain`) and adopts only the connection
+  keys, so the bearer has one home and a rotation cannot go stale in a copy.
 - External users — `git clone` → `./local/bootstrap.sh` → `docker compose up -d` (or use the Helm charts for K8s).

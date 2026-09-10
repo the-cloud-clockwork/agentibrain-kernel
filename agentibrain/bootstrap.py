@@ -122,6 +122,9 @@ def write_env_file(settings: BrainSettings, token: str) -> Path:
     embeddings_key = existing.get("EMBEDDINGS_API_KEY") or generate_token()
     generated: dict[str, str] = {
         "KB_ROUTER_TOKEN": token,
+        # agentihooks reads this file to learn where the brain is; without the
+        # URL beside the bearer the file is only half the answer.
+        "BRAIN_URL": settings.brain_url,
         "EMBEDDINGS_API_KEY": embeddings_key,
         "EMBEDDINGS_API_KEYS": embeddings_key,
         "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD", DEFAULT_POSTGRES_PASSWORD),
@@ -171,6 +174,27 @@ _OPTIONAL_ENV: tuple[tuple[str, str, str], ...] = (
     ("BRAIN_LLM_TIMEOUT_SECONDS", "600", "deadline for the AI synthesis call"),
     ("ARTIFACT_STORE_URL", "", "optional; binary ingest fails clearly when unset"),
 )
+
+
+def upsert_env_values(env_path: Path, values: dict[str, str]) -> list[str]:
+    """Add missing assignments to an env file, preserving everything else.
+
+    A key already carrying a value is never touched — a rotated token stays
+    rotated and a hand-edited URL stays hand-edited. Returns the names added.
+    """
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = _existing_assignments(env_path)
+    missing = {k: v for k, v in values.items() if v and not existing.get(k, "").strip()}
+    if missing:
+        body = env_path.read_text() if env_path.exists() else ""
+        if body and not body.endswith("\n"):
+            body += "\n"
+        body += "".join(f"{k}={v}\n" for k, v in missing.items())
+        env_path.write_text(body)
+    else:
+        env_path.touch(exist_ok=True)
+    env_path.chmod(0o600)
+    return list(missing)
 
 
 def _commented_settings(settings: BrainSettings, offered: set[str] | None = None) -> list[str]:
@@ -252,6 +276,39 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
     if (cfg_dir / "compose.yml").is_file():
         return ("init", cfg_dir)
     return None
+
+
+def deployment_env_path(settings: BrainSettings, deployment: tuple[str, Path] | None) -> Path:
+    """The .env the discovered deployment actually reads.
+
+    A repo checkout reads its own; only the init-rendered stack reads the one
+    under config_dir. The two are usually the same file — local/bootstrap.sh
+    symlinks them — but nothing guarantees it, and a second checkout breaks it.
+    """
+    cfg_env = settings.config_dir.expanduser() / ".env"
+    if deployment is None:
+        return cfg_env
+    mode, compose_dir = deployment
+    return compose_dir / ".env" if mode == "root-compose" else cfg_env
+
+
+def resolve_endpoint(
+    settings: BrainSettings, deployment: tuple[str, Path] | None
+) -> tuple[str, str]:
+    """``(brain_url, token)`` as the deployment on this machine defines them.
+
+    Both values are already on disk next to the compose file that publishes the
+    port — asking the operator to supply either for a local stack is asking
+    them to retype what the machine knows. Falls back to config_dir's .env for
+    the token so a checkout that keeps secrets there still resolves.
+    """
+    env_path = deployment_env_path(settings, deployment)
+    token = _read_env_value(env_path, "KB_ROUTER_TOKEN")
+    if not token:
+        token = _read_env_value(settings.config_dir.expanduser() / ".env", "KB_ROUTER_TOKEN")
+    port = _read_env_value(env_path, "PORT_BRAIN_API")
+    url = f"http://localhost:{port}" if port.isdigit() else settings.brain_url
+    return url, token
 
 
 def _compose_binargs() -> list[str]:

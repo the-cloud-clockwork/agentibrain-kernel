@@ -9,7 +9,16 @@ Two ways in. Pick by whether you intend to change the kernel's code.
 ### Run it (pip — no clone)
 
 ```bash
-pip install agentibrain
+pip install agentibrain agentihooks
+agentibrain install             # or: agentibrain install --ollama   (no API key needed)
+agentibrain check               # verify
+```
+
+`install` is `init --local` + `scaffold` + `up`, in that order, plus the
+agentihooks wiring most people forget. Run the steps yourself when you need to
+edit `~/.agentibrain/.env` between rendering the stack and starting it:
+
+```bash
 agentibrain init --local        # writes ~/.agentibrain/{config.yaml,.env,compose.yml} + creates the vault
 agentibrain scaffold            # seed the vault tree (30 folders, 52 files)
 agentibrain up                  # pull images from GHCR, start 9 services, run migrations
@@ -22,7 +31,8 @@ That is the whole brain: `postgres`, `redis`, `minio`, `embeddings`,
 built locally.
 
 Order matters: `scaffold` before `up`. The vault is a bind-mount source, so a
-container that reaches it first would own it as root.
+container that reaches it first would own it as root. `install` sequences them
+in that order for you.
 
 ### Develop it (clone — builds from source)
 
@@ -70,16 +80,24 @@ unconfigured: semantic search and AI synthesis. Both are off, nothing else is.
 ### No API key? Bundle a local model
 
 ```bash
+agentibrain install --ollama    # pulls llama3.2:3b + nomic-embed-text on first start
+```
+
+or the same thing step by step:
+
+```bash
 agentibrain init --local --ollama
 agentibrain scaffold
-agentibrain up          # pulls llama3.2:3b + nomic-embed-text on first start
+agentibrain up
 ```
 
 This points **both** halves at a bundled Ollama — chat (AI ticks, `kb_brief`)
 and embeddings (semantic search) — so the stack needs no API key anywhere.
-`llama3.2:3b` runs on an 8 GB machine. For a larger one, set
-`BRAIN_OLLAMA_CHAT_MODEL` before `init` (`llama3.1:8b` at 16 GB, `qwen2.5:14b`
-at 32 GB+) — settings take the `BRAIN_` prefix.
+`llama3.2:3b` runs on an 8 GB machine. For a larger one, export
+`BRAIN_OLLAMA_CHAT_MODEL` before whichever command *creates* the deployment —
+`init` or `install` (`llama3.1:8b` at 16 GB, `qwen2.5:14b` at 32 GB+); settings
+take the `BRAIN_` prefix. Once the stack exists both commands reuse it, so the
+model is fixed at creation and `--ollama` on a later `install` does nothing.
 
 The first `up` downloads roughly 2.5 GB of weights and the models stay in a
 named volume across restarts.
@@ -161,13 +179,55 @@ pip install agentihooks
 Then link the brain profile so your agents get brain MCP tools + marker rules + broadcast channel config:
 
 ```bash
-agentibrain install
+agentibrain install              # or: agentibrain install --ollama
 ```
 
-`install` links the profile that ships inside the installed `agentibrain`
-package, so it works the same from a PyPI wheel and from a source checkout.
+One command sets the machine up: it reuses or renders a local stack, scaffolds
+the vault, starts it, completes `~/.agentibrain/.env` with `BRAIN_URL` beside
+the bearer, creates the marker outbox, and links the brain profile that ships
+inside the installed package — identical from a PyPI wheel and from a source
+checkout. `--ollama` bundles Ollama for chat and embeddings, so the stack needs
+no API key and makes no external call.
+
+There is one config file, and it is the brain's own. `~/.agentibrain/.env`
+already feeds docker compose; agentihooks reads it too and adopts `BRAIN_URL`
+and `KB_ROUTER_TOKEN` from it,
+so the bearer is never copied and a rotation cannot go stale somewhere else.
+Only those connection keys are adopted — that file's database, object-store and
+provider credentials never enter a session's environment. An explicit setting in
+`~/.agentihooks/*.env` still outranks the discovery, and the process environment
+outranks both. `agentibrain check` reports what agentihooks itself resolved and
+probes it with the hook's own bearer.
+
+`AGENTIBRAIN_HOME` moves that directory, and both projects honour it — the
+kernel resolves it on every call, so exporting it relocates the config, the
+rendered stack and the file agentihooks reads, together. It defaults to
+`~/.agentibrain`.
+
 Point agentihooks at an arbitrary directory instead with
 `agentihooks link-profile link <path>`.
+
+#### One brain, many machines
+
+Inference belongs to the **stack**, not to the machine running Claude Code. You
+do not need an API key, a gateway or Ollama on every laptop — you need one brain
+that has them, and a `BRAIN_URL` on everything else.
+
+```bash
+# the machine that hosts the brain
+agentibrain install                          # or --ollama if it has no provider
+
+# every other machine — no stack, no vault, no key
+agentibrain install --brain-url http://<host>:8103 --token <bearer>
+```
+
+`--brain-url` makes the install client-only: it skips the stack and the vault,
+writes that machine's own `~/.agentibrain/.env` with just the URL and the
+bearer, and links the profile. `--token` also reads `KB_ROUTER_TOKEN` from the
+environment, the same as `check`, `tick` and `sync`. The bearer is whatever
+`KB_ROUTER_TOKEN` the hosting machine generated — copy it from that machine's
+`~/.agentibrain/.env`. To repoint a client later, edit its own file; there is
+nothing to reinstall.
 
 What this gives you:
 - **SessionStart** — `brain_adapter` calls `/feed` and injects hot arcs, signals, operator intent, and tick diffs as `BROADCAST` blocks into every agent session
@@ -399,7 +459,24 @@ actually live: [`local/README.md`](local/README.md#updating-to-a-newer-version).
 
 ### 2. Server (Docker Compose, headless)
 
-Same `compose.yml` works on any Linux box with Docker. Bind the vault to a real path, expose `8103` behind your reverse proxy of choice (Traefik, Caddy, nginx), point your fleet at it via `BRAIN_URL`. No Kubernetes required.
+Same `compose.yml` works on any Linux box with Docker. Bind the vault to a real path, point your fleet at it via `BRAIN_URL`. No Kubernetes required.
+
+**What is reachable, and what is not.** Postgres, Redis, MinIO, embeddings and
+Ollama bind `127.0.0.1` — nothing outside the machine has any business reaching
+them, and several still carry generated default credentials. Only `brain-api`
+(8103) and `mcp` (8104) are published on all interfaces, because a client-only
+install needs exactly those two. Narrow them with `BIND_HOST`:
+
+```bash
+BIND_HOST=127.0.0.1 docker compose up -d   # loopback only; put a proxy in front
+```
+
+**Auth fails closed.** brain-api refuses to serve without a bearer: every
+endpoint answers `503` until `KB_ROUTER_TOKEN` (or `KB_ROUTER_TOKENS`, a
+comma-separated list) is set. `init` and `install` always generate one, so an
+empty token set means the deployment is misconfigured — never that it wanted to
+be public. Put a reverse proxy in front for TLS if you expose it beyond a
+trusted network; the bearer is authentication, not transport security.
 
 ### 3. Kubernetes (Helm)
 

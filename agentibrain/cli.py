@@ -17,8 +17,9 @@ from rich.console import Console
 from rich.markup import escape
 
 from agentibrain import __version__, bootstrap
+from agentibrain import hooks_env as _hooks_env
 from agentibrain import scaffold as _scaffold
-from agentibrain.config import DEFAULT_CONFIG_DIR, DEFAULT_CONFIG_PATH, BrainSettings
+from agentibrain.config import BrainSettings, config_dir, config_path
 
 console = Console()
 
@@ -34,10 +35,11 @@ _TICK_HEARTBEAT_SECONDS = 60
 def _load_settings() -> BrainSettings:
     """Load BrainSettings from ``~/.agentibrain/config.yaml`` plus env."""
     payload: dict[str, Any] = {}
-    if DEFAULT_CONFIG_PATH.exists():
-        raw = yaml.safe_load(DEFAULT_CONFIG_PATH.read_text()) or {}
+    cfg_path = config_path()
+    if cfg_path.exists():
+        raw = yaml.safe_load(cfg_path.read_text()) or {}
         payload = {k: v for k, v in raw.items() if v is not None}
-    env_path = DEFAULT_CONFIG_DIR / ".env"
+    env_path = config_dir() / ".env"
     env_file = str(env_path) if env_path.exists() else None
     return BrainSettings(**payload, _env_file=env_file)
 
@@ -251,17 +253,28 @@ def status_cmd() -> None:
         console.print(f"[red]health check failed: {e}[/red]")
 
 
+def _token_from_env_file(settings: BrainSettings) -> str:
+    """First *populated* KB_ROUTER_TOKEN assignment. An empty earlier line is
+    skipped, not treated as the answer — write_env_file emits a commented block
+    that can leave a bare name above the real value."""
+    env_path = settings.config_dir.expanduser() / ".env"
+    if not env_path.exists():
+        return ""
+    for line in env_path.read_text().splitlines():
+        if line.startswith("KB_ROUTER_TOKEN="):
+            found = line.split("=", 1)[1].strip()
+            if found:
+                return found
+    return ""
+
+
 def _resolve_token(settings: BrainSettings, token: str | None) -> str:
     """Bearer token from the flag/env, else the deployment's own .env, else exit 2."""
     if token:
         return token
-    env_path = settings.config_dir.expanduser() / ".env"
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            if line.startswith("KB_ROUTER_TOKEN="):
-                found = line.split("=", 1)[1].strip()
-                if found:
-                    return found
+    found = _token_from_env_file(settings)
+    if found:
+        return found
     console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
     sys.exit(2)
 
@@ -352,6 +365,32 @@ def _get_json(
         return None, f"non-JSON response: {r.text[:200]}", r.status_code
 
 
+def _probe_hooks_auth(cfg: dict) -> dict:
+    """Authenticate against brain-api with the token the HOOK would use.
+
+    The kernel resolves its bearer from ~/.agentibrain/.env and agentihooks
+    resolves its own from the ~/.agentihooks env chain. A check that used the
+    kernel's token would pass on precisely the machine where every marker POST
+    answers 401. /feed is the reader's endpoint and carries the same bearer as
+    the writer's /marker, so one probe covers both directions.
+    """
+    url = (cfg.get("brain_url") or "").rstrip("/")
+    if not url:
+        return {"status": "fail", "reason": "no BRAIN_URL in the agentihooks env chain"}
+    if not cfg.get("token_present"):
+        return {"status": "fail", "reason": "no BRAIN_HTTP_TOKEN or KB_ROUTER_TOKEN"}
+    _, err, status = _get_json(url, "/feed", cfg["token"], 10.0)
+    if status in (401, 403):
+        return {
+            "status": "fail",
+            "http": status,
+            "reason": f"brain-api rejected the hook's token (HTTP {status})",
+        }
+    if err:
+        return {"status": "warn", "reason": err}
+    return {"status": "ok", "http": status}
+
+
 @main.command("check")
 @click.option("--deps-only", is_flag=True, help="Only the dependency check (/health/deep).")
 @click.option("--pipeline-only", is_flag=True, help="Only the pipeline check (/health/pipeline).")
@@ -412,12 +451,23 @@ def check_cmd(
     if run_pipeline:
         pipe, pipe_err, pipe_status = _get_json(base, "/health/pipeline", token, 30.0)
 
+    hooks_cfg = _hooks_env.resolve_consumer_config()
+    hooks_probe = _probe_hooks_auth(hooks_cfg)
+
     if as_json:
         payload: dict[str, Any] = {"brain_url": base}
         if run_deps:
             payload["dependencies"] = deps if deps is not None else {"error": deps_err}
         if run_pipeline:
             payload["pipeline"] = pipe if pipe is not None else {"error": pipe_err}
+        payload["agentihooks"] = {
+            "resolved_by": hooks_cfg["source"],
+            "brain_url": hooks_cfg["brain_url"],
+            "reader_enabled": hooks_cfg["reader_enabled"],
+            "writer_enabled": hooks_cfg["writer_enabled"],
+            "token_present": hooks_cfg["token_present"],
+            "auth_probe": hooks_probe,
+        }
         console.print_json(_json.dumps(payload))
     else:
         if run_deps:
@@ -484,6 +534,26 @@ def check_cmd(
                 "sent — run `agentibrain sync` to replay them[/yellow]"
             )
 
+        console.print("\n[bold]agentihooks[/bold] (this machine's writer and reader)")
+        console.print(f"      resolved by: {hooks_cfg['source']}")
+        console.print(f"      brain_url:   {hooks_cfg['brain_url'] or '(unset)'}", markup=False)
+        console.print(f"      reader:      {'on' if hooks_cfg['reader_enabled'] else 'OFF'}")
+        console.print(f"      writer:      {'on' if hooks_cfg['writer_enabled'] else 'OFF'}")
+        console.print(
+            f"      token:       {'present' if hooks_cfg['token_present'] else 'MISSING'}"
+        )
+        probe_mark = _STAGE_MARK.get(hooks_probe["status"], "?")
+        console.print(f"  {probe_mark} [bold]auth[/bold] (GET /feed with the hook's own token)")
+        if hooks_probe.get("reason"):
+            console.print(f"      [red]→ {escape(str(hooks_probe['reason']))}[/red]")
+        if hooks_probe["status"] == "fail" or not (
+            hooks_cfg["reader_enabled"] and hooks_cfg["writer_enabled"]
+        ):
+            console.print(
+                "      [yellow]→ run `agentibrain install` to republish BRAIN_URL and the "
+                "token into the agentihooks env chain[/yellow]"
+            )
+
     # Exit contract mirrors `sync`: 0 clean, 1 hard failure, 2 degraded.
     if (run_deps and deps is None) or (run_pipeline and pipe is None):
         sys.exit(1)
@@ -496,6 +566,8 @@ def check_cmd(
         states.append("ok" if deps.get("status") == "ok" else "broken")
     if run_pipeline and pipe:
         states.append(pipe.get("status", "unknown"))
+    if hooks_probe["status"] == "fail":
+        states.append("broken")
     if "broken" in states or "unknown" in states:
         if not as_json:
             console.print("[red]status: broken[/red]")
@@ -892,7 +964,72 @@ def _agentihooks_bin() -> str:
     sys.exit(1)
 
 
+def _create_deployment(
+    settings: BrainSettings, *, vault: str | None, use_ollama: bool, dry_run: bool
+) -> BrainSettings:
+    """Render a local stack. Mirrors `init`, minus printing the token."""
+    vault_path = Path(vault).expanduser().resolve() if vault else settings.vault_path
+    fresh = BrainSettings(mode="local", vault_path=vault_path, ollama=use_ollama, _env_file=None)
+    if dry_run:
+        console.print(f"  would render a local stack → {fresh.config_dir}")
+        return fresh
+
+    token = _token_from_env_file(fresh) or bootstrap.generate_token()
+    fresh.vault_path.mkdir(parents=True, exist_ok=True)
+    cfg_path = bootstrap.write_config(fresh)
+    env_path = bootstrap.write_env_file(fresh, token)
+    bootstrap.write_compose(fresh, bootstrap.render_compose(fresh))
+    console.print(f"  [green]✓[/green] config → {cfg_path}")
+    console.print(f"  [green]✓[/green] env    → {env_path}  (chmod 600)")
+    if use_ollama:
+        console.print(
+            f"  [green]✓[/green] inference → bundled Ollama "
+            f"({fresh.ollama_chat_model} + {fresh.ollama_embed_model}, pulled on first up)"
+        )
+    return fresh
+
+
+def _start_stack(settings: BrainSettings) -> None:
+    deployment = bootstrap.find_deployment(settings)
+    if deployment is None:
+        console.print("  [red]✗ no compose deployment to start[/red]")
+        sys.exit(2)
+    mode, compose_dir = deployment
+    if mode == "init":
+        proc = bootstrap.compose_up(settings)
+        if proc.returncode != 0:
+            console.print(f"  [red]✗ compose up failed[/red]\n{proc.stderr}")
+            sys.exit(proc.returncode)
+        for line in bootstrap.run_migrations(settings):
+            console.print(f"  {line}")
+    else:
+        rc = bootstrap.compose_stream(["up", "-d"], compose_dir)
+        if rc != 0:
+            sys.exit(rc)
+    console.print(f"  [green]✓[/green] up ({mode} @ {compose_dir})")
+
+
 @main.command("install")
+@click.option("--vault", type=click.Path(), help="Vault path, when this run creates the stack.")
+@click.option(
+    "--ollama",
+    "use_ollama",
+    is_flag=True,
+    help="Bundle Ollama for chat + embeddings. No API key, no external calls.",
+)
+@click.option(
+    "--brain-url",
+    # Deliberately no envvar: this switches the whole install into client-only,
+    # and BRAIN_URL is ambient on any machine that already talks to a brain —
+    # agentihooks and the kernel both read it. Inheriting it here silently skips
+    # the vault and the stack on a machine that wanted both.
+    help="Wire this machine to an existing brain instead of giving it one of its own.",
+)
+@click.option(
+    "--token",
+    envvar="KB_ROUTER_TOKEN",
+    help="Bearer for that brain. Defaults to the local deployment's .env.",
+)
 @click.option(
     "--name", default="brain", show_default=True, help="Alias to register with agentihooks."
 )
@@ -906,34 +1043,138 @@ def _agentihooks_bin() -> str:
 @click.option(
     "--for-target", default=None, help="Restrict the chain edit to one agentihooks target."
 )
+@click.option("--no-stack", is_flag=True, help="Configure only — never create or start a stack.")
+@click.option("--no-link", is_flag=True, help="Skip the agentihooks profile link.")
 @click.option(
     "--no-init", is_flag=True, help="Register the link but skip the agentihooks re-install."
 )
-@click.option(
-    "--dry-run", is_flag=True, help="Print the agentihooks command instead of running it."
-)
+@click.option("--dry-run", is_flag=True, help="Report every step without changing anything.")
 def install_cmd(
+    vault: str | None,
+    use_ollama: bool,
+    brain_url: str | None,
+    token: str | None,
     name: str,
     profile_name: str,
     for_target: str | None,
+    no_stack: bool,
+    no_link: bool,
     no_init: bool,
     dry_run: bool,
 ) -> None:
-    """Link the packaged brain profile into the agentihooks chain."""
+    """Set this machine up end to end: stack, vault, agentihooks config, profile.
+
+    Idempotent — an existing deployment is reused, the vault is never
+    overwritten, and the profile link is upserted.
+
+    `--brain-url` wires the machine to a brain that already runs somewhere else.
+    Inference and the vault belong to that stack, so this machine needs neither
+    a stack of its own nor an API key: only the URL, the bearer, and the hook
+    config. Without it the machine gets its own brain.
+    """
+    settings = _load_settings()
     profile_dir = _packaged_profile(profile_name)
-    cmd = [_agentihooks_bin(), "link-profile", "link", str(profile_dir), "--name", name]
-    if for_target:
-        cmd += ["--for-target", for_target]
-    if no_init:
-        cmd.append("--no-init")
+    remote = bool(brain_url)
+    if remote:
+        settings.brain_url = brain_url.rstrip("/")
 
-    console.print(f"[green]→[/green] {escape(' '.join(cmd))}", soft_wrap=True)
+    console.print("[bold]1. deployment[/bold]")
+    deployment: tuple[str, Path] | None = None
+    if remote:
+        console.print(f"  [--] client-only — using the brain at {settings.brain_url}")
+    else:
+        deployment = bootstrap.find_deployment(settings)
+        if deployment is not None:
+            mode, compose_dir = deployment
+            console.print(f"  [green]✓[/green] reusing {mode} @ {compose_dir}")
+        elif no_stack:
+            console.print(
+                f"  [yellow]![/yellow] none found; configuring against {settings.brain_url}"
+            )
+        else:
+            settings = _create_deployment(
+                settings, vault=vault, use_ollama=use_ollama, dry_run=dry_run
+            )
+            if not dry_run:
+                deployment = bootstrap.find_deployment(settings)
+
+    console.print("\n[bold]2. vault[/bold]")
+    if remote:
+        console.print("  [--] skipped — the vault belongs to the brain's own machine")
+    elif dry_run:
+        console.print(f"  would scaffold {settings.vault_path}")
+    else:
+        try:
+            result = _scaffold.scaffold(settings.vault_path)
+        except _scaffold.SchemaConflict as e:
+            console.print(f"  [red]✗ {escape(str(e))}[/red]")
+            sys.exit(2)
+        console.print(
+            f"  [green]✓[/green] {result['vault']} "
+            f"({result['folders_created']} folders, {result['files_written']} files)"
+        )
+
+    console.print("\n[bold]3. stack[/bold]")
+    if remote:
+        console.print("  [--] skipped — client-only")
+    elif no_stack:
+        console.print("  [--] skipped (--no-stack)")
+    elif dry_run:
+        console.print("  would start the compose stack")
+    else:
+        _start_stack(settings)
+
+    console.print("\n[bold]4. brain config[/bold]")
+    if not remote:
+        found_url, found_token = bootstrap.resolve_endpoint(settings, deployment)
+        settings.brain_url = found_url
+        token = token or found_token
+    token = token or _token_from_env_file(settings)
+    if not token and not dry_run:
+        fix = (
+            "pass --token, or set KB_ROUTER_TOKEN"
+            if remote
+            else f"no KB_ROUTER_TOKEN in {bootstrap.deployment_env_path(settings, deployment)}"
+        )
+        console.print(f"  [red]✗ no bearer token for {settings.brain_url} — {fix}[/red]")
+        sys.exit(2)
+
+    brain_env = bootstrap.deployment_env_path(settings, deployment)
     if dry_run:
-        return
+        console.print(f"  would complete {brain_env}")
+    else:
+        for outbox in _hooks_env.ensure_outbox_dirs():
+            console.print(f"  [green]✓[/green] outbox → {outbox}")
+        added = bootstrap.upsert_env_values(
+            brain_env, {"BRAIN_URL": settings.brain_url, "KB_ROUTER_TOKEN": token}
+        )
+        console.print(f"  [green]✓[/green] brain env → {brain_env}  (chmod 600)")
+        if added:
+            console.print(f"       added {', '.join(added)}", markup=False)
+        swept = _hooks_env.sweep_managed_file()
+        if swept:
+            console.print(f"  [green]✓[/green] removed duplicated copy → {swept}")
+        console.print(
+            "       agentihooks reads this file directly — nothing is copied into ~/.agentihooks",
+            markup=False,
+        )
 
-    result = subprocess.run(cmd)
-    if result.returncode != 0:
-        sys.exit(result.returncode)
+    console.print("\n[bold]5. profile[/bold]")
+    if no_link:
+        console.print("  [--] skipped (--no-link)")
+    else:
+        cmd = [_agentihooks_bin(), "link-profile", "link", str(profile_dir), "--name", name]
+        if for_target:
+            cmd += ["--for-target", for_target]
+        if no_init:
+            cmd.append("--no-init")
+        console.print(f"  [green]→[/green] {escape(' '.join(cmd))}", soft_wrap=True)
+        if not dry_run:
+            result = subprocess.run(cmd)
+            if result.returncode != 0:
+                sys.exit(result.returncode)
+
+    console.print("\nVerify: [cyan]agentibrain check[/cyan]")
 
 
 @main.command("version")
