@@ -1075,6 +1075,7 @@ def install_cmd(
         settings.brain_url = brain_url.rstrip("/")
 
     console.print("[bold]1. deployment[/bold]")
+    deployment: tuple[str, Path] | None = None
     if remote:
         console.print(f"  [--] client-only — using the brain at {settings.brain_url}")
     else:
@@ -1090,6 +1091,8 @@ def install_cmd(
             settings = _create_deployment(
                 settings, vault=vault, use_ollama=use_ollama, dry_run=dry_run
             )
+            if not dry_run:
+                deployment = bootstrap.find_deployment(settings)
 
     console.print("\n[bold]2. vault[/bold]")
     if remote:
@@ -1118,9 +1121,18 @@ def install_cmd(
         _start_stack(settings)
 
     console.print("\n[bold]4. agentihooks config[/bold]")
+    if not remote:
+        found_url, found_token = bootstrap.resolve_endpoint(settings, deployment)
+        settings.brain_url = found_url
+        token = token or found_token
     token = token or _token_from_env_file(settings)
     if not token and not dry_run:
-        fix = "pass --token, or set KB_ROUTER_TOKEN" if remote else "run `agentibrain init` first"
+        fix = (
+            "pass --token, or set KB_ROUTER_TOKEN"
+            if remote
+            else f"no KB_ROUTER_TOKEN in "
+            f"{bootstrap.deployment_env_path(settings, deployment)} — run `agentibrain init`"
+        )
         console.print(f"  [red]✗ no bearer token for {settings.brain_url} — {fix}[/red]")
         sys.exit(2)
     if dry_run:

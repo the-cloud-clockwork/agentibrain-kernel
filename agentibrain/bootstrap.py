@@ -254,6 +254,39 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
     return None
 
 
+def deployment_env_path(settings: BrainSettings, deployment: tuple[str, Path] | None) -> Path:
+    """The .env the discovered deployment actually reads.
+
+    A repo checkout reads its own; only the init-rendered stack reads the one
+    under config_dir. The two are usually the same file — local/bootstrap.sh
+    symlinks them — but nothing guarantees it, and a second checkout breaks it.
+    """
+    cfg_env = settings.config_dir.expanduser() / ".env"
+    if deployment is None:
+        return cfg_env
+    mode, compose_dir = deployment
+    return compose_dir / ".env" if mode == "root-compose" else cfg_env
+
+
+def resolve_endpoint(
+    settings: BrainSettings, deployment: tuple[str, Path] | None
+) -> tuple[str, str]:
+    """``(brain_url, token)`` as the deployment on this machine defines them.
+
+    Both values are already on disk next to the compose file that publishes the
+    port — asking the operator to supply either for a local stack is asking
+    them to retype what the machine knows. Falls back to config_dir's .env for
+    the token so a checkout that keeps secrets there still resolves.
+    """
+    env_path = deployment_env_path(settings, deployment)
+    token = _read_env_value(env_path, "KB_ROUTER_TOKEN")
+    if not token:
+        token = _read_env_value(settings.config_dir.expanduser() / ".env", "KB_ROUTER_TOKEN")
+    port = _read_env_value(env_path, "PORT_BRAIN_API")
+    url = f"http://localhost:{port}" if port.isdigit() else settings.brain_url
+    return url, token
+
+
 def _compose_binargs() -> list[str]:
     """Pick `docker compose` vs legacy `docker-compose`, probing the plugin.
 

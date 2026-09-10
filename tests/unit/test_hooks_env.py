@@ -252,3 +252,71 @@ def test_a_remote_install_without_a_token_says_which_flag_to_pass(client_only, m
     assert "--token" in flat
     # `agentibrain init` would render a stack this machine explicitly does not want.
     assert "init" not in flat
+
+
+# ── the local case: the machine already knows both values ────────────
+
+
+@pytest.fixture
+def running_checkout(hooks_home, tmp_path, monkeypatch):
+    """A repo-checkout deployment whose .env is NOT the one under config_dir."""
+    from agentibrain.config import BrainSettings
+
+    repo = tmp_path / "checkout"
+    repo.mkdir()
+    cfg = tmp_path / "config-dir"
+    cfg.mkdir()
+
+    monkeypatch.setattr(
+        cli, "_load_settings", lambda: BrainSettings(config_dir=cfg, _env_file=None)
+    )
+    monkeypatch.setattr(
+        cli.bootstrap, "find_deployment", lambda settings, cwd=None: ("root-compose", repo)
+    )
+    monkeypatch.setattr(
+        cli._scaffold,
+        "scaffold",
+        lambda path, **kw: {"vault": str(path), "folders_created": 0, "files_written": 0},
+    )
+    monkeypatch.setattr(cli, "_agentihooks_bin", lambda: "/usr/bin/agentihooks")
+    return repo
+
+
+def _managed():
+    return hooks_env.managed_env_path().read_text()
+
+
+def test_the_token_comes_from_the_deployment_that_is_running(running_checkout):
+    """config_dir holds nothing; the compose stack's own .env holds everything."""
+    (running_checkout / ".env").write_text("KB_ROUTER_TOKEN=from-deployment\n")
+
+    result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
+
+    assert result.exit_code == 0, result.output
+    assert "BRAIN_HTTP_TOKEN=from-deployment" in _managed()
+
+
+def test_a_relocated_port_is_honoured(running_checkout):
+    """PORT_BRAIN_API is what compose publishes; 8103 is only its default."""
+    (running_checkout / ".env").write_text("KB_ROUTER_TOKEN=t\nPORT_BRAIN_API=9999\n")
+
+    CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
+
+    assert "BRAIN_URL=http://localhost:9999" in _managed()
+
+
+def test_an_explicit_token_still_wins(running_checkout):
+    (running_checkout / ".env").write_text("KB_ROUTER_TOKEN=from-deployment\n")
+
+    CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link", "--token", "typed-by-hand"])
+
+    assert "BRAIN_HTTP_TOKEN=typed-by-hand" in _managed()
+
+
+def test_a_missing_token_names_the_file_it_looked_in(running_checkout):
+    (running_checkout / ".env").write_text("PORT_BRAIN_API=8103\n")
+
+    result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
+
+    assert result.exit_code == 2
+    assert str(running_checkout / ".env") in " ".join(result.output.split())
