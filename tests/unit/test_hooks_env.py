@@ -224,3 +224,17 @@ def test_a_file_the_operator_wrote_is_not_swept(running_checkout):
     CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
 
     assert mine.exists()
+
+
+def test_ambient_brain_url_does_not_make_the_install_client_only(running_checkout, monkeypatch):
+    """BRAIN_URL is ambient wherever a brain is already in use — agentihooks
+    reads it too. Only the explicit flag may skip the vault and the stack."""
+    monkeypatch.setenv("BRAIN_URL", "http://ambient:8103")
+    (running_checkout / ".env").write_text("KB_ROUTER_TOKEN=t\n")
+
+    result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
+
+    flat = " ".join(result.output.split())
+    assert result.exit_code == 0, result.output
+    assert "client-only" not in flat
+    assert "reusing root-compose" in flat

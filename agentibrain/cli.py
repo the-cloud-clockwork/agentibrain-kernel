@@ -1018,7 +1018,10 @@ def _start_stack(settings: BrainSettings) -> None:
 )
 @click.option(
     "--brain-url",
-    envvar="BRAIN_URL",
+    # Deliberately no envvar: this switches the whole install into client-only,
+    # and BRAIN_URL is ambient on any machine that already talks to a brain —
+    # agentihooks and the kernel both read it. Inheriting it here silently skips
+    # the vault and the stack on a machine that wanted both.
     help="Wire this machine to an existing brain instead of giving it one of its own.",
 )
 @click.option(
