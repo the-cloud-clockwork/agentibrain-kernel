@@ -758,7 +758,8 @@ Scaffold is idempotent. Schema-version mismatch is a hard error unless `--force-
 | Env var | Default | Purpose |
 |---|---|---|
 | `VAULT_ROOT` | `/vault` | Vault mount path inside containers (NFS in K8s, bind mount in Compose) |
-| `KB_ROUTER_TOKEN` / `KB_ROUTER_TOKENS` | — | Bearer auth (single token or comma-sep list) |
+| `KB_ROUTER_TOKEN` / `KB_ROUTER_TOKENS` | **required** | Bearer auth (single token or comma-separated list). brain-api fails closed — every endpoint answers `503` until one is set. `init` and `install` generate one, so an empty value means misconfigured, not public. |
+| `BIND_HOST` | `0.0.0.0` | Host interface for the two published services, `brain-api` and `mcp`. Set `127.0.0.1` to keep them local and front them with a proxy. Postgres, redis, minio, embeddings and ollama always bind loopback. |
 | `EMBEDDINGS_URL` | `http://embeddings:8080` | Embeddings service URL |
 | `EMBEDDINGS_API_KEY` | — | Bearer token for the embeddings service |
 | `INFERENCE_URL` | — | OpenAI-compatible LLM gateway. Empty = deterministic-only ticks. See [`docs/GATEWAY-CONTRACT.md`](docs/GATEWAY-CONTRACT.md) |
