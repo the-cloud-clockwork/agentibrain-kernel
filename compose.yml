@@ -22,7 +22,7 @@ services:
       - pg-data:/var/lib/postgresql/data
       - ./local/sql:/docker-entrypoint-initdb.d:ro
     ports:
-      - "${PORT_POSTGRES:-5432}:5432"
+      - "127.0.0.1:${PORT_POSTGRES:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-brain} -d ${POSTGRES_DB:-brain}"]
       interval: 10s
@@ -38,7 +38,7 @@ services:
     volumes:
       - redis-data:/data
     ports:
-      - "${PORT_REDIS:-6379}:6379"
+      - "127.0.0.1:${PORT_REDIS:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -70,7 +70,7 @@ services:
       API_KEYS: ${EMBEDDINGS_API_KEYS:-}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
-      - "${PORT_EMBEDDINGS:-8102}:8080"
+      - "127.0.0.1:${PORT_EMBEDDINGS:-8102}:8080"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"]
       interval: 30s
@@ -116,7 +116,7 @@ services:
     volumes:
       - ${VAULT_ROOT_HOST:-~/agentibrain-vault}:/vault
     ports:
-      - "${PORT_BRAIN_API:-8103}:8080"
+      - "${BIND_HOST:-0.0.0.0}:${PORT_BRAIN_API:-8103}:8080"
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/health"]
       interval: 30s
@@ -477,7 +477,7 @@ services:
       MCP_PROXY_API_KEY: ""
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
-      - "${PORT_MCP:-8104}:8080"
+      - "${BIND_HOST:-0.0.0.0}:${PORT_MCP:-8104}:8080"
 
 volumes:
   pg-data:
