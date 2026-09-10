@@ -68,6 +68,7 @@ def install_env(tmp_path, monkeypatch):
         cli, "_load_settings", lambda: BrainSettings(config_dir=tmp_path, _env_file=None)
     )
     monkeypatch.setattr(cli, "_token_from_env_file", lambda settings: "t0ken")
+    monkeypatch.setattr(cli.bootstrap, "find_deployment", lambda settings, cwd=None: None)
     monkeypatch.setattr(
         cli._scaffold,
         "scaffold",

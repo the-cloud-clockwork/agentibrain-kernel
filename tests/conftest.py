@@ -32,3 +32,20 @@ _OPERATOR_ENV = (
 def _no_operator_env(monkeypatch):
     for name in _OPERATOR_ENV:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_deployment(monkeypatch):
+    """No test may discover the machine's actual compose stack.
+
+    find_deployment walks up from the cwd — under pytest, this repo — and then
+    falls back to the AGENTIBRAIN_REPO pin inside the operator's own
+    ~/.agentibrain/.env. Either route reaches a real .env holding a live
+    KB_ROUTER_TOKEN, which a failing assertion renders straight into the diff.
+    Scrubbing the environment does not cover this; the path is the filesystem.
+
+    A test that wants a deployment stubs it back, which is the opt-in.
+    """
+    from agentibrain import bootstrap
+
+    monkeypatch.setattr(bootstrap, "find_deployment", lambda *a, **kw: None)
