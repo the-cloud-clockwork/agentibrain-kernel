@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -860,6 +862,78 @@ def scaffold_cmd(vault_path: str | None, force_upgrade: bool) -> None:
     console.print(
         f"[green]✓[/green] schema   → v{result['schema']['version']} ({result['schema']['schema']})"
     )
+
+
+PROFILES_ROOT = Path(__file__).parent / "profiles"
+
+
+def _packaged_profile(name: str) -> Path:
+    profile_dir = PROFILES_ROOT / name
+    if not (profile_dir / "profile.yml").is_file():
+        console.print(
+            f"[red]Packaged profile '{name}' is missing:[/red] {escape(str(profile_dir))}"
+        )
+        console.print("Reinstall agentibrain — the wheel was built without its profile data.")
+        sys.exit(1)
+    return profile_dir
+
+
+def _agentihooks_bin() -> str:
+    # Same-environment sibling wins over PATH: a venv install must not drive a
+    # stray ~/.local/bin agentihooks holding different state.
+    sibling = Path(sys.executable).parent / "agentihooks"
+    if sibling.is_file():
+        return str(sibling)
+    found = shutil.which("agentihooks")
+    if found:
+        return found
+    console.print("[red]agentihooks not found on PATH.[/red]")
+    console.print("Install it first: [bold]pip install agentihooks[/bold]")
+    sys.exit(1)
+
+
+@main.command("install")
+@click.option(
+    "--name", default="brain", show_default=True, help="Alias to register with agentihooks."
+)
+@click.option(
+    "--profile",
+    "profile_name",
+    default="brain",
+    show_default=True,
+    help="Packaged profile to link.",
+)
+@click.option(
+    "--for-target", default=None, help="Restrict the chain edit to one agentihooks target."
+)
+@click.option(
+    "--no-init", is_flag=True, help="Register the link but skip the agentihooks re-install."
+)
+@click.option(
+    "--dry-run", is_flag=True, help="Print the agentihooks command instead of running it."
+)
+def install_cmd(
+    name: str,
+    profile_name: str,
+    for_target: str | None,
+    no_init: bool,
+    dry_run: bool,
+) -> None:
+    """Link the packaged brain profile into the agentihooks chain."""
+    profile_dir = _packaged_profile(profile_name)
+    cmd = [_agentihooks_bin(), "link-profile", "link", str(profile_dir), "--name", name]
+    if for_target:
+        cmd += ["--for-target", for_target]
+    if no_init:
+        cmd.append("--no-init")
+
+    console.print(f"[green]→[/green] {escape(' '.join(cmd))}", soft_wrap=True)
+    if dry_run:
+        return
+
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        sys.exit(result.returncode)
 
 
 @main.command("version")

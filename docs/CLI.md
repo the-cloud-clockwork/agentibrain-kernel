@@ -23,6 +23,7 @@ agentibrain --version
 | `agentibrain check` | **Deep verification** — see below. |
 | `agentibrain tick [--dry-run] [--no-ai] [--wait]` | Enqueue a brain tick; `--wait` blocks until it completes. |
 | `agentibrain sync [--wait\|--check]` | **Re-ingest everything** — replay buffered markers (`~/.agentihooks/brain-outbox` + `-backlog`) into `POST /marker`, then enqueue a tick so replays cluster and the `raw/` index refreshes. Idempotent; original timestamps preserved. `--wait` blocks until the tick completes; `--check` does the same but narrates: per-buffer progress counters, tick state changes, and a final summary with remaining buffered files. Exit: 0 clean, 1 hard failure, 2 degraded. |
+| `agentibrain install` | Link the packaged brain profile (`agentibrain/profiles/brain`) into the agentihooks chain via `agentihooks link-profile link`. Resolves the path inside the installed package, so a PyPI wheel links the same profile a source checkout does. `--name`, `--profile`, `--for-target`, `--no-init`, `--dry-run`. |
 | `agentibrain scaffold [PATH]` | Write/repair the vault layout schema. Authoritative writer of `.brain-schema`. |
 | `agentibrain version` | Print version. |
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agentibrain"
-version = "0.11.4"
+version = "0.12.0"
 description = "Standalone brain + knowledge-base kernel (agenti ecosystem)"
 readme = "README.md"
 license = { text = "MIT" }
@@ -49,11 +49,16 @@ Issues = "https://github.com/The-Cloud-Clockwork/agentibrain-kernel/issues"
 include = ["agentibrain*"]
 
 [tool.setuptools.package-data]
+# The `.claude/` overlay under profiles/ is NOT covered here: setuptools expands
+# these with stdlib glob, whose wildcards skip hidden names. MANIFEST.in carries
+# the whole profiles tree instead, and is the only thing that survives a build
+# from an unpacked sdist (no git, no revision-control file list).
 agentibrain = [
     "templates/compose/*.j2",
     "templates/helm/**/*",
     "templates/vault-layout/**/*",
     "migrations/*.sql",
+    "profiles/**/*",
 ]
 
 [tool.ruff]
