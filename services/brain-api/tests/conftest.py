@@ -13,6 +13,10 @@ from pathlib import Path
 
 import pytest
 
+# Auth fails closed, so an empty token set is a 503, not an open door. Tests
+# run with a real bearer and the client fixture sends it.
+TEST_BEARER = "test-bearer"
+
 
 @pytest.fixture()
 def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -21,9 +25,14 @@ def vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     run_scaffold(tmp_path)
     monkeypatch.setenv("VAULT_ROOT", str(tmp_path))
-    monkeypatch.setenv("KB_ROUTER_TOKENS", "")  # disable auth in tests
-    monkeypatch.setenv("KB_ROUTER_TOKEN", "")
+    monkeypatch.setenv("KB_ROUTER_TOKENS", TEST_BEARER)
+    monkeypatch.setenv("KB_ROUTER_TOKEN", TEST_BEARER)
     monkeypatch.setenv("FEED_CACHE_TTL_SECONDS", "0")
+    # AMYGDALA_SIGNAL_PATH is joined onto the vault root, so an ABSOLUTE value
+    # discards the root entirely and the reader walks off to the operator's real
+    # vault. It is exported on any machine wired to a brain, which is why these
+    # tests pass in CI and fail on a developer box. Pin the relative default.
+    monkeypatch.setenv("AMYGDALA_SIGNAL_PATH", "brain-feed/amygdala-active.md")
     return tmp_path
 
 
@@ -50,4 +59,4 @@ def client(vault: Path):
 
     from app.main import app
 
-    return TestClient(app)
+    return TestClient(app, headers={"Authorization": f"Bearer {TEST_BEARER}"})
