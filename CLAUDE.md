@@ -90,6 +90,9 @@ Dev-first flow:
   PR, it publishes no image and deploys nothing. Treat it as a checkpoint log.
 - Image builds go to `ghcr.io/the-cloud-clockwork/agentibrain-*`. `:dev` is the
   only tag CI publishes — there is no `:latest`.
+- `Release` (manual dispatch, bump patch/minor/major) bumps `pyproject.toml`,
+  tags, cuts the GitHub release, then dispatches `publish-pypi.yml` at the tag —
+  that job is the only publisher of `agentibrain` on PyPI.
 
 ## Redeploying after a code change
 
@@ -165,5 +168,9 @@ docker compose logs --since 2m <service>     # or: kubectl logs
 
 - Downstream platform repos — use the kernel's Helm charts with environment-specific values.
 - `agentihub` — clones `agents/brain-keeper/` at install time.
-- `agentihooks-bundle` — clones `profiles/brain/` and `profiles/brain-keeper/` at install time.
+- `agentihooks-bundle` — clones `agentibrain/profiles/brain/` at install time.
+- Wheel installs get the same profile via `agentibrain install`, which also completes
+  `~/.agentibrain/.env` with `BRAIN_URL` beside the bearer. agentihooks reads that file
+  directly (`AGENTIBRAIN_HOME`, default `~/.agentibrain`) and adopts only the connection
+  keys, so the bearer has one home and a rotation cannot go stale in a copy.
 - External users — `git clone` → `./local/bootstrap.sh` → `docker compose up -d` (or use the Helm charts for K8s).

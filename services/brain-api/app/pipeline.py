@@ -271,8 +271,11 @@ def check_ingest(root: Path, now: datetime) -> dict:
             "quiet_for_hours": quiet_hours,
             "destinations": detail,
             "hint": (
-                f"no marker written in {quiet_hours}h. Agents may not be emitting, or the "
-                "agentihooks writer is buffering — run `agentibrain sync` to replay the outbox."
+                f"no marker written in {quiet_hours}h. Four causes, and this stage cannot "
+                "tell them apart: agents are not emitting markers; the agentihooks writer is "
+                "off (BRAIN_WRITER_ENABLED); its bearer token is missing or rejected, so every "
+                "POST /marker 401s; or markers are buffering locally. Run `agentibrain check` "
+                "on the writing machine — it probes the writer's own resolved config."
             ),
         }
     return {

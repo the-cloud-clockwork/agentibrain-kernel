@@ -92,8 +92,19 @@ def _purge_idempotency() -> None:
 
 
 def require_token(authorization: str | None = Header(None)) -> None:
+    # Fail closed. An unconfigured token set used to mean "serve everything to
+    # anyone", which is the worst possible reading of a missing credential:
+    # the vault, the feed and the marker endpoints all answered unauthenticated.
+    # init and install always generate a bearer, so an empty set means the
+    # deployment is misconfigured, not that it wanted to be public.
     if not KB_ROUTER_TOKENS:
-        return
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "no KB_ROUTER_TOKEN configured — brain-api refuses to serve "
+                "unauthenticated. Set KB_ROUTER_TOKEN (or KB_ROUTER_TOKENS) and restart."
+            ),
+        )
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="missing bearer token")
     token = authorization.split(" ", 1)[1].strip()

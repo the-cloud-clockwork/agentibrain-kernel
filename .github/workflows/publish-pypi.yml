@@ -1,0 +1,32 @@
+name: Publish to PyPI
+
+# Triggered exclusively by release.yml via a dispatch at the new tag.
+# Do NOT add `push: tags: ["v*"]` — the release workflow pushes the tag AND
+# dispatches this workflow. Both triggers fire in parallel and race to upload
+# the same artifact; one loses with PyPI 400 'File already exists'.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build
+        run: pip install build
+
+      - name: Build wheel + sdist
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

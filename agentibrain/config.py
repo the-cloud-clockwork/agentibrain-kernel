@@ -7,13 +7,33 @@ in CI / K8s without rewriting the config file.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Literal
 
 from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DEFAULT_CONFIG_DIR = Path.home() / ".agentibrain"
+
+def config_dir() -> Path:
+    """The brain's config directory, resolved per call.
+
+    AGENTIBRAIN_HOME is the same knob agentihooks reads to find this directory.
+    Resolving it at call time rather than import time is what makes the
+    location overridable at all: a module-level Path.home() is captured as a
+    field default when the settings class is created, so nothing set afterwards
+    can move it — which is how a test suite ends up writing the operator's real
+    config.yaml.
+    """
+    return Path(os.environ.get("AGENTIBRAIN_HOME", str(Path.home() / ".agentibrain")))
+
+
+def config_path() -> Path:
+    return config_dir() / "config.yaml"
+
+
+# Kept for callers that import them; prefer the functions above.
+DEFAULT_CONFIG_DIR = config_dir()
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.yaml"
 
 
@@ -37,11 +57,13 @@ class BrainSettings(BaseSettings):
 
     # --- Paths ---
     vault_path: Path = Field(
-        default=Path.home() / "agentibrain-vault",
+        # Same import-time capture as config_dir: a module-level Path.home()
+        # freezes into the field default and no later patch can move it.
+        default_factory=lambda: Path.home() / "agentibrain-vault",
         description="Filesystem path to the Obsidian-compatible vault.",
     )
     config_dir: Path = Field(
-        default=DEFAULT_CONFIG_DIR,
+        default_factory=config_dir,
         description="Where rendered compose + state live.",
     )
 
@@ -84,6 +106,17 @@ class BrainSettings(BaseSettings):
             "instead of directly to OpenAI. Operator path."
         ),
     )
+
+    # --- Bundled local inference (Ollama) ---
+    ollama: bool = Field(
+        default=False,
+        description=(
+            "Render a bundled Ollama and point both chat and embeddings at it, "
+            "so the stack needs no API key at all."
+        ),
+    )
+    ollama_chat_model: str = Field(default="llama3.2:3b")
+    ollama_embed_model: str = Field(default="nomic-embed-text")
 
     # --- Kernel HTTP API ---
     port_brain_api: int = Field(

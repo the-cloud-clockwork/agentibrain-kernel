@@ -4,50 +4,112 @@
 
 ## Quick Start
 
-**One-time** (fresh machine: `git clone` first; existing deployment: `git pull`):
+Two ways in. Pick by whether you intend to change the kernel's code.
+
+### Run it (pip — no clone)
+
+```bash
+pip install agentibrain agentihooks
+agentibrain install             # or: agentibrain install --ollama   (no API key needed)
+agentibrain check               # verify
+```
+
+`install` is `init --local` + `scaffold` + `up`, in that order, plus the
+agentihooks wiring most people forget. Run the steps yourself when you need to
+edit `~/.agentibrain/.env` between rendering the stack and starting it:
+
+```bash
+agentibrain init --local        # writes ~/.agentibrain/{config.yaml,.env,compose.yml} + creates the vault
+agentibrain scaffold            # seed the vault tree (30 folders, 52 files)
+agentibrain up                  # pull images from GHCR, start 9 services, run migrations
+agentibrain check               # verify
+```
+
+That is the whole brain: `postgres`, `redis`, `minio`, `embeddings`,
+`brain-api`, `tick-cron`, `tick-drain`, `amygdala`, `mcp`. Images come from
+`ghcr.io/the-cloud-clockwork/agentibrain-*:dev` — public, no login. Nothing is
+built locally.
+
+Order matters: `scaffold` before `up`. The vault is a bind-mount source, so a
+container that reaches it first would own it as root. `install` sequences them
+in that order for you.
+
+### Develop it (clone — builds from source)
 
 ```bash
 git clone https://github.com/The-Cloud-Clockwork/agentibrain-kernel.git
 cd agentibrain-kernel
 pip install -e .                # installs the `agentibrain` CLI
 bash local/bootstrap.sh         # NO sudo — pins repo path + vault (~/agentibrain-vault), migrates if needed
-agentibrain build               # rebuild + restart the stack (replaces docker compose up -d --build)
+agentibrain build               # build images from ./services, then start
 ```
 
-If the vault is still empty, seed once from your Claude Code transcripts:
+This path also mounts your Claude Code transcripts and the agentihooks marker
+outbox, which the pip path leaves out. To seed the vault from those transcripts:
 
 ```bash
 EXTRACT_ON_BOOT=1 agentibrain build tick-cron
 agentibrain logs tick-cron --since 5m      # look for "[tick-cron] extraction:"
 ```
 
-**Daily driver — from any directory, no flags, no ports:**
+`~/.agentihooks` must exist before the first `up` on this path (bootstrap.sh
+creates it); otherwise Docker auto-creates it root-owned and agentihooks
+cannot write to it.
+
+### Daily driver — from any directory, no flags, no ports
 
 ```bash
 agentibrain check               # deep verify: vault write, hello-embedding, pong completion
 agentibrain status              # compose ps + shallow health
 agentibrain logs <service> -f   # e.g. tick-cron, brain-api
-agentibrain build               # after any git pull / code change
+agentibrain build               # after any git pull / code change (clone path)
 agentibrain sync --check        # re-ingest everything: buffers + raw/, narrated progress
 ```
 
-- `build`/`up`/`down`/`logs`/`status` auto-locate the stack (checkout you're
-  standing in → pinned repo → init-rendered), so they work from `~` or
-  anywhere else.
-- Marker capture into the vault needs `BRAIN_URL=http://127.0.0.1:8103` in
-  your agentihooks env (one-time, `~/.agentihooks/.env`).
-- No host crons: `tick-cron` drains `~/.agentihooks/brain-outbox` (and any
-  `-backlog` pile) and re-indexes vault `raw/` on its own every tick interval.
-  `sync` just does it now instead of at the next interval.
-- `~/.agentihooks` must exist before the first `up` (bootstrap.sh creates it);
-  otherwise Docker auto-creates it root-owned and agentihooks can't write to it.
+`build`/`up`/`down`/`logs`/`status` auto-locate the stack (checkout you are
+standing in → pinned repo → init-rendered), so they work from `~` or anywhere
+else. Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
 
-After the one-time block, `agentibrain build` / `check` / `logs` are the whole
-workflow. Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
+### What works before you add any API key
+
+Ingest, vault-text `kb_search`, `brain_get_arc`, and the deterministic half of
+every tick — the stack is useful out of the box. `agentibrain check` reports
+`broken` until you set keys, because two dependencies are genuinely
+unconfigured: semantic search and AI synthesis. Both are off, nothing else is.
+
+### No API key? Bundle a local model
+
+```bash
+agentibrain install --ollama    # pulls llama3.2:3b + nomic-embed-text on first start
+```
+
+or the same thing step by step:
+
+```bash
+agentibrain init --local --ollama
+agentibrain scaffold
+agentibrain up
+```
+
+This points **both** halves at a bundled Ollama — chat (AI ticks, `kb_brief`)
+and embeddings (semantic search) — so the stack needs no API key anywhere.
+`llama3.2:3b` runs on an 8 GB machine. For a larger one, export
+`BRAIN_OLLAMA_CHAT_MODEL` before whichever command *creates* the deployment —
+`init` or `install` (`llama3.1:8b` at 16 GB, `qwen2.5:14b` at 32 GB+); settings
+take the `BRAIN_` prefix. Once the stack exists both commands reuse it, so the
+model is fixed at creation and `--ollama` on a later `install` does nothing.
+
+The first `up` downloads roughly 2.5 GB of weights and the models stay in a
+named volume across restarts.
 
 ### Configure your LLM provider (optional)
 
-Edit `~/.agentibrain/.env` — set at minimum one API key to enable semantic search:
+`init` writes `~/.agentibrain/.env` with the generated secrets, then lists every
+other variable the stack reads — commented out, with its default and what it
+does. Uncomment what you need; the names are not guessable (the embeddings
+service reads `LLM_API_KEY`, never `OPENAI_API_KEY`).
+
+Set at minimum one API key to enable semantic search:
 
 ```env
 # Required for embeddings (semantic search) — OpenAI or any compatible provider
@@ -59,13 +121,18 @@ INFERENCE_URL=https://api.openai.com/v1
 INFERENCE_API_KEY=<your-openai-key>
 ```
 
-**No API key at all?** The brain still works — `brain_ingest`, `kb_search` (vault text), `brain_get_arc` all function. Only semantic search and AI synthesis are disabled.
+**No provider configured and no `--ollama`?** The brain still works — `brain_ingest`, `kb_search` (vault text), `brain_get_arc` all function. Only semantic search and AI synthesis are off.
 
-**Free local alternative (Ollama):**
+**Free local alternative:** `agentibrain init --local --ollama` (above) on the
+pip path. On the clone path, use the overlay:
+
 ```bash
 docker compose -f compose.yml -f local/compose.ollama.yml up -d
 docker compose exec ollama ollama pull llama3.2
 ```
+
+The overlay wires chat only; semantic search still needs an embeddings key.
+`--ollama` wires both.
 
 ### Wire Claude Code
 
@@ -112,8 +179,55 @@ pip install agentihooks
 Then link the brain profile so your agents get brain MCP tools + marker rules + broadcast channel config:
 
 ```bash
-agentihooks link-profile link "$(pwd)/profiles/brain"
+agentibrain install              # or: agentibrain install --ollama
 ```
+
+One command sets the machine up: it reuses or renders a local stack, scaffolds
+the vault, starts it, completes `~/.agentibrain/.env` with `BRAIN_URL` beside
+the bearer, creates the marker outbox, and links the brain profile that ships
+inside the installed package — identical from a PyPI wheel and from a source
+checkout. `--ollama` bundles Ollama for chat and embeddings, so the stack needs
+no API key and makes no external call.
+
+There is one config file, and it is the brain's own. `~/.agentibrain/.env`
+already feeds docker compose; agentihooks reads it too and adopts `BRAIN_URL`
+and `KB_ROUTER_TOKEN` from it,
+so the bearer is never copied and a rotation cannot go stale somewhere else.
+Only those connection keys are adopted — that file's database, object-store and
+provider credentials never enter a session's environment. An explicit setting in
+`~/.agentihooks/*.env` still outranks the discovery, and the process environment
+outranks both. `agentibrain check` reports what agentihooks itself resolved and
+probes it with the hook's own bearer.
+
+`AGENTIBRAIN_HOME` moves that directory, and both projects honour it — the
+kernel resolves it on every call, so exporting it relocates the config, the
+rendered stack and the file agentihooks reads, together. It defaults to
+`~/.agentibrain`.
+
+Point agentihooks at an arbitrary directory instead with
+`agentihooks link-profile link <path>`.
+
+#### One brain, many machines
+
+Inference belongs to the **stack**, not to the machine running Claude Code. You
+do not need an API key, a gateway or Ollama on every laptop — you need one brain
+that has them, and a `BRAIN_URL` on everything else.
+
+```bash
+# the machine that hosts the brain
+agentibrain install                          # or --ollama if it has no provider
+
+# every other machine — no stack, no vault, no key
+agentibrain install --brain-url http://<host>:8103 --token <bearer>
+```
+
+`--brain-url` makes the install client-only: it skips the stack and the vault,
+writes that machine's own `~/.agentibrain/.env` with just the URL and the
+bearer, and links the profile. `--token` also reads `KB_ROUTER_TOKEN` from the
+environment, the same as `check`, `tick` and `sync`. The bearer is whatever
+`KB_ROUTER_TOKEN` the hosting machine generated — copy it from that machine's
+`~/.agentibrain/.env`. To repoint a client later, edit its own file; there is
+nothing to reinstall.
 
 What this gives you:
 - **SessionStart** — `brain_adapter` calls `/feed` and injects hot arcs, signals, operator intent, and tick diffs as `BROADCAST` blocks into every agent session
@@ -124,7 +238,7 @@ What this gives you:
 ### Test it (raw HTTP)
 
 ```bash
-TOK=$(grep ^KB_ROUTER_TOKEN .env | cut -d= -f2)
+TOK=$(grep ^KB_ROUTER_TOKEN ~/.agentibrain/.env | cut -d= -f2)   # clone path: ./.env
 
 # Write something to the brain
 curl -X POST http://localhost:8103/ingest \
@@ -143,7 +257,6 @@ Content lands in the vault at `raw/inbox/` (`~/agentibrain-vault` by default). T
 **Force a tick on demand** (don't wait for the 2h scheduled cycle):
 
 ```bash
-pip install -e .                          # one-time, installs the `agentibrain` CLI
 agentibrain tick --no-ai --wait                 # deterministic-only, blocks until done
 agentibrain tick --wait                         # full AI tick
 agentibrain tick --dry-run --wait               # read-only verify, no writes
@@ -293,6 +406,12 @@ Plus an **opt-in `brain-keeper`** agent (ops oracle for triage, enrichment, repl
 
 ## Install
 
+### 0. CLI only (PyPI)
+
+See [Quick Start](#run-it-pip--no-clone) — `pip install agentibrain` is the
+supported way to run the kernel without a clone. The wheel carries the CLI, the
+vault-layout templates, the compose template and the SQL migrations.
+
 ### 1. Laptop (Docker Compose)
 
 ```bash
@@ -307,7 +426,7 @@ docker compose up -d           # 8 containers come up
 Smoke test:
 
 ```bash
-TOK=$(grep ^KB_ROUTER_TOKEN .env | cut -d= -f2)
+TOK=$(grep ^KB_ROUTER_TOKEN ~/.agentibrain/.env | cut -d= -f2)   # clone path: ./.env
 curl -H "Authorization: Bearer $TOK" http://localhost:8103/feed | jq .
 ```
 
@@ -340,7 +459,24 @@ actually live: [`local/README.md`](local/README.md#updating-to-a-newer-version).
 
 ### 2. Server (Docker Compose, headless)
 
-Same `compose.yml` works on any Linux box with Docker. Bind the vault to a real path, expose `8103` behind your reverse proxy of choice (Traefik, Caddy, nginx), point your fleet at it via `BRAIN_URL`. No Kubernetes required.
+Same `compose.yml` works on any Linux box with Docker. Bind the vault to a real path, point your fleet at it via `BRAIN_URL`. No Kubernetes required.
+
+**What is reachable, and what is not.** Postgres, Redis, MinIO, embeddings and
+Ollama bind `127.0.0.1` — nothing outside the machine has any business reaching
+them, and several still carry generated default credentials. Only `brain-api`
+(8103) and `mcp` (8104) are published on all interfaces, because a client-only
+install needs exactly those two. Narrow them with `BIND_HOST`:
+
+```bash
+BIND_HOST=127.0.0.1 docker compose up -d   # loopback only; put a proxy in front
+```
+
+**Auth fails closed.** brain-api refuses to serve without a bearer: every
+endpoint answers `503` until `KB_ROUTER_TOKEN` (or `KB_ROUTER_TOKENS`, a
+comma-separated list) is set. `init` and `install` always generate one, so an
+empty token set means the deployment is misconfigured — never that it wanted to
+be public. Put a reverse proxy in front for TLS if you expose it beyond a
+trusted network; the bearer is authentication, not transport security.
 
 ### 3. Kubernetes (Helm)
 
@@ -451,7 +587,7 @@ Inject `MCP_PROXY_API_KEY` via `envFrom: secretRef:` from the K8s Secret backing
 
 ```bash
 pip install agentihooks
-agentihooks link-profile link /path/to/agentibrain-kernel/profiles/brain
+agentibrain install
 ```
 
 The brain profile registers three hooks:
@@ -462,7 +598,7 @@ The brain profile registers three hooks:
 | `amygdala_hook` | Every turn | Polls `/signal` for nuclear/critical severity, injects `BROADCAST [CRITICAL]` |
 
 > **The bundled profile ships the local SSE server only.**
-> `profiles/brain/.claude/.mcp.json` contains a single entry —
+> `agentibrain/profiles/brain/.claude/.mcp.json` contains a single entry —
 > `agentibrain-local` (`type: sse` → `http://localhost:8104/sse`), pointing at
 > the local Docker-Compose stack. No remote entry is bundled: the `mcp` chart's
 > Service is `ClusterIP` with no Ingress, so `agentibrain-mcp.<ns>.svc:8080`
@@ -622,7 +758,8 @@ Scaffold is idempotent. Schema-version mismatch is a hard error unless `--force-
 | Env var | Default | Purpose |
 |---|---|---|
 | `VAULT_ROOT` | `/vault` | Vault mount path inside containers (NFS in K8s, bind mount in Compose) |
-| `KB_ROUTER_TOKEN` / `KB_ROUTER_TOKENS` | — | Bearer auth (single token or comma-sep list) |
+| `KB_ROUTER_TOKEN` / `KB_ROUTER_TOKENS` | **required** | Bearer auth (single token or comma-separated list). brain-api fails closed — every endpoint answers `503` until one is set. `init` and `install` generate one, so an empty value means misconfigured, not public. |
+| `BIND_HOST` | `0.0.0.0` | Host interface for the two published services, `brain-api` and `mcp`. Set `127.0.0.1` to keep them local and front them with a proxy. Postgres, redis, minio, embeddings and ollama always bind loopback. |
 | `EMBEDDINGS_URL` | `http://embeddings:8080` | Embeddings service URL |
 | `EMBEDDINGS_API_KEY` | — | Bearer token for the embeddings service |
 | `INFERENCE_URL` | — | OpenAI-compatible LLM gateway. Empty = deterministic-only ticks. See [`docs/GATEWAY-CONTRACT.md`](docs/GATEWAY-CONTRACT.md) |
@@ -677,7 +814,7 @@ Workflow: `dev` is the working branch and the deploy branch. CI on `dev` ships `
 
 **v0.1.x — stable.** Six Helm charts. Four service images auto-published to GHCR (`:dev` only — nothing publishes `:latest`). HTTP contract frozen at v1. Generic OpenAI gateway — kernel speaks chat-completions to any compatible upstream (LiteLLM, OpenAI, Ollama, vLLM, …). Brain-blind boundary in place since 2026-04-26 (artifact-store no longer auto-embeds; every embed flows through `POST /index_artifact`). Vault read/write absorbed into brain-api directly via `vault_reader` module — no separate reader service.
 
-The kernel is self-contained and the canonical source of truth for everything brain-related — services, Helm charts, brain-keeper agent definition (`agents/brain-keeper/`), brain profile overlays (`profiles/brain/`, `profiles/brain-keeper/`), and the vault layout schema. All deployment-specific plumbing (cluster namespaces, model name aliases, secret-store paths, NFS hosts) lives in your own platform repo, not here.
+The kernel is self-contained and the canonical source of truth for everything brain-related — services, Helm charts, brain-keeper agent definition (`agents/brain-keeper/`), brain profile overlays (`agentibrain/profiles/brain/`), and the vault layout schema. All deployment-specific plumbing (cluster namespaces, model name aliases, secret-store paths, NFS hosts) lives in your own platform repo, not here.
 
 Maturity tracking is published in
 [`docs/architecture/MATURITY.md`](docs/architecture/MATURITY.md).

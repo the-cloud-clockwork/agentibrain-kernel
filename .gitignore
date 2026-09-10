@@ -69,3 +69,4 @@ local/.k8s-tokens
 # not belong in the public kernel repo. Files remain local for the operator;
 # tracked content was removed in the de-branding sweep.
 operator/
+.playwright-mcp/

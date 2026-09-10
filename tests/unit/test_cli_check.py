@@ -29,6 +29,12 @@ class _Resp:
         return self._payload
 
 
+def _flat(output: str) -> str:
+    """Rich soft-wraps at the terminal width (80 in CI), so a phrase that fits
+    on one line locally arrives split across two. Assert against this."""
+    return " ".join(output.split())
+
+
 _DEPS_OK = {"status": "ok", "checks": {"vault": {"ok": True, "root": "/vault"}}}
 
 
@@ -46,6 +52,21 @@ def isolated(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("KB_ROUTER_TOKEN", "t0ken")
     monkeypatch.setenv("BRAIN_WRITER_OUTBOX", str(tmp_path / "nonexistent-outbox"))
     monkeypatch.setattr(cli, "_load_settings", lambda: cli.BrainSettings(_env_file=None))
+    # The agentihooks probe resolves THIS machine's real env chain and would
+    # otherwise fire an unrouted GET /feed at whatever brain the operator runs.
+    monkeypatch.setattr(
+        cli._hooks_env,
+        "resolve_consumer_config",
+        lambda: {
+            "source": "stub",
+            "brain_url": "http://brain.test",
+            "reader_enabled": True,
+            "writer_enabled": True,
+            "token": "t0ken",
+            "token_present": True,
+        },
+    )
+    monkeypatch.setattr(cli, "_probe_hooks_auth", lambda cfg: {"status": "ok", "http": 200})
     return tmp_path
 
 
@@ -70,7 +91,7 @@ def test_clean_run_exits_zero(isolated, monkeypatch):
     )
     result = CliRunner().invoke(cli.main, ["check"])
     assert result.exit_code == 0, result.output
-    assert "all checks passed" in result.output
+    assert "all checks passed" in _flat(result.output)
 
 
 def test_a_degraded_pipeline_exits_two_not_one(isolated, monkeypatch):
@@ -127,7 +148,7 @@ def test_an_old_brain_api_without_the_endpoint_says_so(isolated, monkeypatch):
     result = CliRunner().invoke(cli.main, ["check", "--pipeline-only"])
     assert result.exit_code == 1
     assert "predates" in result.output
-    assert "HTTP 404" in result.output
+    assert "HTTP 404" in _flat(result.output)
 
 
 def test_a_markup_shaped_hint_does_not_crash_the_report(isolated, monkeypatch):
@@ -160,6 +181,66 @@ def test_json_omits_a_probe_that_was_not_run(isolated, monkeypatch):
     parsed = json.loads(result.output)
     assert "pipeline" in parsed
     assert "dependencies" not in parsed
+
+
+def test_a_rejected_hook_token_breaks_the_check(isolated, monkeypatch):
+    """The writer's 401 is invisible to every server-side stage: brain-api sees
+    no marker arrive and reports a quiet brain, which reads as idle agents."""
+    monkeypatch.setattr(
+        cli,
+        "_probe_hooks_auth",
+        lambda cfg: {
+            "status": "fail",
+            "http": 401,
+            "reason": "brain-api rejected the hook's token (HTTP 401)",
+        },
+    )
+    _route(monkeypatch, {"/health/pipeline": _Resp(_pipeline("ok"))})
+
+    result = CliRunner().invoke(cli.main, ["check", "--pipeline-only"])
+
+    assert result.exit_code == 1, result.output
+    flat = _flat(result.output)
+    assert "rejected the hook's token" in flat
+    assert "agentibrain install" in flat
+
+
+def test_an_unreachable_brain_does_not_blame_the_configuration(isolated, monkeypatch):
+    """Republishing the token fixes nothing when the stack is simply down."""
+    monkeypatch.setattr(
+        cli,
+        "_probe_hooks_auth",
+        lambda cfg: {"status": "warn", "reason": "ConnectTimeout: timed out"},
+    )
+    _route(monkeypatch, {"/health/pipeline": _Resp(_pipeline("ok"))})
+
+    result = CliRunner().invoke(cli.main, ["check", "--pipeline-only"])
+
+    flat = _flat(result.output)
+    assert "ConnectTimeout" in flat
+    assert "republish" not in flat
+
+
+def test_a_disabled_writer_is_reported_even_when_auth_passes(isolated, monkeypatch):
+    monkeypatch.setattr(
+        cli._hooks_env,
+        "resolve_consumer_config",
+        lambda: {
+            "source": "stub",
+            "brain_url": "http://brain.test",
+            "reader_enabled": True,
+            "writer_enabled": False,
+            "token": "t0ken",
+            "token_present": True,
+        },
+    )
+    _route(monkeypatch, {"/health/pipeline": _Resp(_pipeline("ok"))})
+
+    result = CliRunner().invoke(cli.main, ["check", "--pipeline-only"])
+
+    flat = _flat(result.output)
+    assert "writer: OFF" in flat
+    assert "agentibrain install" in flat
 
 
 def test_the_two_scope_flags_are_mutually_exclusive(isolated):
@@ -198,7 +279,7 @@ def test_buffered_markers_are_reported_because_the_server_cannot_see_them(
     result = CliRunner().invoke(cli.main, ["check", "--pipeline-only"])
 
     assert "outbox=1" in result.output
-    assert "agentibrain sync" in result.output
+    assert "agentibrain sync" in _flat(result.output)
 
 
 # ---------------------------------------------------------------------------
