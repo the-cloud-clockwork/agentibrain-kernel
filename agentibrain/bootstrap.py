@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import secrets
 import shutil
 import subprocess
@@ -347,6 +348,20 @@ def pin_repo(settings: BrainSettings, repo: Path) -> None:
     env_path.chmod(0o600)
 
 
+def link_checkout_env(settings: BrainSettings, compose_dir: Path) -> bool:
+    """Point a checkout's .env at the brain's own, as local/bootstrap.sh does.
+
+    compose reads the project .env; without the link it falls back to compose
+    defaults and whatever the shell exports. An existing file or link is kept.
+    """
+    link = compose_dir / ".env"
+    target = settings.config_dir.expanduser() / ".env"
+    if link.exists() or link.is_symlink() or not target.is_file():
+        return False
+    link.symlink_to(target)
+    return True
+
+
 def deployment_env_path(settings: BrainSettings, deployment: tuple[str, Path] | None) -> Path:
     """The .env the discovered deployment actually reads.
 
@@ -401,14 +416,36 @@ def _compose_binargs() -> list[str]:
     return ["docker", "compose"]  # fail loudly with docker's own message
 
 
+_COMPOSE_VAR = re.compile(r"(?<!\$)\$\{([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def _compose_env(cwd: Path) -> dict[str, str]:
+    """The process env minus every variable the deployment's .env or compose file names.
+
+    docker compose resolves ${VAR} from the shell before .env, so a shell that
+    sourced other env files (agentihooks' agentienv loads ~/.env and
+    ~/.agentihooks/*.env) overrides the brain's own config: an exported-empty
+    POSTGRES_PASSWORD recreates postgres, an unrelated REDIS_URL repoints the
+    stack. The deployment's .env and the compose defaults are the only sources.
+    """
+    owned = set(_existing_assignments(cwd / ".env"))
+    compose = cwd / "compose.yml"
+    if compose.is_file():
+        owned.update(_COMPOSE_VAR.findall(compose.read_text()))
+    return {k: v for k, v in os.environ.items() if k not in owned}
+
+
 def compose_stream(cmd: list[str], cwd: Path) -> int:
     """Run ``docker compose`` with inherited stdio for long/streaming commands
     (build, logs -f) so output reaches the terminal live."""
-    return subprocess.run([*_compose_binargs(), *cmd], cwd=cwd, check=False).returncode
+    return subprocess.run(
+        [*_compose_binargs(), *cmd], cwd=cwd, check=False, env=_compose_env(cwd)
+    ).returncode
 
 
 def _docker_compose(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
     """Run ``docker compose``; fall back to ``docker-compose`` for older installs."""
+    env = _compose_env(cwd)
     if shutil.which("docker"):
         proc = subprocess.run(
             ["docker", "compose", *cmd],
@@ -416,6 +453,7 @@ def _docker_compose(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
             check=False,
             capture_output=True,
             text=True,
+            env=env,
         )
         if proc.returncode != 127:
             return proc
@@ -425,6 +463,7 @@ def _docker_compose(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
         check=False,
         capture_output=True,
         text=True,
+        env=env,
     )
 
 

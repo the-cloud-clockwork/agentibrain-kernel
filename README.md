@@ -185,7 +185,8 @@ agentibrain install              # or: agentibrain install --ollama
 
 One command sets the machine up: it reuses or renders a local stack, scaffolds
 the vault, starts it, completes `~/.agentibrain/.env` with `BRAIN_URL` beside
-the bearer, creates the marker outbox, and links the brain profile that ships
+the bearer and agentihooks' brain settings at their defaults, creates the marker
+outbox, and links the brain profile that ships
 inside the installed package — identical from a PyPI wheel and from a source
 checkout. `--ollama` bundles Ollama for chat and embeddings, so the stack needs
 no API key and makes no external call.

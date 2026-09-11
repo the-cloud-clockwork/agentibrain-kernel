@@ -30,6 +30,25 @@ def managed_env_path() -> Path:
     return hooks_home() / MANAGED_ENV_NAME
 
 
+def client_defaults(vault_path: Path | None) -> dict[str, str]:
+    """agentihooks' brain settings at their defaults, for the brain's own .env.
+
+    agentihooks adopts these from that file, so they live beside the bearer and
+    follow the vault and outbox this machine actually has. Without a local
+    vault the two vault paths stay empty, and upsert_env_values skips empties.
+    """
+    feed = vault_path.expanduser() / "brain-feed" if vault_path is not None else None
+    return {
+        "BRAIN_SOURCE_PATH": str(feed) if feed else "",
+        "BRAIN_ENABLED": "true",
+        "AMYGDALA_ENABLED": "true",
+        "AMYGDALA_SIGNAL_PATH": str(feed / "amygdala-active.md") if feed else "",
+        "BRAIN_WRITER_ENABLED": "true",
+        "BRAIN_WRITER_MAX_MARKERS": "5",
+        "BRAIN_WRITER_OUTBOX": str(hooks_home() / OUTBOX_DIRS[0]),
+    }
+
+
 def ensure_outbox_dirs() -> list[Path]:
     """Create the marker buffers user-owned.
 

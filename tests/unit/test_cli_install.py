@@ -113,7 +113,28 @@ def test_install_completes_the_brain_env(install_env, monkeypatch):
     )
     assert assigned["KB_ROUTER_TOKEN"] == "t0ken"
     assert assigned["BRAIN_URL"].startswith("http://")
+    feed = cli._load_settings().vault_path / "brain-feed"
+    assert assigned["BRAIN_SOURCE_PATH"] == str(feed)
+    assert assigned["AMYGDALA_SIGNAL_PATH"] == str(feed / "amygdala-active.md")
+    assert assigned["BRAIN_WRITER_OUTBOX"] == str(install_env / ".agentihooks" / "brain-outbox")
+    for key in ("BRAIN_ENABLED", "AMYGDALA_ENABLED", "BRAIN_WRITER_ENABLED"):
+        assert assigned[key] == "true"
+    assert assigned["BRAIN_WRITER_MAX_MARKERS"] == "5"
     assert not hooks_env.managed_env_path().exists()
+
+
+def test_install_keeps_brain_settings_already_in_the_env(install_env, monkeypatch):
+    monkeypatch.setattr(cli, "_agentihooks_bin", lambda: "/usr/bin/agentihooks")
+    (install_env / ".env").write_text("BRAIN_WRITER_MAX_MARKERS=9\nAMYGDALA_ENABLED=false\n")
+
+    result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
+
+    assert result.exit_code == 0, result.output
+    body = (install_env / ".env").read_text()
+    assert "BRAIN_WRITER_MAX_MARKERS=9\n" in body
+    assert "BRAIN_WRITER_MAX_MARKERS=5" not in body
+    assert "AMYGDALA_ENABLED=false\n" in body
+    assert "AMYGDALA_ENABLED=true" not in body
 
 
 def test_install_exits_when_agentihooks_is_absent(install_env, monkeypatch, tmp_path):

@@ -191,3 +191,28 @@ def test_up_replaces_every_other_stack(tmp_path, docker_shim):
     assert any("compose -p agentibrain down --remove-orphans" in ln for ln in lines)
     assert not any("-p repo down" in ln for ln in lines)
     assert max(downs) < lines.index(f"{repo} :: compose up -d")
+
+
+def test_checkout_without_env_is_linked_to_the_brain_env(tmp_path, docker_shim):
+    """compose reads the project .env; a checkout missing it falls back to compose defaults."""
+    path, _ = docker_shim
+    home, repo = _home_with_repo(tmp_path)
+    r = _run_cli(["up"], home, cwd=home, path=path)
+    assert r.returncode == 0, r.stderr
+    link = repo / ".env"
+    assert link.is_symlink()
+    assert link.resolve() == (home / ".agentibrain" / ".env").resolve()
+
+
+def test_compose_env_drops_variables_the_brain_owns(tmp_path, monkeypatch):
+    from agentibrain import bootstrap
+
+    (tmp_path / ".env").write_text("LOG_LEVEL=INFO\n")
+    (tmp_path / "compose.yml").write_text("x: ${REDIS_URL:-redis://redis}\ny: $${KEEP_ME}\n")
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    monkeypatch.setenv("REDIS_URL", "redis://elsewhere")
+    monkeypatch.setenv("KEEP_ME", "1")
+    env = bootstrap._compose_env(tmp_path)
+    assert "LOG_LEVEL" not in env
+    assert "REDIS_URL" not in env
+    assert env["KEEP_ME"] == "1"

@@ -138,6 +138,10 @@ def _find_deployment_or_exit() -> tuple[str, Path, BrainSettings]:
     mode, compose_dir = dep
     if mode == "root-compose" and compose_dir != settings.config_dir.expanduser():
         bootstrap.pin_repo(settings, compose_dir)
+        if bootstrap.link_checkout_env(settings, compose_dir):
+            console.print(
+                f"linked {compose_dir / '.env'} → {settings.config_dir.expanduser() / '.env'}"
+            )
     return mode, compose_dir, settings
 
 
@@ -1008,6 +1012,9 @@ def _start_stack(settings: BrainSettings) -> None:
         console.print("  [red]✗ no compose deployment to start[/red]")
         sys.exit(2)
     mode, compose_dir = deployment
+    if mode == "root-compose" and bootstrap.link_checkout_env(settings, compose_dir):
+        brain_env = settings.config_dir.expanduser() / ".env"
+        console.print(f"  [green]✓[/green] linked {compose_dir / '.env'} → {brain_env}")
     _remove_other_stacks(compose_dir)
     if mode == "init":
         proc = bootstrap.compose_up(settings)
@@ -1159,8 +1166,18 @@ def install_cmd(
     else:
         for outbox in _hooks_env.ensure_outbox_dirs():
             console.print(f"  [green]✓[/green] outbox → {outbox}")
+        vault = None
+        if not remote:
+            vault = Path(
+                bootstrap._read_env_value(brain_env, "VAULT_ROOT_HOST") or settings.vault_path
+            )
         added = bootstrap.upsert_env_values(
-            brain_env, {"BRAIN_URL": settings.brain_url, "KB_ROUTER_TOKEN": token}
+            brain_env,
+            {
+                "BRAIN_URL": settings.brain_url,
+                "KB_ROUTER_TOKEN": token,
+                **_hooks_env.client_defaults(vault),
+            },
         )
         console.print(f"  [green]✓[/green] brain env → {brain_env}  (chmod 600)")
         if added:
