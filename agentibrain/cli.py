@@ -136,6 +136,8 @@ def _find_deployment_or_exit() -> tuple[str, Path, BrainSettings]:
         )
         sys.exit(2)
     mode, compose_dir = dep
+    if mode == "root-compose" and compose_dir != settings.config_dir.expanduser():
+        bootstrap.pin_repo(settings, compose_dir)
     return mode, compose_dir, settings
 
 

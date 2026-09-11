@@ -35,9 +35,14 @@ where the deployment lives, from any cwd:
 1. The checkout you are standing in — a `compose.yml` found walking up from
    the current directory always wins, so working in checkout B never targets
    a checkout A pinned by an older bootstrap
-2. The repo path `local/bootstrap.sh` pinned as `AGENTIBRAIN_REPO` in
-   `~/.agentibrain/.env` (covers every other cwd)
-3. The init-rendered stack in `~/.agentibrain/` (`agentibrain init` mode)
+2. The stack Docker reports holding the `agentibrain_*` container names —
+   both compose files hardcode them, so any other stack collides on `up` and
+   stops nothing on `down`
+3. The repo path pinned as `AGENTIBRAIN_REPO` in `~/.agentibrain/.env` —
+   written by `local/bootstrap.sh` and refreshed by every stack command that
+   drives a checkout, so `up` after `down` returns to the same checkout from
+   any cwd
+4. The init-rendered stack in `~/.agentibrain/` (`agentibrain init` mode)
 
 No deployment anywhere → exit 2 with the bootstrap/init hint. You never need
 to remember where the compose file is or type `docker compose` yourself.

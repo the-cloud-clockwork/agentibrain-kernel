@@ -43,7 +43,11 @@ def docker_shim(tmp_path):
     bindir.mkdir()
     record = tmp_path / "docker-argv.txt"
     shim = bindir / "docker"
-    shim.write_text(f'#!/bin/sh\necho "$PWD :: $@" >> "{record}"\n')
+    shim.write_text(
+        f'#!/bin/sh\necho "$PWD :: $@" >> "{record}"\n'
+        f'[ "$1" = ps ] && cat "{tmp_path / "docker-ps.txt"}" 2>/dev/null\n'
+        "exit 0\n"
+    )
     shim.chmod(0o755)
     return f"{bindir}:/usr/bin:/bin", record
 
@@ -60,19 +64,21 @@ def _home_with_repo(tmp_path) -> tuple[Path, Path]:
 
 
 @pytest.mark.parametrize("cmd", ["up", "down", "build", "logs"])
-def test_commands_exit_cleanly_without_any_deployment(tmp_path, cmd):
+def test_commands_exit_cleanly_without_any_deployment(tmp_path, docker_shim, cmd):
+    path, _ = docker_shim
     home = tmp_path / "home"
     home.mkdir()
-    r = _run_cli([cmd], home, cwd=home)
+    r = _run_cli([cmd], home, cwd=home, path=path)
     assert r.returncode == 2, r.stderr
     assert "no agentibrain deployment found" in r.stdout
     assert "FileNotFoundError" not in r.stderr
 
 
-def test_status_degrades_gracefully_without_any_deployment(tmp_path):
+def test_status_degrades_gracefully_without_any_deployment(tmp_path, docker_shim):
+    path, _ = docker_shim
     home = tmp_path / "home"
     home.mkdir()
-    r = _run_cli(["status"], home, cwd=home)
+    r = _run_cli(["status"], home, cwd=home, path=path)
     assert r.returncode == 0, r.stderr
     assert "no deployment found" in r.stdout
     assert "FileNotFoundError" not in r.stderr
@@ -138,3 +144,31 @@ def test_status_uses_detected_deployment(tmp_path, docker_shim):
     assert r.returncode == 0, r.stderr
     assert f"{repo} :: compose ps" in record.read_text()
     assert "root-compose" in r.stdout
+
+
+def test_down_then_up_follow_the_running_checkout(tmp_path, docker_shim):
+    """An init stack beside a running checkout must capture neither down nor the up after it."""
+    path, record = docker_shim
+    home = tmp_path / "home"
+    cfg = home / ".agentibrain"
+    cfg.mkdir(parents=True)
+    (cfg / "compose.yml").write_text(MARKER_COMPOSE)
+    (cfg / ".env").write_text("LOG_LEVEL=INFO\n")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "compose.yml").write_text(MARKER_COMPOSE)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    (tmp_path / "docker-ps.txt").write_text(f"{repo}\n")
+    r = _run_cli(["down"], home, cwd=elsewhere, path=path)
+    assert r.returncode == 0, r.stderr
+    assert f"{repo} :: compose down" in record.read_text()
+    assert (cfg / ".env").read_text() == f"LOG_LEVEL=INFO\nAGENTIBRAIN_REPO={repo}\n"
+
+    (tmp_path / "docker-ps.txt").unlink()
+    r = _run_cli(["up"], home, cwd=elsewhere, path=path)
+    assert r.returncode == 0, r.stderr
+    content = record.read_text()
+    assert f"{repo} :: compose up -d" in content
+    assert f"{cfg} :: " not in content

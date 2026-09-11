@@ -243,6 +243,28 @@ def _read_env_value(env_path: Path, key: str) -> str:
     return ""
 
 
+def _container_owner_dir() -> Path | None:
+    """Compose working dir of the project holding the kernel's container names."""
+    if not shutil.which("docker"):
+        return None
+    proc = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "-a",
+            "--filter",
+            f"name=^{COMPOSE_MARKER}$",
+            "--format",
+            '{{.Label "com.docker.compose.project.working_dir"}}',
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    owner = proc.stdout.strip()
+    return Path(owner) if proc.returncode == 0 and owner else None
+
+
 def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[str, Path] | None:
     """Locate the compose deployment the CLI should drive.
 
@@ -252,9 +274,11 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
 
     Order: the checkout you are standing in wins — running a command from
     inside checkout B must never target checkout A that an old bootstrap
-    pinned. The AGENTIBRAIN_REPO pin (written by local/bootstrap.sh into
-    ~/.agentibrain/.env) covers every other cwd; the init-rendered stack
-    comes last.
+    pinned. Next, the stack Docker reports holding the container names: both
+    compose files hardcode the same ones, so driving any other stack collides
+    on `up` and stops nothing on `down`. The AGENTIBRAIN_REPO pin (written by
+    local/bootstrap.sh into ~/.agentibrain/.env) covers every other cwd; the
+    init-rendered stack comes last.
     """
     cfg_dir = settings.config_dir.expanduser()
 
@@ -267,6 +291,10 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
         except OSError:
             continue
 
+    owner = _container_owner_dir()
+    if owner is not None and (owner / "compose.yml").is_file():
+        return ("init" if owner == cfg_dir else "root-compose", owner)
+
     repo = _read_env_value(cfg_dir / ".env", "AGENTIBRAIN_REPO")
     if repo:
         repo_dir = Path(repo).expanduser()
@@ -276,6 +304,23 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
     if (cfg_dir / "compose.yml").is_file():
         return ("init", cfg_dir)
     return None
+
+
+def pin_repo(settings: BrainSettings, repo: Path) -> None:
+    """Point AGENTIBRAIN_REPO at ``repo``, keeping every other line.
+
+    `down` removes the containers find_deployment located the stack by, so
+    without the pin the next `up` from another cwd lands on the init stack.
+    """
+    env_path = settings.config_dir.expanduser() / ".env"
+    if _read_env_value(env_path, "AGENTIBRAIN_REPO") == str(repo):
+        return
+    lines = env_path.read_text().splitlines() if env_path.exists() else []
+    lines = [ln for ln in lines if not ln.startswith("AGENTIBRAIN_REPO=")]
+    lines.append(f"AGENTIBRAIN_REPO={repo}")
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text("\n".join(lines) + "\n")
+    env_path.chmod(0o600)
 
 
 def deployment_env_path(settings: BrainSettings, deployment: tuple[str, Path] | None) -> Path:
