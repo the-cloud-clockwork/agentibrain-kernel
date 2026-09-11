@@ -8,6 +8,26 @@ Tags are issued by the release workflow, not locally. Cut one by dispatching `.g
 
 ## [Unreleased]
 
+### Changed
+
+- **One brain stack per machine.** `up`, `build` and `install` bring down every other
+  compose project holding an `agentibrain_*` container before starting, and `down`
+  removes all of them (volumes survive). Discovery follows the stack Docker reports
+  running, so every command works from any directory.
+- **The brain's `.env` is the only source for its config.** docker compose runs with
+  every variable the deployment's `.env` or compose file names removed from the
+  inherited environment, so shell exports (agentihooks' `agentienv` sources `~/.env`)
+  no longer override it. A checkout missing its `.env` link is relinked to
+  `~/.agentibrain/.env`.
+- **`install` completes `~/.agentibrain/.env` additively, before the stack starts** —
+  the bearer and embeddings key pair generated, stack settings at the compose file's
+  own defaults, and agentihooks' brain settings (`BRAIN_ENABLED`, `BRAIN_SOURCE_PATH`,
+  `AMYGDALA_ENABLED`, `AMYGDALA_SIGNAL_PATH`, `BRAIN_WRITER_*`). A key already present
+  is never rewritten, removed or backed up, and a complete file is left untouched.
+  Inference keys come only from a bundled-Ollama stack or `--openai-key` /
+  `--llm-gateway-url`. Stack commands add the `AGENTIBRAIN_REPO` pin only when absent.
+- The `~/.agentibrain` deployment is reported as `home`.
+
 ### Removed
 
 - **`agentibrain init`** — `install` is the one setup command. Its flags moved
