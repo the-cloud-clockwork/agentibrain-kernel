@@ -7,6 +7,7 @@ import platform
 import secrets
 import shutil
 import subprocess
+import tempfile
 import time
 from importlib import resources
 from pathlib import Path
@@ -243,26 +244,46 @@ def _read_env_value(env_path: Path, key: str) -> str:
     return ""
 
 
-def _container_owner_dir() -> Path | None:
-    """Compose working dir of the project holding the kernel's container names."""
+def _kernel_containers() -> list[list[str]]:
+    """``[name, compose project, compose working dir]`` per agentibrain_* container."""
     if not shutil.which("docker"):
-        return None
+        return []
     proc = subprocess.run(
         [
             "docker",
             "ps",
             "-a",
             "--filter",
-            f"name=^{COMPOSE_MARKER}$",
+            "name=^agentibrain_",
             "--format",
+            '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t'
             '{{.Label "com.docker.compose.project.working_dir"}}',
         ],
         check=False,
         capture_output=True,
         text=True,
     )
-    owner = proc.stdout.strip()
-    return Path(owner) if proc.returncode == 0 and owner else None
+    if proc.returncode != 0:
+        return []
+    return [ln.split("\t") for ln in proc.stdout.splitlines() if ln.count("\t") == 2]
+
+
+def remove_other_stacks(keep: Path | None) -> list[tuple[str, subprocess.CompletedProcess]]:
+    """`down` every compose project holding agentibrain_* containers except the
+    one running from ``keep``. Both compose files hardcode the container names,
+    so a stack can only replace another. Runs by project name from an empty
+    dir: a compose file in cwd would otherwise be loaded under that name.
+    Volumes survive.
+    """
+    projects = {project: workdir for _, project, workdir in _kernel_containers() if project}
+    results = []
+    for project, workdir in projects.items():
+        if keep is not None and workdir and Path(workdir).resolve() == keep.resolve():
+            continue
+        with tempfile.TemporaryDirectory() as empty:
+            proc = _docker_compose(["-p", project, "down", "--remove-orphans"], Path(empty))
+        results.append((project, proc))
+    return results
 
 
 def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[str, Path] | None:
@@ -274,11 +295,11 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
 
     Order: the checkout you are standing in wins — running a command from
     inside checkout B must never target checkout A that an old bootstrap
-    pinned. Next, the stack Docker reports holding the container names: both
-    compose files hardcode the same ones, so driving any other stack collides
-    on `up` and stops nothing on `down`. The AGENTIBRAIN_REPO pin (written by
-    local/bootstrap.sh into ~/.agentibrain/.env) covers every other cwd; the
-    init-rendered stack comes last.
+    pinned. Next, the stack Docker reports holding agentibrain_brain_api, so
+    a command run from anywhere drives what is actually up. The
+    AGENTIBRAIN_REPO pin (written by local/bootstrap.sh into
+    ~/.agentibrain/.env) covers every other cwd; the init-rendered stack
+    comes last.
     """
     cfg_dir = settings.config_dir.expanduser()
 
@@ -291,7 +312,10 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
         except OSError:
             continue
 
-    owner = _container_owner_dir()
+    owner = next(
+        (Path(wd) for name, _, wd in _kernel_containers() if name == COMPOSE_MARKER and wd),
+        None,
+    )
     if owner is not None and (owner / "compose.yml").is_file():
         return ("init" if owner == cfg_dir else "root-compose", owner)
 

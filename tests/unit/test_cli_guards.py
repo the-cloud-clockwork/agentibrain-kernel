@@ -160,7 +160,7 @@ def test_down_then_up_follow_the_running_checkout(tmp_path, docker_shim):
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
 
-    (tmp_path / "docker-ps.txt").write_text(f"{repo}\n")
+    (tmp_path / "docker-ps.txt").write_text(f"agentibrain_brain_api\tkernel\t{repo}\n")
     r = _run_cli(["down"], home, cwd=elsewhere, path=path)
     assert r.returncode == 0, r.stderr
     assert f"{repo} :: compose down" in record.read_text()
@@ -172,3 +172,22 @@ def test_down_then_up_follow_the_running_checkout(tmp_path, docker_shim):
     content = record.read_text()
     assert f"{repo} :: compose up -d" in content
     assert f"{cfg} :: " not in content
+
+
+def test_up_replaces_every_other_stack(tmp_path, docker_shim):
+    """Wherever `up` runs, every agentibrain stack but its target is downed first."""
+    path, record = docker_shim
+    home, repo = _home_with_repo(tmp_path)
+    (tmp_path / "docker-ps.txt").write_text(
+        f"agentibrain_brain_api\tother-checkout\t{tmp_path / 'other'}\n"
+        f"agentibrain_minio\tagentibrain\t{home / '.agentibrain'}\n"
+        f"agentibrain_redis\trepo\t{repo}\n"
+    )
+    r = _run_cli(["up"], home, cwd=repo, path=path)
+    assert r.returncode == 0, r.stderr
+    lines = record.read_text().splitlines()
+    downs = [i for i, ln in enumerate(lines) if "down --remove-orphans" in ln]
+    assert any("compose -p other-checkout down --remove-orphans" in ln for ln in lines)
+    assert any("compose -p agentibrain down --remove-orphans" in ln for ln in lines)
+    assert not any("-p repo down" in ln for ln in lines)
+    assert max(downs) < lines.index(f"{repo} :: compose up -d")

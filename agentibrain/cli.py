@@ -141,10 +141,19 @@ def _find_deployment_or_exit() -> tuple[str, Path, BrainSettings]:
     return mode, compose_dir, settings
 
 
+def _remove_other_stacks(keep: Path | None) -> None:
+    for project, proc in bootstrap.remove_other_stacks(keep):
+        if proc.returncode != 0:
+            console.print(f"[red]removing stack {project} failed[/red]\n{proc.stderr}")
+            sys.exit(proc.returncode)
+        console.print(f"[yellow]removed stack[/yellow] {project}")
+
+
 @main.command("up")
 def up_cmd() -> None:
     """Start the brain stack wherever it lives (docker compose up -d)."""
     mode, compose_dir, settings = _find_deployment_or_exit()
+    _remove_other_stacks(compose_dir)
     if mode == "init":
         proc = bootstrap.compose_up(settings)
         if proc.returncode != 0:
@@ -171,6 +180,7 @@ def build_cmd(services: tuple[str, ...]) -> None:
     shows the resulting ps.
     """
     _, compose_dir, _ = _find_deployment_or_exit()
+    _remove_other_stacks(compose_dir)
     console.print(f"[bold]build + up[/bold] @ {compose_dir}")
     rc = bootstrap.compose_stream(["up", "-d", "--build", *services], compose_dir)
     if rc != 0:
@@ -211,6 +221,7 @@ def down_cmd() -> None:
         console.print(f"[red]compose down failed[/red]\n{proc.stderr}")
         sys.exit(proc.returncode)
     console.print(proc.stdout or "[green]compose down ok[/green]")
+    _remove_other_stacks(None)
 
 
 @main.command("status")
@@ -997,6 +1008,7 @@ def _start_stack(settings: BrainSettings) -> None:
         console.print("  [red]✗ no compose deployment to start[/red]")
         sys.exit(2)
     mode, compose_dir = deployment
+    _remove_other_stacks(compose_dir)
     if mode == "init":
         proc = bootstrap.compose_up(settings)
         if proc.returncode != 0:
