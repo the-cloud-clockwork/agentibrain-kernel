@@ -59,7 +59,7 @@ This repo owns:
 - Brain profile overlays for agentihooks
 - The vault layout schema and the `agentibrain scaffold` tool that writes it
 - The HTTP API contract (`api/openapi.yaml`)
-- The Python CLI (`agentibrain init|up|down|status|tick|scaffold|version`)
+- The Python CLI (`agentibrain install|up|down|build|logs|status|check|tick|sync|scaffold|update|version`)
 
 ## What this repo does NOT own
 

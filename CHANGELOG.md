@@ -8,6 +8,15 @@ Tags are issued by the release workflow, not locally. Cut one by dispatching `.g
 
 ## [Unreleased]
 
+### Removed
+
+- **`agentibrain init`** — `install` is the one setup command. Its flags moved
+  there: `--s3-bucket`, `--s3-endpoint`, `--postgres-url`, `--redis-url`,
+  `--openai-key`, `--llm-gateway-url` (`--vault` and `--ollama` were already on
+  `install`). `install` renders bundled MinIO unless `--s3-bucket` is given, so
+  `--local` is gone, and `--openai-key` no longer reads `OPENAI_API_KEY` from the
+  environment.
+
 ### Bug Fixes
 
 - **Merge rationale was being written into arc titles** (`brain_apply.py`) — a MERGE

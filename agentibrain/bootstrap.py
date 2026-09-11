@@ -350,8 +350,8 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
     """Locate the compose deployment the CLI should drive.
 
     Returns ``(mode, compose_dir)`` — mode is ``"root-compose"`` (repo
-    checkout managed by local/bootstrap.sh) or ``"init"`` (stack rendered by
-    ``agentibrain init``) — or None when no deployment exists.
+    checkout managed by local/bootstrap.sh) or ``"init"`` (stack rendered into
+    ~/.agentibrain by ``agentibrain install``) — or None when no deployment exists.
 
     Order: the checkout you are standing in wins — running a command from
     inside checkout B must never target checkout A that an old bootstrap

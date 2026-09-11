@@ -11,7 +11,7 @@ info:
     - Humans + other agents for ingest and retrieval.
 
     **Auth:** bearer token via `Authorization: Bearer $KB_ROUTER_TOKEN`. The
-    token is issued at `agentibrain init` time and stored in `~/.agentibrain/.env`.
+    token is issued at `agentibrain install` time and stored in `~/.agentibrain/.env`.
 
     **Status:** v0.1.0 ships `/health`, `/ingest`, `/search`, `/brief`,
     `/dispatch`. The fleet-facing endpoints (`/feed`, `/signal`, `/marker`,
@@ -19,7 +19,7 @@ info:
 
 servers:
   - url: http://localhost:8102
-    description: Default local brain-api port (agentibrain init default).
+    description: Default local brain-api port (agentibrain install default).
 
 components:
   securitySchemes:

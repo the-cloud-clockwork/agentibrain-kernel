@@ -50,90 +50,14 @@ def main() -> None:
     """agentibrain — standalone brain + KB kernel."""
 
 
-@main.command()
-@click.option("--vault", type=click.Path(), required=False, help="Path to the vault.")
-@click.option("--local", "local_mode", is_flag=True, help="Use MinIO instead of S3.")
-@click.option("--s3-bucket", help="S3 bucket name (required without --local).")
-@click.option("--s3-endpoint", help="S3 endpoint override (e.g. for external MinIO).")
-@click.option("--postgres-url", help="External Postgres DSN. Defaults to bundled.")
-@click.option("--redis-url", help="External Redis URL. Defaults to bundled.")
-@click.option("--openai-key", help="OpenAI API key.", envvar="OPENAI_API_KEY")
-@click.option("--llm-gateway-url", help="Optional inference-gateway URL (operator path).")
-@click.option(
-    "--ollama",
-    "use_ollama",
-    is_flag=True,
-    help="Bundle Ollama and point chat + embeddings at it. No API key needed.",
-)
-def init(
-    vault: str | None,
-    local_mode: bool,
-    s3_bucket: str | None,
-    s3_endpoint: str | None,
-    postgres_url: str | None,
-    redis_url: str | None,
-    openai_key: str | None,
-    llm_gateway_url: str | None,
-    use_ollama: bool,
-) -> None:
-    """Initialize a new brain deployment (writes config + prepares compose)."""
-    mode = "local" if local_mode else "s3"
-    if not local_mode and not s3_bucket:
-        console.print("[red]--s3-bucket required without --local[/red]")
-        sys.exit(2)
-
-    vault_path = Path(vault).expanduser().resolve() if vault else Path.home() / "agentibrain-vault"
-
-    settings = BrainSettings(
-        mode=mode,
-        vault_path=vault_path,
-        s3_bucket=s3_bucket,
-        s3_endpoint=s3_endpoint,
-        postgres_url=postgres_url,
-        redis_url=redis_url,
-        openai_api_key=SecretStr(openai_key) if openai_key else None,
-        llm_gateway_url=llm_gateway_url,
-        ollama=use_ollama,
-        _env_file=None,
-    )
-
-    token = bootstrap.generate_token()
-
-    settings.vault_path.mkdir(parents=True, exist_ok=True)
-    cfg_path = bootstrap.write_config(settings)
-    env_path = bootstrap.write_env_file(settings, token)
-    token = bootstrap._read_env_value(env_path, "KB_ROUTER_TOKEN") or token
-    rendered = bootstrap.render_compose(settings)
-    compose_path = bootstrap.write_compose(settings, rendered)
-
-    console.print(f"[green]✓[/green] config     → {cfg_path}")
-    console.print(f"[green]✓[/green] env        → {env_path}  (chmod 600)")
-    console.print(f"[green]✓[/green] compose    → {compose_path}")
-    console.print(f"[green]✓[/green] vault path → {settings.vault_path}")
-    if use_ollama:
-        console.print(
-            f"[green]✓[/green] inference  → bundled Ollama "
-            f"({settings.ollama_chat_model} + {settings.ollama_embed_model}, "
-            "pulled on first `up`)"
-        )
-    console.print()
-    console.print("[bold]KB_ROUTER_TOKEN[/bold] (save this):")
-    console.print(f"  {token}")
-    console.print()
-    console.print(
-        "Next: [cyan]agentibrain scaffold[/cyan] to seed the vault, "
-        "then [cyan]agentibrain up[/cyan] to start the stack."
-    )
-
-
 def _find_deployment_or_exit() -> tuple[str, Path, BrainSettings]:
     """Detect the compose deployment (any mode, any cwd) or exit 2."""
     settings = _load_settings()
     dep = bootstrap.find_deployment(settings)
     if dep is None:
         console.print(
-            "[red]no agentibrain deployment found — run ./local/bootstrap.sh "
-            "in the repo, or `agentibrain init`[/red]"
+            "[red]no agentibrain deployment found — run `agentibrain install`, "
+            "or ./local/bootstrap.sh in the repo[/red]"
         )
         sys.exit(2)
     mode, compose_dir = dep
@@ -242,8 +166,8 @@ def status_cmd() -> None:
     else:
         # The HTTP health check below still runs.
         console.print(
-            "[yellow]no deployment found — run ./local/bootstrap.sh in the repo, "
-            "or `agentibrain init`[/yellow]"
+            "[yellow]no deployment found — run `agentibrain install`, "
+            "or ./local/bootstrap.sh in the repo[/yellow]"
         )
 
     token_path = settings.config_dir.expanduser() / ".env"
@@ -255,7 +179,7 @@ def status_cmd() -> None:
                 break
 
     if not token:
-        console.print("[yellow]no KB_ROUTER_TOKEN — run `agentibrain init` first[/yellow]")
+        console.print("[yellow]no KB_ROUTER_TOKEN — run `agentibrain install` first[/yellow]")
         return
 
     try:
@@ -293,7 +217,7 @@ def _resolve_token(settings: BrainSettings, token: str | None) -> str:
     found = _token_from_env_file(settings)
     if found:
         return found
-    console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
+    console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain install`[/red]")
     sys.exit(2)
 
 
@@ -985,13 +909,34 @@ def _agentihooks_bin() -> str:
 
 
 def _create_deployment(
-    settings: BrainSettings, *, vault: str | None, use_ollama: bool, dry_run: bool
+    settings: BrainSettings,
+    *,
+    vault: str | None,
+    use_ollama: bool,
+    s3_bucket: str | None,
+    s3_endpoint: str | None,
+    postgres_url: str | None,
+    redis_url: str | None,
+    openai_key: str | None,
+    llm_gateway_url: str | None,
+    dry_run: bool,
 ) -> BrainSettings:
-    """Render a local stack. Mirrors `init`, minus printing the token."""
+    """Render a stack into ~/.agentibrain: bundled MinIO, or S3 when a bucket is named."""
     vault_path = Path(vault).expanduser().resolve() if vault else settings.vault_path
-    fresh = BrainSettings(mode="local", vault_path=vault_path, ollama=use_ollama, _env_file=None)
+    fresh = BrainSettings(
+        mode="s3" if s3_bucket else "local",
+        vault_path=vault_path,
+        s3_bucket=s3_bucket,
+        s3_endpoint=s3_endpoint,
+        postgres_url=postgres_url,
+        redis_url=redis_url,
+        openai_api_key=SecretStr(openai_key) if openai_key else None,
+        llm_gateway_url=llm_gateway_url,
+        ollama=use_ollama,
+        _env_file=None,
+    )
     if dry_run:
-        console.print(f"  would render a local stack → {fresh.config_dir}")
+        console.print(f"  would render a {fresh.mode} stack → {fresh.config_dir}")
         return fresh
 
     token = _token_from_env_file(fresh) or bootstrap.generate_token()
@@ -1075,6 +1020,14 @@ def _start_stack(settings: BrainSettings) -> None:
     "--no-init", is_flag=True, help="Register the link but skip the agentihooks re-install."
 )
 @click.option("--dry-run", is_flag=True, help="Report every step without changing anything.")
+@click.option("--s3-bucket", help="Store artifacts in this S3 bucket instead of bundled MinIO.")
+@click.option("--s3-endpoint", help="S3 endpoint override, with --s3-bucket.")
+@click.option("--postgres-url", help="External Postgres DSN for the stack this run creates.")
+@click.option("--redis-url", help="External Redis URL for the stack this run creates.")
+@click.option(
+    "--openai-key", help="Written as LLM_API_KEY and INFERENCE_API_KEY if the .env lacks them."
+)
+@click.option("--llm-gateway-url", help="Written as INFERENCE_URL if the .env lacks it.")
 def install_cmd(
     vault: str | None,
     use_ollama: bool,
@@ -1087,6 +1040,12 @@ def install_cmd(
     no_link: bool,
     no_init: bool,
     dry_run: bool,
+    s3_bucket: str | None,
+    s3_endpoint: str | None,
+    postgres_url: str | None,
+    redis_url: str | None,
+    openai_key: str | None,
+    llm_gateway_url: str | None,
 ) -> None:
     """Set this machine up end to end: stack, vault, agentihooks config, profile.
 
@@ -1113,13 +1072,27 @@ def install_cmd(
         if deployment is not None:
             mode, compose_dir = deployment
             console.print(f"  [green]✓[/green] reusing {mode} @ {compose_dir}")
+            if s3_bucket or s3_endpoint or postgres_url or redis_url:
+                console.print(
+                    "  [yellow]![/yellow] --s3-*, --postgres-url and --redis-url only shape "
+                    "a stack install creates — this one already exists"
+                )
         elif no_stack:
             console.print(
                 f"  [yellow]![/yellow] none found; configuring against {settings.brain_url}"
             )
         else:
             settings = _create_deployment(
-                settings, vault=vault, use_ollama=use_ollama, dry_run=dry_run
+                settings,
+                vault=vault,
+                use_ollama=use_ollama,
+                s3_bucket=s3_bucket,
+                s3_endpoint=s3_endpoint,
+                postgres_url=postgres_url,
+                redis_url=redis_url,
+                openai_key=openai_key,
+                llm_gateway_url=llm_gateway_url,
+                dry_run=dry_run,
             )
             if not dry_run:
                 deployment = bootstrap.find_deployment(settings)
@@ -1176,6 +1149,11 @@ def install_cmd(
             values.update(bootstrap.stack_env_defaults(compose_dir, brain_env))
             if root_compose:
                 values["AGENTIBRAIN_REPO"] = str(compose_dir)
+            if openai_key:
+                values["LLM_API_KEY"] = openai_key
+                values["INFERENCE_API_KEY"] = openai_key
+            if llm_gateway_url:
+                values["INFERENCE_URL"] = llm_gateway_url
         values.update(_hooks_env.client_defaults(vault))
         added = bootstrap.upsert_env_values(brain_env, values)
         console.print(f"  [green]✓[/green] brain env → {brain_env}  (chmod 600)")

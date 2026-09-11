@@ -15,16 +15,10 @@ agentibrain check               # verify
 agentibrain update              # later: upgrade from PyPI (--check to look first)
 ```
 
-`install` is `init --local` + `scaffold` + `up`, in that order, plus the
-agentihooks wiring most people forget. Run the steps yourself when you need to
-edit `~/.agentibrain/.env` between rendering the stack and starting it:
-
-```bash
-agentibrain init --local        # writes ~/.agentibrain/{config.yaml,.env,compose.yml} + creates the vault
-agentibrain scaffold            # seed the vault tree (30 folders, 52 files)
-agentibrain up                  # pull images from GHCR, start 9 services, run migrations
-agentibrain check               # verify
-```
+`install` renders the stack into `~/.agentibrain/`, seeds the vault, completes
+`~/.agentibrain/.env` and starts everything, plus the agentihooks wiring most
+people forget. Re-run it any time: it reuses what exists and only adds what is
+missing. `--s3-bucket` swaps bundled MinIO for S3.
 
 That is the whole brain: `postgres`, `redis`, `minio`, `embeddings`,
 `brain-api`, `tick-cron`, `tick-drain`, `amygdala`, `mcp`. Images come from
@@ -84,31 +78,24 @@ unconfigured: semantic search and AI synthesis. Both are off, nothing else is.
 agentibrain install --ollama    # pulls llama3.2:3b + nomic-embed-text on first start
 ```
 
-or the same thing step by step:
-
-```bash
-agentibrain init --local --ollama
-agentibrain scaffold
-agentibrain up
-```
-
 This points **both** halves at a bundled Ollama — chat (AI ticks, `kb_brief`)
 and embeddings (semantic search) — so the stack needs no API key anywhere.
 `llama3.2:3b` runs on an 8 GB machine. For a larger one, export
-`BRAIN_OLLAMA_CHAT_MODEL` before whichever command *creates* the deployment —
-`init` or `install` (`llama3.1:8b` at 16 GB, `qwen2.5:14b` at 32 GB+); settings
-take the `BRAIN_` prefix. Once the stack exists both commands reuse it, so the
-model is fixed at creation and `--ollama` on a later `install` does nothing.
+`BRAIN_OLLAMA_CHAT_MODEL` before the `install` that *creates* the deployment
+(`llama3.1:8b` at 16 GB, `qwen2.5:14b` at 32 GB+); settings take the `BRAIN_`
+prefix. Once the stack exists `install` reuses it, so the model is fixed at
+creation and `--ollama` on a later `install` does nothing.
 
 The first `up` downloads roughly 2.5 GB of weights and the models stay in a
 named volume across restarts.
 
 ### Configure your LLM provider (optional)
 
-`init` writes `~/.agentibrain/.env` with the generated secrets, then lists every
-other variable the stack reads — commented out, with its default and what it
-does. Uncomment what you need; the names are not guessable (the embeddings
-service reads `LLM_API_KEY`, never `OPENAI_API_KEY`).
+`install` writes `~/.agentibrain/.env` with the generated secrets and every
+stack setting at its default, then names the inference keys it left for you.
+Add them to the file, or pass `--openai-key` / `--llm-gateway-url` to `install`
+(they only fill keys the file lacks); the names are not guessable (the
+embeddings service reads `LLM_API_KEY`, never `OPENAI_API_KEY`).
 
 Set at minimum one API key to enable semantic search:
 
@@ -124,7 +111,7 @@ INFERENCE_API_KEY=<your-openai-key>
 
 **No provider configured and no `--ollama`?** The brain still works — `brain_ingest`, `kb_search` (vault text), `brain_get_arc` all function. Only semantic search and AI synthesis are off.
 
-**Free local alternative:** `agentibrain init --local --ollama` (above) on the
+**Free local alternative:** `agentibrain install --ollama` (above) on the
 pip path. On the clone path, use the overlay:
 
 ```bash
@@ -486,7 +473,7 @@ BIND_HOST=127.0.0.1 docker compose up -d   # loopback only; put a proxy in front
 
 **Auth fails closed.** brain-api refuses to serve without a bearer: every
 endpoint answers `503` until `KB_ROUTER_TOKEN` (or `KB_ROUTER_TOKENS`, a
-comma-separated list) is set. `init` and `install` always generate one, so an
+comma-separated list) is set. `install` always generates one, so an
 empty token set means the deployment is misconfigured — never that it wanted to
 be public. Put a reverse proxy in front for TLS if you expose it beyond a
 trusted network; the bearer is authentication, not transport security.
@@ -771,7 +758,7 @@ Scaffold is idempotent. Schema-version mismatch is a hard error unless `--force-
 | Env var | Default | Purpose |
 |---|---|---|
 | `VAULT_ROOT` | `/vault` | Vault mount path inside containers (NFS in K8s, bind mount in Compose) |
-| `KB_ROUTER_TOKEN` / `KB_ROUTER_TOKENS` | **required** | Bearer auth (single token or comma-separated list). brain-api fails closed — every endpoint answers `503` until one is set. `init` and `install` generate one, so an empty value means misconfigured, not public. |
+| `KB_ROUTER_TOKEN` / `KB_ROUTER_TOKENS` | **required** | Bearer auth (single token or comma-separated list). brain-api fails closed — every endpoint answers `503` until one is set. `install` generates one, so an empty value means misconfigured, not public. |
 | `BIND_HOST` | `0.0.0.0` | Host interface for the two published services, `brain-api` and `mcp`. Set `127.0.0.1` to keep them local and front them with a proxy. Postgres, redis, minio, embeddings and ollama always bind loopback. |
 | `EMBEDDINGS_URL` | `http://embeddings:8080` | Embeddings service URL |
 | `EMBEDDINGS_API_KEY` | — | Bearer token for the embeddings service |
