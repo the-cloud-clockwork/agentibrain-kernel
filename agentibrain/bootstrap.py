@@ -109,19 +109,23 @@ def write_env_file(settings: BrainSettings, token: str) -> Path:
     via ``--env-file``. Includes generated defaults for bundled Postgres/MinIO
     so first-run users never have to guess.
 
-    Re-running init MUST NOT cost the operator their configuration. Any key
-    already assigned in the file keeps its value: a rotated KB_ROUTER_TOKEN
-    stays rotated, hand-set provider keys survive, and only names absent from
-    the file are added. Nothing is ever removed. An explicit flag
-    (``--openai-key``, ``--llm-gateway-url``) is the one thing that overrides,
-    because the operator just typed it.
+    Re-running init MUST NOT cost the operator their configuration. An
+    existing file is only appended to: keys it lacks are added, and a key it
+    already has — even an empty one, even one a flag like ``--openai-key``
+    names — is never rewritten or removed, and nothing is backed up.
     """
     cfg_dir = settings.config_dir.expanduser()
     cfg_dir.mkdir(parents=True, exist_ok=True)
     env_path = cfg_dir / ".env"
     existing = _existing_assignments(env_path)
 
-    embeddings_key = existing.get("EMBEDDINGS_API_KEY") or generate_token()
+    embeddings_key = (
+        existing.get("EMBEDDINGS_API_KEY")
+        or existing.get("EMBEDDINGS_API_KEYS", "").split(",")[0].strip()
+        or generate_token()
+    )
+    # `or`, not a getenv default: a shell exporting these empty (agentienv
+    # sources ~/.env) would otherwise write an empty password.
     generated: dict[str, str] = {
         "KB_ROUTER_TOKEN": token,
         # agentihooks reads this file to learn where the brain is; without the
@@ -129,14 +133,15 @@ def write_env_file(settings: BrainSettings, token: str) -> Path:
         "BRAIN_URL": settings.brain_url,
         "EMBEDDINGS_API_KEY": embeddings_key,
         "EMBEDDINGS_API_KEYS": embeddings_key,
-        "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD", DEFAULT_POSTGRES_PASSWORD),
+        "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD") or DEFAULT_POSTGRES_PASSWORD,
         "LOG_LEVEL": "INFO",
     }
     if settings.mode == "local":
-        generated["MINIO_ROOT_USER"] = os.getenv("MINIO_ROOT_USER", DEFAULT_MINIO_USER)
-        generated["MINIO_ROOT_PASSWORD"] = os.getenv("MINIO_ROOT_PASSWORD", DEFAULT_MINIO_PASSWORD)
+        generated["MINIO_ROOT_USER"] = os.getenv("MINIO_ROOT_USER") or DEFAULT_MINIO_USER
+        generated["MINIO_ROOT_PASSWORD"] = (
+            os.getenv("MINIO_ROOT_PASSWORD") or DEFAULT_MINIO_PASSWORD
+        )
 
-    # Typed this run, so it wins over whatever the file holds.
     explicit: dict[str, str] = {}
     if settings.openai_api_key is not None:
         # LLM_API_KEY is what the embeddings service reads; OPENAI_API_KEY is
@@ -147,10 +152,13 @@ def write_env_file(settings: BrainSettings, token: str) -> Path:
     if settings.llm_gateway_url:
         explicit["INFERENCE_URL"] = settings.llm_gateway_url
 
-    resolved = {**generated, **existing, **explicit}
+    values = {**generated, **explicit}
+    if env_path.exists():
+        upsert_env_values(env_path, values)
+        return env_path
 
-    lines = [f"{key}={value}" for key, value in resolved.items()]
-    lines += _commented_settings(settings, offered=set(resolved))
+    lines = [f"{key}={value}" for key, value in values.items() if value]
+    lines += _commented_settings(settings, offered=set(values))
     env_path.write_text("\n".join(lines) + "\n")
     env_path.chmod(0o600)
     return env_path
@@ -383,20 +391,13 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
 
 
 def pin_repo(settings: BrainSettings, repo: Path) -> None:
-    """Point AGENTIBRAIN_REPO at ``repo``, keeping every other line.
+    """Record ``repo`` as AGENTIBRAIN_REPO when the brain's .env has no pin yet.
 
     `down` removes the containers find_deployment located the stack by, so
     without the pin the next `up` from another cwd lands on the init stack.
+    An existing pin is never rewritten.
     """
-    env_path = settings.config_dir.expanduser() / ".env"
-    if _read_env_value(env_path, "AGENTIBRAIN_REPO") == str(repo):
-        return
-    lines = env_path.read_text().splitlines() if env_path.exists() else []
-    lines = [ln for ln in lines if not ln.startswith("AGENTIBRAIN_REPO=")]
-    lines.append(f"AGENTIBRAIN_REPO={repo}")
-    env_path.parent.mkdir(parents=True, exist_ok=True)
-    env_path.write_text("\n".join(lines) + "\n")
-    env_path.chmod(0o600)
+    upsert_env_values(settings.config_dir.expanduser() / ".env", {"AGENTIBRAIN_REPO": str(repo)})
 
 
 def link_checkout_env(settings: BrainSettings, compose_dir: Path) -> bool:

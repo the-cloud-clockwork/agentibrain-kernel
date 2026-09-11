@@ -15,7 +15,7 @@ agentibrain --version
 
 | Command | What it does |
 |---|---|
-| `agentibrain init` | Render a self-contained stack into `~/.agentibrain/` (config, `.env` with fresh tokens, compose file). For machines NOT using the repo's root compose. |
+| `agentibrain init` | Render a self-contained stack into `~/.agentibrain/` (config, `.env` with fresh tokens, compose file). For machines NOT using the repo's root compose. Re-running it on an existing `.env` only appends the keys the file lacks — a stored value is never rewritten, even by `--openai-key` or `--llm-gateway-url`. |
 | `agentibrain build [SERVICE...]` | **Rebuild + restart** — `docker compose up -d --build` in the detected deployment, then `ps`. The one command that makes a code change take effect. |
 | `agentibrain up` / `down` | Start / stop the detected deployment (init mode also runs migrations on `up`). |
 | `agentibrain logs [SERVICE] [-f] [--since 10m] [--tail N]` | Service logs passthrough. |
@@ -38,9 +38,9 @@ where the deployment lives, from any cwd:
 2. The stack Docker reports holding `agentibrain_brain_api` — whatever is up
    is what gets driven
 3. The repo path pinned as `AGENTIBRAIN_REPO` in `~/.agentibrain/.env` —
-   written by `local/bootstrap.sh` and refreshed by every stack command that
-   drives a checkout, so `up` after `down` returns to the same checkout from
-   any cwd
+   written by `local/bootstrap.sh`, `install`, or the first stack command that
+   drives a checkout when the file lacks it (never rewritten), so `up` after
+   `down` returns to that checkout from any cwd
 4. The init-rendered stack in `~/.agentibrain/` (`agentibrain init` mode)
 
 No deployment anywhere → exit 2 with the bootstrap/init hint. You never need

@@ -102,6 +102,7 @@ def init(
     settings.vault_path.mkdir(parents=True, exist_ok=True)
     cfg_path = bootstrap.write_config(settings)
     env_path = bootstrap.write_env_file(settings, token)
+    token = bootstrap._read_env_value(env_path, "KB_ROUTER_TOKEN") or token
     rendered = bootstrap.render_compose(settings)
     compose_path = bootstrap.write_compose(settings, rendered)
 

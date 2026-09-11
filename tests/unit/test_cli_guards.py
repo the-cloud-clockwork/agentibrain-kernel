@@ -216,3 +216,14 @@ def test_compose_env_drops_variables_the_brain_owns(tmp_path, monkeypatch):
     assert "LOG_LEVEL" not in env
     assert "REDIS_URL" not in env
     assert env["KEEP_ME"] == "1"
+
+
+def test_a_stack_command_never_rewrites_an_existing_pin(tmp_path, docker_shim):
+    path, _ = docker_shim
+    home, pinned = _home_with_repo(tmp_path)
+    other = tmp_path / "checkout-b"
+    other.mkdir()
+    (other / "compose.yml").write_text(MARKER_COMPOSE)
+    r = _run_cli(["build"], home, cwd=other, path=path)
+    assert r.returncode == 0, r.stderr
+    assert (home / ".agentibrain" / ".env").read_text() == f"AGENTIBRAIN_REPO={pinned}\n"

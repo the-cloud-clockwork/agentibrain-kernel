@@ -88,8 +88,8 @@ def test_rerunning_init_never_costs_the_operator_their_configuration(tmp_path):
     assert active["KB_ROUTER_TOKEN"] == "rotated-by-the-operator"
     assert active["LLM_API_KEY"] == "set-by-hand"
     assert active["LLM_API_BASE"] == "https://my-proxy.example/v1"
-    # A key it now holds must not also be offered as a commented placeholder.
-    assert "LLM_API_KEY" not in _commented(second)
+    # Nothing was missing, so the rerun leaves the file exactly as edited.
+    assert second == edited
 
 
 def test_the_internal_embeddings_key_is_stable_across_runs(tmp_path):
@@ -105,11 +105,12 @@ def test_the_internal_embeddings_key_is_stable_across_runs(tmp_path):
     assert again["EMBEDDINGS_API_KEYS"] == key
 
 
-def test_an_explicitly_typed_flag_overrides_the_stored_value(tmp_path):
+def test_a_typed_flag_never_overwrites_a_stored_value(tmp_path):
     _env_text(tmp_path)
     (tmp_path / "cfg" / ".env").write_text("LLM_API_KEY=stale\n")
     text = _env_text(tmp_path, openai_api_key="sk-typed-this-run")
     active = dict(
         line.split("=", 1) for line in text.splitlines() if line and not line.startswith("#")
     )
-    assert active["LLM_API_KEY"] == "sk-typed-this-run"
+    assert active["LLM_API_KEY"] == "stale"
+    assert active["INFERENCE_API_KEY"] == "sk-typed-this-run"
