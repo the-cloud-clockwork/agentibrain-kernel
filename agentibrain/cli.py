@@ -996,7 +996,9 @@ def _create_deployment(
     token = _token_from_env_file(fresh) or bootstrap.generate_token()
     fresh.vault_path.mkdir(parents=True, exist_ok=True)
     cfg_path = bootstrap.write_config(fresh)
-    env_path = bootstrap.write_env_file(fresh, token)
+    env_path = fresh.config_dir.expanduser() / ".env"
+    if not env_path.exists():
+        bootstrap.write_env_file(fresh, token)
     bootstrap.write_compose(fresh, bootstrap.render_compose(fresh))
     console.print(f"  [green]✓[/green] config → {cfg_path}")
     console.print(f"  [green]✓[/green] env    → {env_path}  (chmod 600)")
@@ -1137,7 +1139,65 @@ def install_cmd(
             f"({result['folders_created']} folders, {result['files_written']} files)"
         )
 
-    console.print("\n[bold]3. stack[/bold]")
+    console.print("\n[bold]3. brain config[/bold]")
+    if not remote:
+        found_url, found_token = bootstrap.resolve_endpoint(settings, deployment)
+        settings.brain_url = found_url
+        token = token or found_token
+    token = token or _token_from_env_file(settings)
+    if remote and not token and not dry_run:
+        console.print(
+            f"  [red]✗ no bearer token for {settings.brain_url} — "
+            "pass --token, or set KB_ROUTER_TOKEN[/red]"
+        )
+        sys.exit(2)
+
+    compose_dir = deployment[1] if deployment else None
+    if dry_run:
+        console.print(f"  would complete {bootstrap.deployment_env_path(settings, deployment)}")
+    else:
+        root_compose = deployment is not None and deployment[0] == "root-compose"
+        if root_compose and bootstrap.link_checkout_env(settings, compose_dir):
+            brain_file = settings.config_dir.expanduser() / ".env"
+            console.print(f"  [green]✓[/green] linked {compose_dir / '.env'} → {brain_file}")
+        brain_env = bootstrap.deployment_env_path(settings, deployment)
+        for outbox in _hooks_env.ensure_outbox_dirs():
+            console.print(f"  [green]✓[/green] outbox → {outbox}")
+        values = {
+            "BRAIN_URL": settings.brain_url,
+            "KB_ROUTER_TOKEN": token or bootstrap.generate_token(),
+        }
+        vault = None
+        if not remote:
+            vault = Path(
+                bootstrap._read_env_value(brain_env, "VAULT_ROOT_HOST") or settings.vault_path
+            )
+            values.update(bootstrap.stack_env_defaults(compose_dir, brain_env))
+            if root_compose:
+                values["AGENTIBRAIN_REPO"] = str(compose_dir)
+        values.update(_hooks_env.client_defaults(vault))
+        added = bootstrap.upsert_env_values(brain_env, values)
+        console.print(f"  [green]✓[/green] brain env → {brain_env}  (chmod 600)")
+        summary = ", ".join(added) if added else "nothing — every key is already set"
+        console.print(f"       added {summary}", markup=False)
+        if not remote:
+            unset = [
+                k for k in bootstrap.INFERENCE_KEYS if not bootstrap._read_env_value(brain_env, k)
+            ]
+            if unset:
+                console.print(
+                    f"  [yellow]![/yellow] inference is yours to set in {brain_env}: "
+                    f"{escape(', '.join(unset))}"
+                )
+        swept = _hooks_env.sweep_managed_file()
+        if swept:
+            console.print(f"  [green]✓[/green] removed duplicated copy → {swept}")
+        console.print(
+            "       agentihooks reads this file directly — nothing is copied into ~/.agentihooks",
+            markup=False,
+        )
+
+    console.print("\n[bold]4. stack[/bold]")
     if remote:
         console.print("  [--] skipped — client-only")
     elif no_stack:
@@ -1146,51 +1206,6 @@ def install_cmd(
         console.print("  would start the compose stack")
     else:
         _start_stack(settings)
-
-    console.print("\n[bold]4. brain config[/bold]")
-    if not remote:
-        found_url, found_token = bootstrap.resolve_endpoint(settings, deployment)
-        settings.brain_url = found_url
-        token = token or found_token
-    token = token or _token_from_env_file(settings)
-    if not token and not dry_run:
-        fix = (
-            "pass --token, or set KB_ROUTER_TOKEN"
-            if remote
-            else f"no KB_ROUTER_TOKEN in {bootstrap.deployment_env_path(settings, deployment)}"
-        )
-        console.print(f"  [red]✗ no bearer token for {settings.brain_url} — {fix}[/red]")
-        sys.exit(2)
-
-    brain_env = bootstrap.deployment_env_path(settings, deployment)
-    if dry_run:
-        console.print(f"  would complete {brain_env}")
-    else:
-        for outbox in _hooks_env.ensure_outbox_dirs():
-            console.print(f"  [green]✓[/green] outbox → {outbox}")
-        vault = None
-        if not remote:
-            vault = Path(
-                bootstrap._read_env_value(brain_env, "VAULT_ROOT_HOST") or settings.vault_path
-            )
-        added = bootstrap.upsert_env_values(
-            brain_env,
-            {
-                "BRAIN_URL": settings.brain_url,
-                "KB_ROUTER_TOKEN": token,
-                **_hooks_env.client_defaults(vault),
-            },
-        )
-        console.print(f"  [green]✓[/green] brain env → {brain_env}  (chmod 600)")
-        if added:
-            console.print(f"       added {', '.join(added)}", markup=False)
-        swept = _hooks_env.sweep_managed_file()
-        if swept:
-            console.print(f"  [green]✓[/green] removed duplicated copy → {swept}")
-        console.print(
-            "       agentihooks reads this file directly — nothing is copied into ~/.agentihooks",
-            markup=False,
-        )
 
     console.print("\n[bold]5. profile[/bold]")
     if no_link:

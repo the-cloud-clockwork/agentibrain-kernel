@@ -98,7 +98,7 @@ def test_install_dry_run_changes_nothing(hooks_home, tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
-    for step in ("1. deployment", "2. vault", "3. stack", "4. brain config", "5. profile"):
+    for step in ("1. deployment", "2. vault", "3. brain config", "4. stack", "5. profile"):
         assert step in flat
     assert not hooks_env.managed_env_path().exists()
 

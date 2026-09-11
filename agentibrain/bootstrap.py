@@ -179,14 +179,16 @@ _OPTIONAL_ENV: tuple[tuple[str, str, str], ...] = (
 
 
 def upsert_env_values(env_path: Path, values: dict[str, str]) -> list[str]:
-    """Add missing assignments to an env file, preserving everything else.
+    """Append assignments for keys the env file does not define, preserving everything else.
 
-    A key already carrying a value is never touched — a rotated token stays
-    rotated and a hand-edited URL stays hand-edited. Returns the names added.
+    A key already in the file is never touched, even with an empty value — a
+    rotated token stays rotated, a hand-edited URL stays hand-edited, and a
+    rerun cannot duplicate a line. Empty values are not written. Returns the
+    names added.
     """
     env_path.parent.mkdir(parents=True, exist_ok=True)
     existing = _existing_assignments(env_path)
-    missing = {k: v for k, v in values.items() if v and not existing.get(k, "").strip()}
+    missing = {k: v for k, v in values.items() if v and k not in existing}
     if missing:
         body = env_path.read_text() if env_path.exists() else ""
         if body and not body.endswith("\n"):
@@ -197,6 +199,55 @@ def upsert_env_values(env_path: Path, values: dict[str, str]) -> list[str]:
         env_path.touch(exist_ok=True)
     env_path.chmod(0o600)
     return list(missing)
+
+
+# The operator's to set: written only when the deployment's compose file
+# carries a default for them, which a bundled-Ollama stack does.
+INFERENCE_KEYS = ("LLM_API_KEY", "LLM_API_BASE", "INFERENCE_URL", "INFERENCE_API_KEY")
+
+_STACK_ENV_FALLBACKS: dict[str, str] = {
+    "POSTGRES_PASSWORD": DEFAULT_POSTGRES_PASSWORD,
+    "LOG_LEVEL": "INFO",
+    "MINIO_ROOT_USER": DEFAULT_MINIO_USER,
+    "MINIO_ROOT_PASSWORD": DEFAULT_MINIO_PASSWORD,
+    "LLM_API_KEY": "",
+    "LLM_API_BASE": "",
+    "LLM_EMBED_MODEL": "text-embedding-3-small",
+    "EMBED_DIM": "",
+    "INFERENCE_URL": "",
+    "INFERENCE_API_KEY": "",
+    "BRAIN_CLASSIFY_MODEL": "brain-classify",
+    "BRAIN_BRIEF_MODEL": "brain-brief",
+    "TICK_INTERVAL_SECONDS": "7200",
+    "TICK_DRAIN_INTERVAL_SECONDS": "30",
+    "BRAIN_LLM_TIMEOUT_SECONDS": "600",
+    "PORT_POSTGRES": "5432",
+}
+
+
+def stack_env_defaults(compose_dir: Path | None, env_path: Path) -> dict[str, str]:
+    """The stack's own keys at the values the deployment already runs with.
+
+    Each default is read from the deployment's compose file (``${NAME:-default}``),
+    so writing it changes nothing for a running stack; a name the file does not
+    use falls back to the kernel default. The embeddings key pair is generated
+    once and shared, or completed from whichever half the env file holds.
+    """
+    compose = compose_dir / "compose.yml" if compose_dir else None
+    text = compose.read_text() if compose and compose.is_file() else ""
+    values = {}
+    for name, fallback in _STACK_ENV_FALLBACKS.items():
+        match = re.search(r"\$\{" + re.escape(name) + r":?-([^}]*)\}", text)
+        values[name] = match.group(1) if match else fallback
+    existing = _existing_assignments(env_path)
+    embeddings_key = (
+        existing.get("EMBEDDINGS_API_KEY")
+        or existing.get("EMBEDDINGS_API_KEYS", "").split(",")[0].strip()
+        or generate_token()
+    )
+    values["EMBEDDINGS_API_KEY"] = embeddings_key
+    values["EMBEDDINGS_API_KEYS"] = embeddings_key
+    return values
 
 
 def _commented_settings(settings: BrainSettings, offered: set[str] | None = None) -> list[str]:
@@ -352,12 +403,15 @@ def link_checkout_env(settings: BrainSettings, compose_dir: Path) -> bool:
     """Point a checkout's .env at the brain's own, as local/bootstrap.sh does.
 
     compose reads the project .env; without the link it falls back to compose
-    defaults and whatever the shell exports. An existing file or link is kept.
+    defaults and whatever the shell exports. An existing file or link is kept;
+    an absent brain .env is created empty so the link has something to point at.
     """
     link = compose_dir / ".env"
-    target = settings.config_dir.expanduser() / ".env"
-    if link.exists() or link.is_symlink() or not target.is_file():
+    if link.exists() or link.is_symlink():
         return False
+    target = settings.config_dir.expanduser() / ".env"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.touch(mode=0o600, exist_ok=True)
     link.symlink_to(target)
     return True
 

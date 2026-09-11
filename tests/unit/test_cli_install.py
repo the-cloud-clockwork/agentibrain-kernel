@@ -137,6 +137,87 @@ def test_install_keeps_brain_settings_already_in_the_env(install_env, monkeypatc
     assert "AMYGDALA_ENABLED=true" not in body
 
 
+_STACK_KEYS = (
+    "EMBEDDINGS_API_KEY",
+    "EMBEDDINGS_API_KEYS",
+    "POSTGRES_PASSWORD",
+    "LOG_LEVEL",
+    "MINIO_ROOT_USER",
+    "MINIO_ROOT_PASSWORD",
+    "LLM_EMBED_MODEL",
+    "BRAIN_CLASSIFY_MODEL",
+    "BRAIN_BRIEF_MODEL",
+    "TICK_INTERVAL_SECONDS",
+    "TICK_DRAIN_INTERVAL_SECONDS",
+    "BRAIN_LLM_TIMEOUT_SECONDS",
+    "PORT_POSTGRES",
+)
+
+
+def _assigned(env):
+    return dict(
+        line.split("=", 1)
+        for line in env.read_text().splitlines()
+        if line and not line.startswith("#")
+    )
+
+
+def test_install_writes_every_stack_key_but_inference(install_env, monkeypatch):
+    monkeypatch.setattr(cli, "_agentihooks_bin", lambda: "/usr/bin/agentihooks")
+
+    result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
+
+    assert result.exit_code == 0, result.output
+    assigned = _assigned(install_env / ".env")
+    for key in _STACK_KEYS:
+        assert assigned.get(key), key
+    assert assigned["EMBEDDINGS_API_KEY"] == assigned["EMBEDDINGS_API_KEYS"]
+    for key in ("LLM_API_KEY", "LLM_API_BASE", "INFERENCE_URL", "INFERENCE_API_KEY"):
+        assert key not in assigned
+    assert "INFERENCE_API_KEY" in _flat(result.output)
+
+
+def test_reinstall_only_adds_and_never_backs_up(install_env, monkeypatch):
+    monkeypatch.setattr(cli, "_agentihooks_bin", lambda: "/usr/bin/agentihooks")
+    env = install_env / ".env"
+    mine = "# mine\nLOG_LEVEL=DEBUG\nEMBED_DIM=\nLLM_API_BASE=http://gateway\n"
+    env.write_text(mine)
+
+    for _ in range(2):
+        result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
+        assert result.exit_code == 0, result.output
+    body = env.read_text()
+
+    assert body.startswith(mine)
+    keys = [
+        line.split("=", 1)[0] for line in body.splitlines() if line and not line.startswith("#")
+    ]
+    assert len(keys) == len(set(keys))
+    assert [p.name for p in install_env.iterdir() if p.name.startswith(".env")] == [".env"]
+
+
+def test_install_takes_stack_defaults_from_the_compose_file(install_env, monkeypatch):
+    monkeypatch.setattr(cli, "_agentihooks_bin", lambda: "/usr/bin/agentihooks")
+    checkout = install_env / "checkout"
+    checkout.mkdir()
+    (checkout / "compose.yml").write_text(
+        "services:\n  api:\n    environment:\n      LOG_LEVEL: ${LOG_LEVEL:-WARNING}\n"
+        '    ports:\n      - "127.0.0.1:${PORT_POSTGRES:-5439}:5432"\n'
+    )
+    monkeypatch.setattr(
+        cli.bootstrap, "find_deployment", lambda settings, cwd=None: ("root-compose", checkout)
+    )
+
+    result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
+
+    assert result.exit_code == 0, result.output
+    assert (checkout / ".env").is_symlink()
+    assigned = _assigned(install_env / ".env")
+    assert assigned["LOG_LEVEL"] == "WARNING"
+    assert assigned["PORT_POSTGRES"] == "5439"
+    assert assigned["AGENTIBRAIN_REPO"] == str(checkout)
+
+
 def test_install_exits_when_agentihooks_is_absent(install_env, monkeypatch, tmp_path):
     monkeypatch.setattr(cli.sys, "executable", str(tmp_path / "python"))
     monkeypatch.setattr(cli.shutil, "which", lambda _: None)
