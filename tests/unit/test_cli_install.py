@@ -183,11 +183,14 @@ def test_reinstall_only_adds_and_never_backs_up(install_env, monkeypatch):
     mine = "# mine\nLOG_LEVEL=DEBUG\nEMBED_DIM=\nLLM_API_BASE=http://gateway\n"
     env.write_text(mine)
 
-    for _ in range(2):
-        result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
-        assert result.exit_code == 0, result.output
+    result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
+    assert result.exit_code == 0, result.output
+    first = (env.read_bytes(), env.stat().st_mtime_ns)
+    result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
+    assert result.exit_code == 0, result.output
     body = env.read_text()
 
+    assert (env.read_bytes(), env.stat().st_mtime_ns) == first
     assert body.startswith(mine)
     keys = [
         line.split("=", 1)[0] for line in body.splitlines() if line and not line.startswith("#")

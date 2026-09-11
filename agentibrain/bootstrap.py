@@ -195,8 +195,8 @@ def upsert_env_values(env_path: Path, values: dict[str, str]) -> list[str]:
             body += "\n"
         body += "".join(f"{k}={v}\n" for k, v in missing.items())
         env_path.write_text(body)
-    else:
-        env_path.touch(exist_ok=True)
+    elif not env_path.exists():
+        env_path.touch()
     env_path.chmod(0o600)
     return list(missing)
 
