@@ -11,7 +11,7 @@ The kernel is a brain + KB substrate for AI fleets. This index is the entry poin
 - [`GLOSSARY.md`](GLOSSARY.md) — terms used everywhere (MUBS, arc, signal, marker, tick, hemisphere).
 - [`API.md`](API.md) — full HTTP contract: `/feed /signal /marker /tick /ingest`.
 - [`MCP.md`](MCP.md) — kernel-owned MCP server (`brain_search_arcs`, `brain_get_arc`, `kb_search`, `kb_brief`).
-- [`CLI.md`](CLI.md) — the `agentibrain` CLI: install, commands, `check` deep verification, root-compose vs init-rendered stacks.
+- [`CLI.md`](CLI.md) — the `agentibrain` CLI: install, commands, `check` deep verification, root-compose vs ~/.agentibrain stacks.
 - [`VAULT-SCHEMA.md`](VAULT-SCHEMA.md) — folder layout v1, region semantics, schema marker.
 
 ## Install

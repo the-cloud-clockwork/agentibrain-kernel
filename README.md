@@ -62,7 +62,7 @@ agentibrain sync --check        # re-ingest everything: buffers + raw/, narrated
 ```
 
 `build`/`up`/`down`/`logs`/`status` auto-locate the stack (checkout you are
-standing in → pinned repo → init-rendered), so they work from `~` or anywhere
+standing in → pinned repo → ~/.agentibrain), so they work from `~` or anywhere
 else. Full CLI reference: [`docs/CLI.md`](docs/CLI.md).
 
 ### What works before you add any API key

@@ -16,9 +16,9 @@ agentibrain --version
 | Command | What it does |
 |---|---|
 | `agentibrain build [SERVICE...]` | **Rebuild + restart** — `docker compose up -d --build` in the detected deployment, then `ps`. The one command that makes a code change take effect. |
-| `agentibrain up` / `down` | Start / stop the detected deployment (init mode also runs migrations on `up`). |
+| `agentibrain up` / `down` | Start / stop the detected deployment (the `~/.agentibrain` stack also runs migrations on `up`). |
 | `agentibrain logs [SERVICE] [-f] [--since 10m] [--tail N]` | Service logs passthrough. |
-| `agentibrain status` | `docker compose ps` (init stacks) + shallow `GET /health`. |
+| `agentibrain status` | `docker compose ps` of the detected deployment + shallow `GET /health`. |
 | `agentibrain check` | **Deep verification** — see below. |
 | `agentibrain tick [--dry-run] [--no-ai] [--wait]` | Enqueue a brain tick; `--wait` blocks until it completes. |
 | `agentibrain sync [--wait\|--check]` | **Re-ingest everything** — replay buffered markers (`~/.agentihooks/brain-outbox` + `-backlog`) into `POST /marker`, then enqueue a tick so replays cluster and the `raw/` index refreshes. Idempotent; original timestamps preserved. `--wait` blocks until the tick completes; `--check` does the same but narrates: per-buffer progress counters, tick state changes, and a final summary with remaining buffered files. Exit: 0 clean, 1 hard failure, 2 degraded. |

@@ -83,7 +83,7 @@ def up_cmd() -> None:
     """Start the brain stack wherever it lives (docker compose up -d)."""
     mode, compose_dir, settings = _find_deployment_or_exit()
     _remove_other_stacks(compose_dir)
-    if mode == "init":
+    if mode == "home":
         proc = bootstrap.compose_up(settings)
         if proc.returncode != 0:
             console.print(f"[red]compose up failed[/red]\n{proc.stderr}")
@@ -142,7 +142,7 @@ def logs_cmd(service: str | None, follow: bool, since: str | None, tail: int | N
 def down_cmd() -> None:
     """Stop the brain stack (docker compose down — volumes survive)."""
     mode, compose_dir, settings = _find_deployment_or_exit()
-    if mode == "init":
+    if mode == "home":
         proc = bootstrap.compose_down(settings)
     else:
         proc = bootstrap._docker_compose(["down"], compose_dir)
@@ -966,7 +966,7 @@ def _start_stack(settings: BrainSettings) -> None:
         brain_env = settings.config_dir.expanduser() / ".env"
         console.print(f"  [green]✓[/green] linked {compose_dir / '.env'} → {brain_env}")
     _remove_other_stacks(compose_dir)
-    if mode == "init":
+    if mode == "home":
         proc = bootstrap.compose_up(settings)
         if proc.returncode != 0:
             console.print(f"  [red]✗ compose up failed[/red]\n{proc.stderr}")

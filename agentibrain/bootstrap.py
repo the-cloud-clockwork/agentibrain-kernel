@@ -350,7 +350,7 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
     """Locate the compose deployment the CLI should drive.
 
     Returns ``(mode, compose_dir)`` — mode is ``"root-compose"`` (repo
-    checkout managed by local/bootstrap.sh) or ``"init"`` (stack rendered into
+    checkout managed by local/bootstrap.sh) or ``"home"`` (stack rendered into
     ~/.agentibrain by ``agentibrain install``) — or None when no deployment exists.
 
     Order: the checkout you are standing in wins — running a command from
@@ -358,7 +358,7 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
     pinned. Next, the stack Docker reports holding agentibrain_brain_api, so
     a command run from anywhere drives what is actually up. The
     AGENTIBRAIN_REPO pin (written by local/bootstrap.sh into
-    ~/.agentibrain/.env) covers every other cwd; the init-rendered stack
+    ~/.agentibrain/.env) covers every other cwd; the ~/.agentibrain stack
     comes last.
     """
     cfg_dir = settings.config_dir.expanduser()
@@ -377,7 +377,7 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
         None,
     )
     if owner is not None and (owner / "compose.yml").is_file():
-        return ("init" if owner == cfg_dir else "root-compose", owner)
+        return ("home" if owner == cfg_dir else "root-compose", owner)
 
     repo = _read_env_value(cfg_dir / ".env", "AGENTIBRAIN_REPO")
     if repo:
@@ -386,7 +386,7 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
             return ("root-compose", repo_dir)
 
     if (cfg_dir / "compose.yml").is_file():
-        return ("init", cfg_dir)
+        return ("home", cfg_dir)
     return None
 
 
@@ -394,7 +394,7 @@ def pin_repo(settings: BrainSettings, repo: Path) -> None:
     """Record ``repo`` as AGENTIBRAIN_REPO when the brain's .env has no pin yet.
 
     `down` removes the containers find_deployment located the stack by, so
-    without the pin the next `up` from another cwd lands on the init stack.
+    without the pin the next `up` from another cwd lands on the ~/.agentibrain stack.
     An existing pin is never rewritten.
     """
     upsert_env_values(settings.config_dir.expanduser() / ".env", {"AGENTIBRAIN_REPO": str(repo)})
@@ -420,7 +420,7 @@ def link_checkout_env(settings: BrainSettings, compose_dir: Path) -> bool:
 def deployment_env_path(settings: BrainSettings, deployment: tuple[str, Path] | None) -> Path:
     """The .env the discovered deployment actually reads.
 
-    A repo checkout reads its own; only the init-rendered stack reads the one
+    A repo checkout reads its own; only the ~/.agentibrain stack reads the one
     under config_dir. The two are usually the same file — local/bootstrap.sh
     symlinks them — but nothing guarantees it, and a second checkout breaks it.
     """

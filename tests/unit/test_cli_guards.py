@@ -2,7 +2,7 @@
 
 build/up/down/logs/status drive whichever compose deployment exists —
 the repo checkout pinned by local/bootstrap.sh (AGENTIBRAIN_REPO), a
-checkout found by walking up from cwd, or the init-rendered stack in
+checkout found by walking up from cwd, or the stack install rendered in
 ~/.agentibrain. With none of those, commands exit 2 with a hint instead
 of a raw traceback.
 
@@ -147,7 +147,7 @@ def test_status_uses_detected_deployment(tmp_path, docker_shim):
 
 
 def test_down_then_up_follow_the_running_checkout(tmp_path, docker_shim):
-    """An init stack beside a running checkout must capture neither down nor the up after it."""
+    """A stack in ~/.agentibrain beside a running checkout captures neither down nor the next up."""
     path, record = docker_shim
     home = tmp_path / "home"
     cfg = home / ".agentibrain"
