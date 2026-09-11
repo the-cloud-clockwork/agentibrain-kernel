@@ -567,8 +567,10 @@ def check_cmd(
             hooks_cfg["reader_enabled"] and hooks_cfg["writer_enabled"]
         ):
             console.print(
-                "      [yellow]→ run `agentibrain install` to republish BRAIN_URL and the "
-                "token into the agentihooks env chain[/yellow]"
+                "      [yellow]→ agentihooks reads BRAIN_URL, the token and BRAIN_*_ENABLED from "
+                "~/.agentibrain/.env; a value exported in the shell or set in ~/.agentihooks/*.env "
+                "overrides it. Remove that copy, restart the session, then `agentibrain install` "
+                "if a key is missing[/yellow]"
             )
 
     # Exit contract mirrors `sync`: 0 clean, 1 hard failure, 2 degraded.
