@@ -78,6 +78,12 @@ def _remove_other_stacks(keep: Path | None) -> None:
         console.print(f"[yellow]removed stack[/yellow] {project}")
 
 
+def _root_compose_command(settings: BrainSettings, args: list[str]) -> list[str]:
+    if settings.ollama:
+        return ["-f", "compose.yml", "-f", "local/compose.ollama.yml", *args]
+    return args
+
+
 @main.command("up")
 def up_cmd() -> None:
     """Start the brain stack wherever it lives (docker compose up -d)."""
@@ -94,7 +100,7 @@ def up_cmd() -> None:
             console.print(f"  {line}")
         return
     console.print(f"[bold]starting[/bold] ({mode} @ {compose_dir})")
-    rc = bootstrap.compose_stream(["up", "-d"], compose_dir)
+    rc = bootstrap.compose_stream(_root_compose_command(settings, ["up", "-d"]), compose_dir)
     if rc != 0:
         sys.exit(rc)
 
@@ -108,10 +114,13 @@ def build_cmd(services: tuple[str, ...]) -> None:
     deployment, rebuilds changed images, recreates their containers, then
     shows the resulting ps.
     """
-    _, compose_dir, _ = _find_deployment_or_exit()
+    mode, compose_dir, settings = _find_deployment_or_exit()
     _remove_other_stacks(compose_dir)
     console.print(f"[bold]build + up[/bold] @ {compose_dir}")
-    rc = bootstrap.compose_stream(["up", "-d", "--build", *services], compose_dir)
+    args = ["up", "-d", "--build", *services]
+    if mode == "root-compose":
+        args = _root_compose_command(settings, args)
+    rc = bootstrap.compose_stream(args, compose_dir)
     if rc != 0:
         sys.exit(rc)
     ps = bootstrap._docker_compose(["ps"], compose_dir)
@@ -125,7 +134,7 @@ def build_cmd(services: tuple[str, ...]) -> None:
 @click.option("--tail", default=None, type=int, help="Number of trailing lines per service.")
 def logs_cmd(service: str | None, follow: bool, since: str | None, tail: int | None) -> None:
     """Show service logs (docker compose logs passthrough)."""
-    _, compose_dir, _ = _find_deployment_or_exit()
+    mode, compose_dir, settings = _find_deployment_or_exit()
     args = ["logs"]
     if follow:
         args.append("-f")
@@ -135,6 +144,8 @@ def logs_cmd(service: str | None, follow: bool, since: str | None, tail: int | N
         args += ["--tail", str(tail)]
     if service:
         args.append(service)
+    if mode == "root-compose":
+        args = _root_compose_command(settings, args)
     sys.exit(bootstrap.compose_stream(args, compose_dir))
 
 
@@ -145,7 +156,7 @@ def down_cmd() -> None:
     if mode == "home":
         proc = bootstrap.compose_down(settings)
     else:
-        proc = bootstrap._docker_compose(["down"], compose_dir)
+        proc = bootstrap._docker_compose(_root_compose_command(settings, ["down"]), compose_dir)
     if proc.returncode != 0:
         console.print(f"[red]compose down failed[/red]\n{proc.stderr}")
         sys.exit(proc.returncode)
@@ -1012,7 +1023,7 @@ def _start_stack(settings: BrainSettings) -> None:
         for line in bootstrap.run_migrations(settings):
             console.print(f"  {line}")
     else:
-        rc = bootstrap.compose_stream(["up", "-d"], compose_dir)
+        rc = bootstrap.compose_stream(_root_compose_command(settings, ["up", "-d"]), compose_dir)
         if rc != 0:
             sys.exit(rc)
     console.print(f"  [green]✓[/green] up ({mode} @ {compose_dir})")
@@ -1134,6 +1145,20 @@ def install_cmd(
         if deployment is not None:
             mode, compose_dir = deployment
             console.print(f"  [green]✓[/green] reusing {mode} @ {compose_dir}")
+            if use_ollama:
+                overlay = compose_dir / "local/compose.ollama.yml"
+                if mode == "root-compose" and not overlay.is_file():
+                    console.print(f"  [red]✗ Ollama overlay missing: {overlay}[/red]")
+                    sys.exit(2)
+                settings.ollama = True
+                if not dry_run:
+                    bootstrap.write_config(settings)
+                    if mode == "home":
+                        bootstrap.write_compose(settings, bootstrap.render_compose(settings))
+                console.print(
+                    f"  [green]✓[/green] inference → bundled Ollama "
+                    f"({settings.ollama_chat_model} + {settings.ollama_embed_model})"
+                )
             if s3_bucket or s3_endpoint or postgres_url or redis_url:
                 console.print(
                     "  [yellow]![/yellow] --s3-*, --postgres-url and --redis-url only shape "

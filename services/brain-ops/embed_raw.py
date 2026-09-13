@@ -24,7 +24,13 @@ import time
 import urllib.request
 from pathlib import Path
 
-from embed_arcs import REQ_TIMEOUT, load_state, parse_frontmatter, post_embed, save_state
+from embed_arcs import (
+    REQ_TIMEOUT,
+    load_state,
+    parse_frontmatter,
+    post_embed,
+    save_state,
+)
 
 STATE_FILENAME = ".brain-raw-embed.state.json"
 MAX_TEXT_CHARS = 4000
