@@ -23,7 +23,6 @@ PROFILE_FILES = (
     "CLAUDE.md",
     "enforcements.json",
     ".claude/.mcp.json",
-    ".codex/config.overrides.toml",
 )
 
 
@@ -43,6 +42,12 @@ def test_brain_profile_carries_the_tool_usage_reminder():
     assert reminder["id"] == "brain-usage"
     assert reminder["cadence"] == 10
     assert "use brain tools" in reminder["message"]
+
+
+def test_brain_profile_uses_cross_target_streamable_http():
+    payload = json.loads((cli.PROFILES_ROOT / "brain" / ".claude" / ".mcp.json").read_text())
+    server = payload["mcpServers"]["agentibrain"]
+    assert server == {"type": "http", "url": "http://localhost:8104/mcp"}
 
 
 def test_manifest_carries_the_whole_profiles_tree():
