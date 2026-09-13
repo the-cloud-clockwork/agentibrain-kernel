@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from agentibrain import cli, hooks_env
@@ -278,6 +279,39 @@ def test_install_takes_stack_defaults_from_the_compose_file(install_env, monkeyp
     assert assigned["LOG_LEVEL"] == "WARNING"
     assert assigned["PORT_POSTGRES"] == "5439"
     assert assigned["AGENTIBRAIN_REPO"] == str(checkout)
+
+
+def test_install_ollama_converts_an_existing_root_stack(install_env, monkeypatch):
+    monkeypatch.setattr(cli, "_agentihooks_bin", lambda: "/usr/bin/agentihooks")
+    checkout = install_env / "checkout"
+    (checkout / "local").mkdir(parents=True)
+    (checkout / "compose.yml").write_text("services: {}\n")
+    (checkout / "local" / "compose.ollama.yml").write_text("services: {}\n")
+    monkeypatch.setattr(
+        cli.bootstrap, "find_deployment", lambda settings, cwd=None: ("root-compose", checkout)
+    )
+
+    result = CliRunner().invoke(cli.main, ["install", "--ollama", "--no-stack", "--no-link"])
+
+    assert result.exit_code == 0, result.output
+    config = yaml.safe_load((install_env / "config.yaml").read_text())
+    assert config["ollama"] is True
+    assert "bundled Ollama" in _flat(result.output)
+
+
+def test_root_compose_command_adds_ollama_overlay():
+    from agentibrain.config import BrainSettings
+
+    settings = BrainSettings(ollama=True, _env_file=None)
+
+    assert cli._root_compose_command(settings, ["up", "-d"]) == [
+        "-f",
+        "compose.yml",
+        "-f",
+        "local/compose.ollama.yml",
+        "up",
+        "-d",
+    ]
 
 
 def test_install_exits_when_agentihooks_is_absent(install_env, monkeypatch, tmp_path):

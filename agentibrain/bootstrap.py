@@ -137,6 +137,9 @@ def write_config(settings: BrainSettings) -> Path:
         "s3_endpoint": settings.s3_endpoint,
         "brain_url": settings.brain_url,
         "llm_gateway_url": settings.llm_gateway_url,
+        "ollama": settings.ollama,
+        "ollama_chat_model": settings.ollama_chat_model,
+        "ollama_embed_model": settings.ollama_embed_model,
         # postgres_url / redis_url are NOT written here — they may contain
         # passwords. If operators override them via flags, they come from env.
     }

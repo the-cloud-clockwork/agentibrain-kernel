@@ -92,15 +92,20 @@ def test_ollama_mode_needs_no_api_key_anywhere(tmp_path):
     assert {"ollama", "ollama-init"} <= set(data["services"])
 
     emb = data["services"]["embeddings"]["environment"]
-    assert "ollama:11434" in emb["LLM_API_BASE"]
+    assert emb["LLM_API_BASE"] == "http://ollama:11434/v1"
+    assert emb["LLM_API_KEY"] == "ollama"
+    assert emb["LLM_EMBED_MODEL"] == "nomic-embed-text"
     # nomic-embed-text is not a family the service recognises, so an unpinned
     # dimension makes it refuse to start.
-    assert "768" in emb["EMBED_DIM"]
+    assert emb["EMBED_DIM"] == 768
+    assert emb["EMBED_DIM_FORCE_MIGRATE"] is True
 
     # tick-drain was added after local/compose.ollama.yml was written; leaving
     # it out makes on-demand ticks run --no-ai while scheduled ticks use AI.
     for name in ("brain-api", "mcp", "tick-cron", "tick-drain"):
-        assert "ollama:11434" in data["services"][name]["environment"]["INFERENCE_URL"], name
+        env = data["services"][name]["environment"]
+        assert env["INFERENCE_URL"] == "http://ollama:11434/v1", name
+        assert env["INFERENCE_API_KEY"] == "ollama", name
 
 
 def test_the_chat_model_is_overridable_by_env(tmp_path, monkeypatch):
