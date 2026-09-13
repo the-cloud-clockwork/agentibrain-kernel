@@ -23,6 +23,7 @@ PROFILE_FILES = (
     "CLAUDE.md",
     "enforcements.json",
     ".claude/.mcp.json",
+    ".codex/config.overrides.toml",
 )
 
 

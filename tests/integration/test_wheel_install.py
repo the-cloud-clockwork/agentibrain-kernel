@@ -119,6 +119,7 @@ def test_wheel_ships_brain_profile_without_git(tmp_path):
         "agentibrain/profiles/brain/CLAUDE.md",
         "agentibrain/profiles/brain/enforcements.json",
         "agentibrain/profiles/brain/.claude/.mcp.json",
+        "agentibrain/profiles/brain/.codex/config.overrides.toml",
     ):
         assert rel in names, rel
 
