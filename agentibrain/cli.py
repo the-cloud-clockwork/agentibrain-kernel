@@ -1257,8 +1257,12 @@ def update_cmd(check: bool, index_url: str | None) -> None:
 def env_sync_cmd() -> None:
     """Complete ~/.agentibrain/.env from the installed package."""
     settings = _load_settings()
-    added = _sync_env_manifest(settings, None)
-    console.print(f"brain env current ({len(added)} settings added)")
+    env_path = settings.config_dir.expanduser() / ".env"
+    active = bootstrap.upsert_env_values(env_path, _hooks_env.client_defaults(None))
+    documented = _sync_env_manifest(settings, None)
+    console.print(
+        f"brain env current ({len(active)} active, {len(documented)} documented settings added)"
+    )
 
 
 if __name__ == "__main__":

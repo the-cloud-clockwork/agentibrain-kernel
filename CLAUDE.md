@@ -170,9 +170,8 @@ docker compose logs --since 2m <service>     # or: kubectl logs
 - `agentihub` — clones `agents/brain-keeper/` at install time.
 - `agentihooks-bundle` — clones `agentibrain/profiles/brain/` at install time.
 - Wheel installs get the same profile via `agentibrain install`, which also completes
-  `~/.agentibrain/.env` with `BRAIN_URL` beside the bearer and agentihooks' brain settings
-  (`BRAIN_ENABLED`, `BRAIN_SOURCE_PATH`, `AMYGDALA_ENABLED`, `AMYGDALA_SIGNAL_PATH`,
-  `BRAIN_WRITER_ENABLED`, `BRAIN_WRITER_MAX_MARKERS`, `BRAIN_WRITER_OUTBOX`) at their defaults.
+  `~/.agentibrain/.env` with `BRAIN_URL` beside the bearer and every brain client setting
+  consumed by agentihooks (`BRAIN_*` and `AMYGDALA_*`) at its default.
   agentihooks reads that file directly (`AGENTIBRAIN_HOME`, default `~/.agentibrain`) and
   adopts only those keys, so each has one home and cannot go stale in a copy.
 - External users — `git clone` → `./local/bootstrap.sh` → `docker compose up -d` (or use the Helm charts for K8s).

@@ -120,6 +120,12 @@ def test_install_completes_the_brain_env(install_env, monkeypatch):
     for key in ("BRAIN_ENABLED", "AMYGDALA_ENABLED", "BRAIN_WRITER_ENABLED"):
         assert assigned[key] == "true"
     assert assigned["BRAIN_WRITER_MAX_MARKERS"] == "5"
+    assert assigned["BRAIN_CHANNEL"] == "brain"
+    assert assigned["BRAIN_HOT_ARCS_TOP_N"] == "5"
+    assert assigned["BRAIN_HTTP_TIMEOUT"] == "3"
+    assert assigned["BRAIN_PAYLOAD_MAX_BYTES"] == "1536"
+    assert assigned["BRAIN_REFRESH_INTERVAL"] == "30"
+    assert assigned["BRAIN_SOURCE_TYPE"] == "file"
     assert not hooks_env.managed_env_path().exists()
     body = (install_env / ".env").read_text()
     assert "# BRAIN_PROMOTE_HEAT=5\n" in body
@@ -256,3 +262,24 @@ def test_update_refreshes_the_env_manifest(monkeypatch, tmp_path):
 
     assert result.exit_code == 0, result.output
     assert called == [[cli.sys.executable, "-m", "agentibrain.cli", "env-sync"]]
+
+
+def test_env_sync_activates_brain_owned_client_defaults(monkeypatch, tmp_path):
+    from agentibrain.config import BrainSettings
+
+    settings = BrainSettings(config_dir=tmp_path, _env_file=None)
+    monkeypatch.setattr(cli, "_load_settings", lambda: settings)
+
+    result = CliRunner().invoke(cli.main, ["env-sync"])
+
+    assert result.exit_code == 0, result.output
+    assigned = _assigned(tmp_path / ".env")
+    for key in (
+        "BRAIN_CHANNEL",
+        "BRAIN_HOT_ARCS_TOP_N",
+        "BRAIN_HTTP_TIMEOUT",
+        "BRAIN_PAYLOAD_MAX_BYTES",
+        "BRAIN_REFRESH_INTERVAL",
+        "BRAIN_SOURCE_TYPE",
+    ):
+        assert assigned[key]
