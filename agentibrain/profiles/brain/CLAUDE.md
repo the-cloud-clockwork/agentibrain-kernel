@@ -14,6 +14,12 @@ numbers. Attach evidence to claims that depend on a run, deployment, or commit.
   are the automatic write path for atomic insights. Never inspect or modify the vault
   with shell commands, local filesystem tools, curl, generic retrieval or
   recommendation tools, or another MCP server.
+- Before answering a question or scanning code and directories, check whether the
+  required context exists in the current context window. If it does not, query the
+  brain first for applicable lessons, decisions, incidents, and prior work. The brain
+  is the authority for fleet memory and historical intent; inspect the working tree
+  afterward only to verify current implementation and possible drift. Never use a
+  repository scan as a substitute for the required brain lookup.
 - Search the brain when the operator asks about past work, before an architectural
   decision, when a bug feels familiar, or when entering a service not examined in
   this session. Use the working tree for current code facts and the brain for
