@@ -980,6 +980,30 @@ def _start_stack(settings: BrainSettings) -> None:
     console.print(f"  [green]✓[/green] up ({mode} @ {compose_dir})")
 
 
+def _sync_env_manifest(
+    settings: BrainSettings,
+    deployment: tuple[str, Path] | None,
+    vault: Path | None = None,
+) -> list[str]:
+    env_path = bootstrap.deployment_env_path(settings, deployment)
+    compose_dir = deployment[1] if deployment else None
+    compose_path = compose_dir / "compose.yml" if compose_dir else None
+    compose_text = (
+        compose_path.read_text()
+        if compose_path is not None and compose_path.is_file()
+        else bootstrap.render_compose(settings)
+    )
+    packaged = bootstrap.render_compose(settings)
+    if packaged != compose_text:
+        compose_text += f"\n{packaged}"
+    defaults = {
+        "BRAIN_URL": settings.brain_url,
+        "KB_ROUTER_TOKEN": "",
+        **_hooks_env.client_defaults(vault),
+    }
+    return bootstrap.sync_env_manifest(env_path, compose_text, defaults)
+
+
 @main.command("install")
 @click.option("--vault", type=click.Path(), help="Vault path, when this run creates the stack.")
 @click.option(
@@ -1156,9 +1180,12 @@ def install_cmd(
                 values["INFERENCE_URL"] = llm_gateway_url
         values.update(_hooks_env.client_defaults(vault))
         added = bootstrap.upsert_env_values(brain_env, values)
+        manifest_added = _sync_env_manifest(settings, deployment, vault)
         console.print(f"  [green]✓[/green] brain env → {brain_env}  (chmod 600)")
         summary = ", ".join(added) if added else "nothing — every key is already set"
         console.print(f"       added {summary}", markup=False)
+        if manifest_added:
+            console.print(f"       documented {len(manifest_added)} available settings")
         if not remote:
             unset = [
                 k for k in bootstrap.INFERENCE_KEYS if not bootstrap._read_env_value(brain_env, k)
@@ -1220,6 +1247,18 @@ def update_cmd(check: bool, index_url: str | None) -> None:
     rc = run_update(check_only=check, index_url=index_url)
     if rc:
         sys.exit(rc)
+    if not check:
+        result = subprocess.run([sys.executable, "-m", "agentibrain.cli", "env-sync"])
+        if result.returncode:
+            sys.exit(result.returncode)
+
+
+@main.command("env-sync", hidden=True)
+def env_sync_cmd() -> None:
+    """Complete ~/.agentibrain/.env from the installed package."""
+    settings = _load_settings()
+    added = _sync_env_manifest(settings, None)
+    console.print(f"brain env current ({len(added)} settings added)")
 
 
 if __name__ == "__main__":

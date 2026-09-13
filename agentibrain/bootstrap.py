@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import platform
 import re
@@ -25,6 +26,66 @@ COMPOSE_TEMPLATE = "compose.yml.j2"
 DEFAULT_POSTGRES_PASSWORD = "agentibrain"
 DEFAULT_MINIO_USER = "agentibrain"
 DEFAULT_MINIO_PASSWORD = "agentibrain"
+
+SERVICE_ENV_DEFAULTS = {
+    "AMYGDALA_CLEAR_WINDOW": "900",
+    "BRAIN_DECAY_INTERVAL_DAYS": "4",
+    "BRAIN_DECAY_START_DAYS": "7",
+    "BRAIN_FEEDBACK_LOOKBACK": "6",
+    "BRAIN_HOT_ARC_BLURB_CHARS": "220",
+    "BRAIN_LESSON_MIN_CHARS": "40",
+    "BRAIN_SIGNAL_KEEP_MIN": "25",
+    "BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS": "14",
+    "BRAIN_SIGNAL_RETAIN_DAYS": "90",
+    "BRAIN_STALE_CRITICAL_DAYS": "5",
+    "BRAIN_STALE_INJECT_DAYS": "30",
+    "BRAIN_STALE_SIGNAL_DAYS": "3",
+    "BRAIN_SYNTH_IGNITION_CHARS": "240",
+    "BRAIN_SYNTH_MARKER_CHARS": "200",
+    "BRAIN_TICK_COMPLETED_RETAIN_DAYS": "7",
+    "BRAIN_TICK_FAILED_RETAIN_DAYS": "30",
+    "BRAIN_TICK_QUEUE_KEEP_MIN": "20",
+    "BRAIN_VERIFIER_ENABLED": "true",
+    "FEED_CACHE_TTL_SECONDS": "30",
+    "IDEMPOTENCY_TTL_SECONDS": "3600",
+    "KB_RRF_K": "60",
+    "MAX_FILE_BYTES": "5242880",
+    "OUTBOX_DRAIN_MAX_SECONDS": "600",
+    "PIPELINE_AI_PHASE_LAG_HOURS": "24",
+    "PIPELINE_MAX_SCAN": "5000",
+}
+
+PROGRAM_ENV_DEFAULTS = {
+    **SERVICE_ENV_DEFAULTS,
+    "AMYGDALA_SIGNAL_PATH": "brain-feed/amygdala-active.md",
+    "API_KEYS": "",
+    "BRAIN_API_TOKEN": "",
+    "BRAIN_API_URL": "http://brain-api:8080",
+    "BRAIN_FEED_DIR": "brain-feed",
+    "CLICKHOUSE_PASSWORD": "",
+    "CLICKHOUSE_URL": "",
+    "CLICKHOUSE_USER": "default",
+    "CLUSTERS_DIR": "clusters",
+    "EMBEDDINGS_URL": "http://embeddings:8080",
+    "EMBED_API_KEY": "",
+    "EMBED_API_URL": "http://embeddings:8080",
+    "EMBED_TEST_POSTGRES_URL": "",
+    "EVENT_BUS_DB": "11",
+    "EVENT_BUS_STREAM": "events:brain",
+    "EVENT_BUS_TOPIC": "agentibrain-system",
+    "EXTRACT_PROJECTS_DIR": "",
+    "KB_ROUTER_TOKENS": "",
+    "LITELLM_KEY": "",
+    "LITELLM_URL": "",
+    "OBSIDIAN_READER_TOKEN": "",
+    "OBSIDIAN_READER_URL": "http://agentibrain-brain-api:8080",
+    "POSTGRES_URL": "",
+    "RAW_INBOX_PREFIX": "raw/inbox",
+    "TICK_COMPLETED_DIR": "brain-feed/ticks/completed",
+    "TICK_FAILED_DIR": "brain-feed/ticks/failed",
+    "TICK_REQUESTS_DIR": "brain-feed/ticks/requested",
+    "VAULT_ROOT": "/vault",
+}
 
 
 def _templates_dir() -> Path:
@@ -55,6 +116,8 @@ def render_compose(settings: BrainSettings) -> str:
         ollama=settings.ollama,
         ollama_chat_model=settings.ollama_chat_model,
         ollama_embed_model=settings.ollama_embed_model,
+        brain_api_port=settings.port_brain_api,
+        service_env_defaults=SERVICE_ENV_DEFAULTS,
     )
 
 
@@ -100,6 +163,113 @@ def _existing_assignments(env_path: Path) -> dict[str, str]:
         key, value = stripped.split("=", 1)
         found[key.strip()] = value
     return found
+
+
+def _known_assignments(env_path: Path) -> set[str]:
+    if not env_path.exists():
+        return set()
+    found = set()
+    for line in env_path.read_text().splitlines():
+        match = re.match(r"^\s*#?\s*([A-Z][A-Z0-9_]*)\s*=", line)
+        if match:
+            found.add(match.group(1))
+    return found
+
+
+def compose_env_defaults(compose_text: str) -> dict[str, str]:
+    defaults: dict[str, str] = {}
+    pattern = re.compile(r"(?<!\$)\$\{([A-Z][A-Z0-9_]*)(?:(?::-|-)([^}]*))?\}")
+    for name, value in pattern.findall(compose_text):
+        if name not in defaults or not defaults[name]:
+            defaults[name] = value
+    return defaults
+
+
+def python_env_defaults() -> dict[str, str]:
+    excluded = {"HOME", "HOSTNAME", "PIPX_HOME", "UV_TOOL_DIR", "XDG_DATA_HOME"}
+    defaults: dict[str, str] = {}
+    for source in sorted(Path(__file__).parent.rglob("*.py")):
+        try:
+            tree = ast.parse(source.read_text())
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            if not isinstance(node.args[0], ast.Constant):
+                continue
+            name = node.args[0].value
+            if not isinstance(name, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
+                continue
+            func = node.func
+            getenv = (
+                isinstance(func, ast.Attribute)
+                and func.attr == "getenv"
+                and isinstance(func.value, ast.Name)
+                and func.value.id in {"os", "_os"}
+            )
+            environ_get = (
+                isinstance(func, ast.Attribute)
+                and func.attr == "get"
+                and isinstance(func.value, ast.Attribute)
+                and func.value.attr == "environ"
+                and isinstance(func.value.value, ast.Name)
+                and func.value.value.id in {"os", "_os"}
+            )
+            if not (getenv or environ_get) or name in excluded:
+                continue
+            default = node.args[1] if len(node.args) > 1 else None
+            value = default.value if isinstance(default, ast.Constant) else ""
+            if name not in defaults or not defaults[name]:
+                defaults[name] = "" if value is None else str(value)
+    return defaults
+
+
+def settings_env_defaults() -> dict[str, str]:
+    settings = BrainSettings.model_construct()
+    defaults = {}
+    for field_name, field in BrainSettings.model_fields.items():
+        alias = field.validation_alias
+        names = (
+            list(alias.choices) if hasattr(alias, "choices") else [f"BRAIN_{field_name.upper()}"]
+        )
+        value = getattr(settings, field_name)
+        if hasattr(value, "get_secret_value") or value is None:
+            rendered = ""
+        elif isinstance(value, bool):
+            rendered = str(value).lower()
+        else:
+            rendered = str(value)
+        defaults.update({str(name): rendered for name in names})
+    return defaults
+
+
+def sync_env_manifest(
+    env_path: Path,
+    compose_text: str,
+    extra_defaults: dict[str, str] | None = None,
+) -> list[str]:
+    """Append newly supported settings as commented defaults."""
+    defaults = settings_env_defaults()
+    defaults.update(python_env_defaults())
+    defaults.update(PROGRAM_ENV_DEFAULTS)
+    defaults.update(compose_env_defaults(compose_text))
+    defaults.update(extra_defaults or {})
+    existing = _known_assignments(env_path)
+    added = sorted(name for name in defaults if name not in existing)
+    if not added:
+        return []
+
+    body = env_path.read_text() if env_path.exists() else ""
+    if body and not body.endswith("\n"):
+        body += "\n"
+    if "# --- settings available in agentibrain ---" not in body:
+        body += "\n# --- settings available in agentibrain ---\n"
+    body += "".join(f"# {name}={defaults[name]}\n" for name in added)
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text(body)
+    env_path.chmod(0o600)
+    return added
 
 
 def write_env_file(settings: BrainSettings, token: str) -> Path:
@@ -155,12 +325,14 @@ def write_env_file(settings: BrainSettings, token: str) -> Path:
     values = {**generated, **explicit}
     if env_path.exists():
         upsert_env_values(env_path, values)
+        sync_env_manifest(env_path, render_compose(settings))
         return env_path
 
     lines = [f"{key}={value}" for key, value in values.items() if value]
     lines += _commented_settings(settings, offered=set(values))
     env_path.write_text("\n".join(lines) + "\n")
     env_path.chmod(0o600)
+    sync_env_manifest(env_path, render_compose(settings))
     return env_path
 
 

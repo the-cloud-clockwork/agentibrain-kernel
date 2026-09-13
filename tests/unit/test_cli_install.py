@@ -121,6 +121,9 @@ def test_install_completes_the_brain_env(install_env, monkeypatch):
         assert assigned[key] == "true"
     assert assigned["BRAIN_WRITER_MAX_MARKERS"] == "5"
     assert not hooks_env.managed_env_path().exists()
+    body = (install_env / ".env").read_text()
+    assert "# BRAIN_PROMOTE_HEAT=5\n" in body
+    assert "# AGENTIBRAIN_TICK_WAIT_SECONDS=900\n" in body
 
 
 def test_install_keeps_brain_settings_already_in_the_env(install_env, monkeypatch):
@@ -238,3 +241,18 @@ def test_install_exits_when_profile_data_is_missing(monkeypatch, tmp_path):
 
     assert result.exit_code == 1
     assert "is missing" in _flat(result.output)
+
+
+def test_update_refreshes_the_env_manifest(monkeypatch, tmp_path):
+    monkeypatch.setattr("agentibrain.updater.run_update", lambda **kwargs: 0)
+    called = []
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda command: called.append(command) or type("Done", (), {"returncode": 0})(),
+    )
+
+    result = CliRunner().invoke(cli.main, ["update"])
+
+    assert result.exit_code == 0, result.output
+    assert called == [[cli.sys.executable, "-m", "agentibrain.cli", "env-sync"]]
