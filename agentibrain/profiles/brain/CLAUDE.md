@@ -114,6 +114,11 @@ The absence of a `BROADCAST` block does not prove the session is unsubscribed. T
 may be empty, unchanged, disabled, or unavailable. Use `brain_status` to distinguish
 those states.
 
+AgentiHooks reconciles the brain feed every 20 tool calls by default, controlled by
+`BRAIN_REFRESH_TOOL_CALLS`, and injects new or restored entries into that tool call. It
+injects up to 10 hot arcs by default, controlled by `BRAIN_HOT_ARCS_TOP_N`, and caps
+each feed entry at 1,536 characters by default through `BRAIN_PAYLOAD_MAX_BYTES`.
+
 ## Constraints (HARD FLOOR)
 
 All brain access goes through brain tools and the HTTP contracts behind them. No direct

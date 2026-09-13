@@ -117,6 +117,7 @@ def test_wheel_ships_brain_profile_without_git(tmp_path):
     for rel in (
         "agentibrain/profiles/brain/profile.yml",
         "agentibrain/profiles/brain/CLAUDE.md",
+        "agentibrain/profiles/brain/enforcements.json",
         "agentibrain/profiles/brain/.claude/.mcp.json",
     ):
         assert rel in names, rel

@@ -32,11 +32,11 @@ def client_defaults(vault_path: Path | None) -> dict[str, str]:
     feed = vault_path.expanduser() / "brain-feed" if vault_path is not None else None
     return {
         "BRAIN_CHANNEL": "brain",
-        "BRAIN_HOT_ARCS_TOP_N": "5",
+        "BRAIN_HOT_ARCS_TOP_N": "10",
         "BRAIN_HTTP_TIMEOUT": "3",
         "BRAIN_HTTP_TOKEN": "",
         "BRAIN_PAYLOAD_MAX_BYTES": "1536",
-        "BRAIN_REFRESH_INTERVAL": "30",
+        "BRAIN_REFRESH_TOOL_CALLS": "20",
         "BRAIN_SOURCE_TYPE": "file",
         "BRAIN_SOURCE_PATH": str(feed) if feed else "",
         "BRAIN_ENABLED": "true",
@@ -46,6 +46,32 @@ def client_defaults(vault_path: Path | None) -> dict[str, str]:
         "BRAIN_WRITER_MAX_MARKERS": "5",
         "BRAIN_WRITER_OUTBOX": str(hooks_home() / OUTBOX_DIRS[0]),
     }
+
+
+def migrate_client_defaults(env_path: Path) -> list[str]:
+    if not env_path.is_file():
+        return []
+    lines = env_path.read_text(encoding="utf-8").splitlines()
+    has_tool_refresh = any(line.startswith("BRAIN_REFRESH_TOOL_CALLS=") for line in lines)
+    migrated = []
+    output = []
+    for line in lines:
+        if line == "BRAIN_HOT_ARCS_TOP_N=5":
+            output.append("BRAIN_HOT_ARCS_TOP_N=10")
+            migrated.append("BRAIN_HOT_ARCS_TOP_N")
+            continue
+        if line.startswith("BRAIN_REFRESH_INTERVAL="):
+            if not has_tool_refresh:
+                value = line.split("=", 1)[1]
+                output.append(f"BRAIN_REFRESH_TOOL_CALLS={'20' if value == '30' else value}")
+                has_tool_refresh = True
+            migrated.append("BRAIN_REFRESH_TOOL_CALLS")
+            continue
+        output.append(line)
+    if migrated:
+        env_path.write_text("\n".join(output) + "\n", encoding="utf-8")
+        env_path.chmod(0o600)
+    return list(dict.fromkeys(migrated))
 
 
 def ensure_outbox_dirs() -> list[Path]:

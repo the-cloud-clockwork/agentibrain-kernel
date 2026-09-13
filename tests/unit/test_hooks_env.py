@@ -239,11 +239,24 @@ def test_a_file_the_operator_wrote_is_not_swept(running_checkout):
     (running_checkout / ".env").write_text("KB_ROUTER_TOKEN=t\n")
     mine = hooks_env.managed_env_path()
     mine.parent.mkdir(parents=True, exist_ok=True)
-    mine.write_text("BRAIN_REFRESH_INTERVAL=5\n")
+    mine.write_text("BRAIN_REFRESH_TOOL_CALLS=5\n")
 
     CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
 
     assert mine.exists()
+
+
+def test_install_migrates_previous_brain_client_defaults(running_checkout):
+    env = running_checkout / ".env"
+    env.write_text("KB_ROUTER_TOKEN=t\nBRAIN_HOT_ARCS_TOP_N=5\nBRAIN_REFRESH_INTERVAL=30\n")
+
+    result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
+
+    assert result.exit_code == 0, result.output
+    body = env.read_text()
+    assert "BRAIN_HOT_ARCS_TOP_N=10\n" in body
+    assert "BRAIN_REFRESH_TOOL_CALLS=20\n" in body
+    assert "BRAIN_REFRESH_INTERVAL=" not in body
 
 
 def test_ambient_brain_url_does_not_make_the_install_client_only(running_checkout, monkeypatch):

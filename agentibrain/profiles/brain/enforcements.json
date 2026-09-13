@@ -1,0 +1,10 @@
+{
+  "enforcements": [
+    {
+      "id": "brain-usage",
+      "message": "Remember the brain mechanism is to be used - use brain tools accordingly.",
+      "cadence": 10,
+      "tag": "brain-usage"
+    }
+  ]
+}

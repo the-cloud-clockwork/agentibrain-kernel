@@ -176,8 +176,8 @@ severity: info
 Pluggable source-to-channel bridge. Reads brain-feed files, publishes to broadcast channel system. Every agent session receives hot arcs + signals + inject blocks automatically.
 
 **Source:** `agentihooks/hooks/context/brain_adapter.py`
-**Hook wiring:** `hook_manager.py` → `on_session_start()` calls `inject_on_session_start()`, `on_user_prompt_submit()` calls `maybe_refresh()` (turn-counter gated)
-**Change detection:** SHA-256 hash — only republishes when content changes
+**Hook wiring:** `hook_manager.py` → `on_session_start()` calls `inject_on_session_start()`; `on_pre_tool_use()` reconciles every configured number of tool calls
+**Change detection:** SHA-256 hash plus live broadcast reconciliation; missing or expired entries are restored even when feed content is unchanged
 **Channel MCP tools:** `channel_publish`, `brain_status`, `brain_refresh` in `hooks/mcp/channels.py`
 
 **Config (env vars):**
@@ -185,7 +185,9 @@ Pluggable source-to-channel bridge. Reads brain-feed files, publishes to broadca
 BRAIN_ENABLED: "true"
 BRAIN_SOURCE_PATH: "/vault/brain-feed"
 BRAIN_CHANNEL: "brain"
-BRAIN_REFRESH_INTERVAL: "30"      # turns between refresh checks
+BRAIN_REFRESH_TOOL_CALLS: "20"    # tool calls between refresh checks
+BRAIN_HOT_ARCS_TOP_N: "10"
+BRAIN_PAYLOAD_MAX_BYTES: "1536"
 ```
 
 **Currently wired on:**

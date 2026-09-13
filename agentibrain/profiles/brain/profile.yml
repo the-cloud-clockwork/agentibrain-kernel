@@ -12,5 +12,6 @@ enabledMcpServers: []
 #   1. Required brain tool routing for reads, durable writes, and ticks
 #   2. Rules for marker emission (what to emit, when, severity levels)
 #   3. Brain and amygdala channel discipline
+#   4. A brain-usage reminder every 10 tool calls
 #
 # No model, no effort, no otel — those come from the base profile.
