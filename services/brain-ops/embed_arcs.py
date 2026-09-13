@@ -31,6 +31,7 @@ import markers
 
 
 STATE_FILENAME = ".brain-arc-embed.state.json"
+STATE_GENERATION_ENV = "EMBEDDING_STATE_GENERATION"
 MAX_TEXT_CHARS = 2000
 REQ_TIMEOUT = 30
 
@@ -146,6 +147,14 @@ def build_embed_text(fm: dict, body: str) -> str:
 def load_state(state_path: Path) -> dict[str, float]:
     if not state_path.exists():
         return {}
+    generation = os.environ.get(STATE_GENERATION_ENV, "")
+    generation_path = state_path.with_name(f"{state_path.name}.generation")
+    if generation:
+        try:
+            if generation_path.read_text().strip() != generation:
+                return {}
+        except OSError:
+            return {}
     try:
         return json.loads(state_path.read_text())
     except (json.JSONDecodeError, OSError):
@@ -161,6 +170,12 @@ def save_state(state_path: Path, state: dict[str, float]) -> None:
     tmp = state_path.with_name(f".{state_path.name}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
     os.replace(tmp, state_path)
+    generation = os.environ.get(STATE_GENERATION_ENV, "")
+    if generation:
+        generation_path = state_path.with_name(f"{state_path.name}.generation")
+        generation_tmp = state_path.with_name(f".{generation_path.name}.{os.getpid()}.tmp")
+        generation_tmp.write_text(generation)
+        os.replace(generation_tmp, generation_path)
 
 
 def post_embed(api_url: str, api_key: str, payload: dict, timeout: int = REQ_TIMEOUT) -> dict:

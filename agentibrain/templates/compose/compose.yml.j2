@@ -239,6 +239,7 @@ services:
 {% if ollama %}      INFERENCE_URL: http://ollama:11434/v1
       INFERENCE_API_KEY: ollama
       BRAIN_BRIEF_MODEL: {{ ollama_chat_model }}
+      EMBEDDING_STATE_GENERATION: ollama-{{ ollama_embed_model }}-768
 {% else %}      INFERENCE_URL: ${INFERENCE_URL:-}
       INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
       BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}
@@ -349,6 +350,7 @@ services:
 {% if ollama %}      INFERENCE_URL: http://ollama:11434/v1
       INFERENCE_API_KEY: ollama
       BRAIN_BRIEF_MODEL: {{ ollama_chat_model }}
+      EMBEDDING_STATE_GENERATION: ollama-{{ ollama_embed_model }}-768
 {% else %}      INFERENCE_URL: ${INFERENCE_URL:-}
       INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
       BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}

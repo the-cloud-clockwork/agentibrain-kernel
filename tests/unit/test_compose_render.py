@@ -106,6 +106,10 @@ def test_ollama_mode_needs_no_api_key_anywhere(tmp_path):
         env = data["services"][name]["environment"]
         assert env["INFERENCE_URL"] == "http://ollama:11434/v1", name
         assert env["INFERENCE_API_KEY"] == "ollama", name
+    for name in ("tick-cron", "tick-drain"):
+        assert data["services"][name]["environment"]["EMBEDDING_STATE_GENERATION"] == (
+            "ollama-nomic-embed-text-768"
+        )
 
 
 def test_the_chat_model_is_overridable_by_env(tmp_path, monkeypatch):
