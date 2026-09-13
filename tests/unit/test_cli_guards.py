@@ -84,6 +84,15 @@ def test_status_degrades_gracefully_without_any_deployment(tmp_path, docker_shim
     assert "FileNotFoundError" not in r.stderr
 
 
+def test_uninstall_without_a_stack_still_completes(tmp_path, docker_shim):
+    path, _ = docker_shim
+    home = tmp_path / "home"
+    home.mkdir()
+    r = _run_cli(["uninstall", "--no-unlink"], home, cwd=home, path=path)
+    assert r.returncode == 0, r.stderr
+    assert "no local compose stack found" in r.stdout
+
+
 def test_build_targets_pinned_repo_from_any_cwd(tmp_path, docker_shim):
     path, record = docker_shim
     home, repo = _home_with_repo(tmp_path)
@@ -172,6 +181,19 @@ def test_down_then_up_follow_the_running_checkout(tmp_path, docker_shim):
     content = record.read_text()
     assert f"{repo} :: compose up -d" in content
     assert f"{cfg} :: " not in content
+
+
+def test_uninstall_takes_the_running_stack_down(tmp_path, docker_shim):
+    path, record = docker_shim
+    home, repo = _home_with_repo(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    r = _run_cli(["uninstall", "--no-unlink"], home, cwd=elsewhere, path=path)
+
+    assert r.returncode == 0, r.stderr
+    assert f"{repo} :: compose down" in record.read_text()
+    assert "profile link kept" in r.stdout
 
 
 def test_up_replaces_every_other_stack(tmp_path, docker_shim):

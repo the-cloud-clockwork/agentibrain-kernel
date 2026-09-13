@@ -153,6 +153,44 @@ def down_cmd() -> None:
     _remove_other_stacks(None)
 
 
+@main.command("uninstall")
+@click.option("--name", default="brain", show_default=True, help="Linked profile alias to remove.")
+@click.option("--no-unlink", is_flag=True, help="Keep the agentihooks profile link.")
+@click.option("--dry-run", is_flag=True, help="Report actions without changing anything.")
+def uninstall_cmd(name: str, no_unlink: bool, dry_run: bool) -> None:
+    """Stop the compose stack and unlink the brain profile. Data survives."""
+    settings = _load_settings()
+    deployment = bootstrap.find_deployment(settings)
+    if deployment is None:
+        console.print("[yellow]no local compose stack found[/yellow]")
+    else:
+        mode, compose_dir = deployment
+        if dry_run:
+            console.print(f"would run docker compose down ({mode} @ {compose_dir})")
+        else:
+            proc = (
+                bootstrap.compose_down(settings)
+                if mode == "home"
+                else bootstrap._docker_compose(["down"], compose_dir)
+            )
+            if proc.returncode != 0:
+                console.print(f"[red]compose down failed[/red]\n{proc.stderr}")
+                sys.exit(proc.returncode)
+            console.print(proc.stdout or "[green]compose down ok[/green]")
+            _remove_other_stacks(None)
+
+    if no_unlink:
+        console.print("[yellow]profile link kept (--no-unlink)[/yellow]")
+        return
+    cmd = [_agentihooks_bin(), "link-profile", "unlink", name]
+    if dry_run:
+        console.print(f"would run {escape(' '.join(cmd))}")
+        return
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        sys.exit(result.returncode)
+
+
 @main.command("status")
 def status_cmd() -> None:
     """Show health of all services."""
@@ -1195,6 +1233,9 @@ def install_cmd(
                     f"  [yellow]![/yellow] inference is yours to set in {brain_env}: "
                     f"{escape(', '.join(unset))}"
                 )
+        migrated = _hooks_env.migrate_client_defaults(brain_env)
+        if migrated:
+            console.print(f"       migrated {', '.join(migrated)}", markup=False)
         swept = _hooks_env.sweep_managed_file()
         if swept:
             console.print(f"  [green]✓[/green] removed duplicated copy → {swept}")

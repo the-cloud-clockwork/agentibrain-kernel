@@ -119,7 +119,7 @@ tpl:
       BRAIN_ENABLED: 'true'
       BRAIN_CHANNEL: brain
       BRAIN_SOURCE_PATH: /vault/brain-feed
-      BRAIN_REFRESH_INTERVAL: '10'
+      BRAIN_REFRESH_TOOL_CALLS: '20'
       AMYGDALA_ENABLED: 'true'
       AMYGDALA_SIGNAL_PATH: /vault/brain-feed/amygdala-active.md
       # ARTIFACT_STORE_URL — operator override (set in your per-env values overlay)

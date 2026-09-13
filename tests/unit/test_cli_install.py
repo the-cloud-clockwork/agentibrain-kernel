@@ -10,6 +10,7 @@ installed package. The build itself is asserted in tests/integration.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ from agentibrain import cli, hooks_env
 PROFILE_FILES = (
     "profile.yml",
     "CLAUDE.md",
+    "enforcements.json",
     ".claude/.mcp.json",
 )
 
@@ -32,6 +34,20 @@ def test_brain_profile_ships_inside_the_package():
     profile_dir = cli.PROFILES_ROOT / "brain"
     for rel in PROFILE_FILES:
         assert (profile_dir / rel).is_file(), rel
+
+
+def test_brain_profile_carries_the_tool_usage_reminder():
+    payload = json.loads((cli.PROFILES_ROOT / "brain" / "enforcements.json").read_text())
+    reminder = payload["enforcements"][0]
+    assert reminder["id"] == "brain-usage"
+    assert reminder["cadence"] == 10
+    assert "use brain tools" in reminder["message"]
+
+
+def test_brain_profile_uses_cross_target_streamable_http():
+    payload = json.loads((cli.PROFILES_ROOT / "brain" / ".claude" / ".mcp.json").read_text())
+    server = payload["mcpServers"]["agentibrain"]
+    assert server == {"type": "http", "url": "http://localhost:8104/mcp"}
 
 
 def test_manifest_carries_the_whole_profiles_tree():
@@ -98,6 +114,40 @@ def test_install_forwards_target_and_no_init(install_env, monkeypatch):
     assert captured["cmd"][-3:] == ["--for-target", "codex", "--no-init"]
 
 
+def test_uninstall_downs_stack_before_unlinking_profile(tmp_path, monkeypatch):
+    from agentibrain.config import BrainSettings
+
+    settings = BrainSettings(config_dir=tmp_path, _env_file=None)
+    events = []
+
+    class Done:
+        returncode = 0
+        stdout = "down"
+        stderr = ""
+
+    monkeypatch.setattr(cli, "_load_settings", lambda: settings)
+    monkeypatch.setattr(cli.bootstrap, "find_deployment", lambda settings: ("home", tmp_path))
+    monkeypatch.setattr(
+        cli.bootstrap, "compose_down", lambda settings: events.append("down") or Done()
+    )
+    monkeypatch.setattr(cli, "_remove_other_stacks", lambda keep: events.append("other-stacks"))
+    monkeypatch.setattr(cli, "_agentihooks_bin", lambda: "/usr/bin/agentihooks")
+    monkeypatch.setattr(
+        cli.subprocess,
+        "run",
+        lambda cmd: events.append(cmd) or Done(),
+    )
+
+    result = CliRunner().invoke(cli.main, ["uninstall"])
+
+    assert result.exit_code == 0, result.output
+    assert events == [
+        "down",
+        "other-stacks",
+        ["/usr/bin/agentihooks", "link-profile", "unlink", "brain"],
+    ]
+
+
 def test_install_completes_the_brain_env(install_env, monkeypatch):
     """The bearer gets exactly one home — the brain's own file, which
     agentihooks reads directly. Nothing is projected into ~/.agentihooks."""
@@ -121,10 +171,10 @@ def test_install_completes_the_brain_env(install_env, monkeypatch):
         assert assigned[key] == "true"
     assert assigned["BRAIN_WRITER_MAX_MARKERS"] == "5"
     assert assigned["BRAIN_CHANNEL"] == "brain"
-    assert assigned["BRAIN_HOT_ARCS_TOP_N"] == "5"
+    assert assigned["BRAIN_HOT_ARCS_TOP_N"] == "10"
     assert assigned["BRAIN_HTTP_TIMEOUT"] == "3"
     assert assigned["BRAIN_PAYLOAD_MAX_BYTES"] == "1536"
-    assert assigned["BRAIN_REFRESH_INTERVAL"] == "30"
+    assert assigned["BRAIN_REFRESH_TOOL_CALLS"] == "20"
     assert assigned["BRAIN_SOURCE_TYPE"] == "file"
     assert not hooks_env.managed_env_path().exists()
     body = (install_env / ".env").read_text()
@@ -279,7 +329,7 @@ def test_env_sync_activates_brain_owned_client_defaults(monkeypatch, tmp_path):
         "BRAIN_HOT_ARCS_TOP_N",
         "BRAIN_HTTP_TIMEOUT",
         "BRAIN_PAYLOAD_MAX_BYTES",
-        "BRAIN_REFRESH_INTERVAL",
+        "BRAIN_REFRESH_TOOL_CALLS",
         "BRAIN_SOURCE_TYPE",
     ):
         assert assigned[key]
