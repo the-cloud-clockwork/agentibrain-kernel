@@ -1,35 +1,64 @@
-# Brain
+# Brain Usage Instructions
 
-Persistent memory shared across every agent in the fleet, outliving this
-session. What you write is read weeks later by an agent working a codebase that
-has moved — name types, functions, services, commands, not file paths.
+Every agent that reads this configuration has access to the brain system: persistent
+memory shared across agents, fleets, workforces, and workspaces. It outlives this
+session. Use it. Emitting markers alone is not sufficient.
 
-Sessions open with `BROADCAST` blocks carrying the fleet's live state: hot arcs,
-operator intent, recent changes, active alarms. An **arc** is a past unit of
-work — ignition, timeline, lessons, links to related arcs. Hot means recent or
-frequently referenced; the injected blocks are the hot end and a summary.
-Retrieve the rest when you need it.
+What you write may be read weeks later against a codebase that has moved. Name
+types, functions, services, commands, and behavior rather than file paths or line
+numbers. Attach evidence to claims that depend on a run, deployment, or commit.
 
-## Tools
+## Required Usage (HARD RULE)
 
-| | |
+- Use brain tools for every explicit brain read and durable document write. Markers
+  are the automatic write path for atomic insights. Never inspect or modify the vault
+  with shell commands, local filesystem tools, curl, generic retrieval or
+  recommendation tools, or another MCP server.
+- Search the brain when the operator asks about past work, before an architectural
+  decision, when a bug feels familiar, or when entering a service not examined in
+  this session. Use the working tree for current code facts and the brain for
+  historical intent, decisions, incidents, and lessons.
+- Ingest any important, durable detail that will matter beyond the current session:
+  research, designs, investigation results, operational knowledge, handoffs, and
+  reference material. `brain_ingest` is the document path; markers are the atomic
+  insight path.
+- After ingestion, call `brain_tick` when the current task needs the content
+  searchable now. Wait for a completed tick and verify it with a brain search. If
+  immediate retrieval is unnecessary, let the scheduled tick process it.
+- A missing brain capability is a missing tool. Add or repair the tool; never bypass
+  the brain by reaching into its storage.
+
+## Brain Tools
+
+| Need | Tool |
 |---|---|
-| `kb_search` | "what do we know about X?" |
-| `kb_brief` | same, synthesized instead of raw hits |
-| `brain_search_arcs` | past work, decisions, incidents |
-| `brain_get_arc` | one arc in full, by `cluster_id` |
-| `brain_ingest` | write a document (a synthesis, a design, reference material) |
-| `brain_tick` | process now, so what you just wrote is findable now |
+| Current injected state, recent lessons, active signals, operator intent | `brain_feed` |
+| Search the full knowledge base | `kb_search` |
+| Synthesize search results into a short brief | `kb_brief` |
+| Find related past work, decisions, or incidents | `brain_search_arcs` |
+| Read one complete arc by `cluster_id` | `brain_get_arc` |
+| Find an exact vault path through the brain API | `vault_list` |
+| Read a known vault document through the brain API | `vault_read` |
+| Persist a document, synthesis, design, or reference | `brain_ingest` |
+| Queue processing and index refresh | `brain_tick` |
 
-Search when: the operator asks about past work; you are about to make an
-architectural call (check for a prior `@decision`); a bug feels familiar; you
-hit a service you have not seen this session. Do not search when the answer is
-in this conversation, in `CLAUDE.md`, or in the working tree.
+`vault_list` and `vault_read` are brain tools. They are the only valid way to inspect
+known vault documents. Do not translate their paths into local filesystem commands.
+
+`brain_ingest` writes content to the raw inbox. A full tick assimilates it by
+classifying, clustering, summarizing, organizing, and indexing it. `brain_tick` is
+queued work, not an instantaneous write: it may return `pending`. Content is not
+confirmed searchable until the tick completes and a brain query returns it.
+
+Use `brain_status` to diagnose the AgentiHooks brain adapter and `brain_refresh` to
+republish the current feed after its source changes. These bridge tools do not replace
+`brain_tick`: refresh republishes existing feed state; tick processes and indexes new
+knowledge.
 
 ## Markers
 
-HTML comments in your output, invisible when rendered, captured automatically.
-Use them for atomic insights caught in flow; use `brain_ingest` for documents.
+HTML comments in your output are captured automatically. Use them for atomic insights
+caught in flow; use `brain_ingest` for documents and substantial durable context.
 
 ```markdown
 <!-- @lesson -->
@@ -55,25 +84,33 @@ publisher-0 restarted 3 times in 10 minutes after the image bump.
   trade-off and why the alternative lost; the reasoning is the value.
 - `@milestone` — a complete, validated unit of work. Not a commit.
 - `@signal` — needs attention. Severities `nuclear` · `critical` · `warning` ·
-  `info` · `resolved`; pick honestly, an inflated `critical` costs the whole
-  fleet's attention. A credential exposed anywhere is `nuclear`,
+  `info` · `resolved`; pick honestly. A credential exposed anywhere is `nuclear`,
   `source=security`, immediately.
 
-Name the cause and the fix — "fixed the bug" teaches nobody. One insight per
-marker, five per session maximum, and two good ones beat five weak ones.
+Name the cause and the fix. One insight per marker, five per session maximum, and two
+good markers beat five weak ones.
 
-## Channels
+## Session Context and Channels
 
-You subscribe to `brain` (state) and `amygdala` (emergencies). Publish only to
-coordinate — `channel_publish(channel="brain", message="restarting litellm-0,
-hold off on MCP calls", severity="info")` — and rarely; every broadcast spends
-attention across every agent. Knowledge goes to markers and `brain_ingest`.
-Milestones and signals already broadcast themselves. No `BROADCAST` blocks at
-all means this session is not subscribed.
+At session start, the AgentiHooks brain adapter reads the current feed and publishes
+its entries as `BROADCAST` blocks. The feed can contain hot arcs, recent lessons,
+operator intent, inject blocks, tick changes, and active signals. An **arc** is a past
+unit of work with its timeline, lessons, and links to related arcs. Hot arcs are the
+recent or frequently referenced subset; use brain tools to retrieve the rest.
 
-## Constraints
+You subscribe to `brain` for state and `amygdala` for emergencies. Use
+`channel_publish` only for live coordination, and use it rarely because every
+broadcast spends fleet attention. Knowledge belongs in markers or `brain_ingest`.
+Markers persist automatically; signals reach session broadcasts after brain processing
+and feed refresh. Milestones are persisted but are not immediate broadcasts.
 
-Reach the brain through its tools — no curl, no writing to the vault directly.
-A missing capability is a missing tool: add it. Brain behaviour changes go
-through code, commit, and CI. The brain sorts what you write into regions; you
-do not choose where it lands.
+The absence of a `BROADCAST` block does not prove the session is unsubscribed. The feed
+may be empty, unchanged, disabled, or unavailable. Use `brain_status` to distinguish
+those states.
+
+## Constraints (HARD FLOOR)
+
+All brain access goes through brain tools and the HTTP contracts behind them. No direct
+vault reads, direct vault writes, or storage-path guesses. Brain behavior changes go
+through code, commit, CI, deployment, and validation. The brain decides where ingested
+content belongs; agents do not choose or manipulate its storage region.
