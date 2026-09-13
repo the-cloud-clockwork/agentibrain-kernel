@@ -1,16 +1,8 @@
-"""The agentihooks side of the brain's configuration.
+"""Brain-owned client settings consumed by agentihooks.
 
-The kernel and agentihooks resolve their config from different files. The
-kernel reads ``~/.agentibrain/.env``; agentihooks reads ``~/.agentihooks/.env``
-and the ``*.env`` companions beside it, and nothing bridges the two. A token
-written only to the kernel's file authenticates every ``agentibrain`` command
-while every marker POST from the hook answers 401 — the deployment looks
-healthy from the side that owns the check.
-
-Nothing is copied here any more: agentihooks reads the brain's own .env
-directly, so the bearer has exactly one home. What remains is reading back
-what the consumer resolved. Resolution mirrors agentihooks' own loader: ``.env`` first, then ``*.env`` sorted, later
-files winning, and the surrounding process environment beating all of them.
+Every brain value lives in the kernel's own environment file. Agentihooks
+allowlists those values into its process but does not define or persist them.
+The surrounding process environment remains the deployment-level override.
 """
 
 from __future__ import annotations
@@ -28,6 +20,32 @@ def hooks_home() -> Path:
 
 def managed_env_path() -> Path:
     return hooks_home() / MANAGED_ENV_NAME
+
+
+def client_defaults(vault_path: Path | None) -> dict[str, str]:
+    """Brain-owned client settings consumed by agentihooks.
+
+    agentihooks adopts these from that file, so they live beside the bearer and
+    follow the vault and outbox this machine actually has. Without a local
+    vault the two vault paths stay empty, and upsert_env_values skips empties.
+    """
+    feed = vault_path.expanduser() / "brain-feed" if vault_path is not None else None
+    return {
+        "BRAIN_CHANNEL": "brain",
+        "BRAIN_HOT_ARCS_TOP_N": "5",
+        "BRAIN_HTTP_TIMEOUT": "3",
+        "BRAIN_HTTP_TOKEN": "",
+        "BRAIN_PAYLOAD_MAX_BYTES": "1536",
+        "BRAIN_REFRESH_INTERVAL": "30",
+        "BRAIN_SOURCE_TYPE": "file",
+        "BRAIN_SOURCE_PATH": str(feed) if feed else "",
+        "BRAIN_ENABLED": "true",
+        "AMYGDALA_ENABLED": "true",
+        "AMYGDALA_SIGNAL_PATH": str(feed / "amygdala-active.md") if feed else "",
+        "BRAIN_WRITER_ENABLED": "true",
+        "BRAIN_WRITER_MAX_MARKERS": "5",
+        "BRAIN_WRITER_OUTBOX": str(hooks_home() / OUTBOX_DIRS[0]),
+    }
 
 
 def ensure_outbox_dirs() -> list[Path]:
@@ -65,13 +83,11 @@ def sweep_managed_file() -> Path | None:
     return path
 
 
-def _parse_chain() -> dict[str, str]:
-    """agentihooks' load order, for when agentihooks is not importable."""
-    home = hooks_home()
+def _parse_brain_env() -> dict[str, str]:
+    """Brain-owned settings, for when agentihooks is not importable."""
+    home = Path(os.environ.get("AGENTIBRAIN_HOME", str(Path.home() / ".agentibrain")))
     resolved: dict[str, str] = {}
     files = [home / ".env"]
-    if home.is_dir():
-        files += [f for f in sorted(home.glob("*.env")) if f.name != ".env"]
     for env_file in files:
         if not env_file.is_file():
             continue
@@ -125,7 +141,7 @@ def resolve_consumer_config() -> dict:
     except Exception:  # noqa: BLE001 — agentihooks absent or mid-upgrade
         pass
 
-    env = _parse_chain()
+    env = _parse_brain_env()
 
     def _get(key: str) -> str:
         return os.environ.get(key) or env.get(key, "")

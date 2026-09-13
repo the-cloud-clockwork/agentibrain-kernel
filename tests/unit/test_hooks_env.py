@@ -53,6 +53,26 @@ def test_outbox_dirs_are_created_user_owned(hooks_home):
     assert all(d.is_dir() for d in created)
 
 
+def test_fallback_reads_only_the_brain_owned_file(no_agentihooks, monkeypatch, tmp_path):
+    brain_home = tmp_path / ".agentibrain"
+    brain_home.mkdir()
+    monkeypatch.setenv("AGENTIBRAIN_HOME", str(brain_home))
+    (brain_home / ".env").write_text(
+        "BRAIN_URL=http://brain:8103\n"
+        "KB_ROUTER_TOKEN=test-token\n"
+        "BRAIN_ENABLED=true\n"
+        "BRAIN_WRITER_ENABLED=true\n"
+    )
+
+    resolved = hooks_env.resolve_consumer_config()
+
+    assert resolved["source"] == "env-chain"
+    assert resolved["brain_url"] == "http://brain:8103"
+    assert resolved["reader_enabled"] is True
+    assert resolved["writer_enabled"] is True
+    assert resolved["token_present"] is True
+
+
 # ── the probe that check runs ─────────────────────────────────────────
 
 
@@ -98,7 +118,7 @@ def test_install_dry_run_changes_nothing(hooks_home, tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
-    for step in ("1. deployment", "2. vault", "3. stack", "4. brain config", "5. profile"):
+    for step in ("1. deployment", "2. vault", "3. brain config", "4. stack", "5. profile"):
         assert step in flat
     assert not hooks_env.managed_env_path().exists()
 
