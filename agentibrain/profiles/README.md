@@ -14,7 +14,7 @@ copies. See the top-level README for the full install pattern.
 
 ## What lives here
 
-- Markers, tools and channel discipline all live in `brain/CLAUDE.md`; the profile ships no separate rules.
+- Markers, tools and channel discipline live in `brain/CLAUDE.md`; `brain/enforcements.json` keeps the tool-usage reminder active during autonomous runs.
 - `brain/profile.yml` — overlay metadata + activation conditions.
 - `brain-keeper/CLAUDE.md` — keeper agent behavioral guide.
 - `brain-keeper/profile.yml` — keeper profile metadata.

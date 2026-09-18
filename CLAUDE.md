@@ -59,7 +59,7 @@ This repo owns:
 - Brain profile overlays for agentihooks
 - The vault layout schema and the `agentibrain scaffold` tool that writes it
 - The HTTP API contract (`api/openapi.yaml`)
-- The Python CLI (`agentibrain init|up|down|status|tick|scaffold|version`)
+- The Python CLI (`agentibrain install|up|down|build|logs|status|check|tick|sync|scaffold|update|version`)
 
 ## What this repo does NOT own
 
@@ -170,7 +170,8 @@ docker compose logs --since 2m <service>     # or: kubectl logs
 - `agentihub` — clones `agents/brain-keeper/` at install time.
 - `agentihooks-bundle` — clones `agentibrain/profiles/brain/` at install time.
 - Wheel installs get the same profile via `agentibrain install`, which also completes
-  `~/.agentibrain/.env` with `BRAIN_URL` beside the bearer. agentihooks reads that file
-  directly (`AGENTIBRAIN_HOME`, default `~/.agentibrain`) and adopts only the connection
-  keys, so the bearer has one home and a rotation cannot go stale in a copy.
+  `~/.agentibrain/.env` with `BRAIN_URL` beside the bearer and every brain client setting
+  consumed by agentihooks (`BRAIN_*` and `AMYGDALA_*`) at its default.
+  agentihooks reads that file directly (`AGENTIBRAIN_HOME`, default `~/.agentibrain`) and
+  adopts only those keys, so each has one home and cannot go stale in a copy.
 - External users — `git clone` → `./local/bootstrap.sh` → `docker compose up -d` (or use the Helm charts for K8s).

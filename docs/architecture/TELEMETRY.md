@@ -61,7 +61,7 @@ LAYER 5 — Visualization
 
 | Span name | Fired by | Attributes | When |
 |---|---|---|---|
-| `brain.inject` | `brain_adapter._publish_entries` | `channel, entry_count, total_bytes, published_count` | Session start + every BRAIN_REFRESH_INTERVAL turns |
+| `brain.inject` | `brain_adapter._publish_entries` | `channel, entry_count, total_bytes, published_count` | Session start + every `BRAIN_REFRESH_TOOL_CALLS` tool calls |
 | `brain.marker_write` | `brain_writer_hook.write_markers` | `session_id, transcript_path, source, markers_found, outbox_count, redis_count, marker_types` | Stop hook (every turn) |
 | `brain.delivery` | `broadcast.check_and_inject_broadcasts` | `session_id, message_id, channel, severity, source, bytes, persistent` | UserPromptSubmit, per broadcast message |
 | `agentihooks.session.stop` | `hook_manager.on_stop` | `session_id, tool_calls, errors` | Stop hook (existing, pre-this work) |

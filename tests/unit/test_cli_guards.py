@@ -2,7 +2,7 @@
 
 build/up/down/logs/status drive whichever compose deployment exists —
 the repo checkout pinned by local/bootstrap.sh (AGENTIBRAIN_REPO), a
-checkout found by walking up from cwd, or the init-rendered stack in
+checkout found by walking up from cwd, or the stack install rendered in
 ~/.agentibrain. With none of those, commands exit 2 with a hint instead
 of a raw traceback.
 
@@ -43,7 +43,11 @@ def docker_shim(tmp_path):
     bindir.mkdir()
     record = tmp_path / "docker-argv.txt"
     shim = bindir / "docker"
-    shim.write_text(f'#!/bin/sh\necho "$PWD :: $@" >> "{record}"\n')
+    shim.write_text(
+        f'#!/bin/sh\necho "$PWD :: $@" >> "{record}"\n'
+        f'[ "$1" = ps ] && cat "{tmp_path / "docker-ps.txt"}" 2>/dev/null\n'
+        "exit 0\n"
+    )
     shim.chmod(0o755)
     return f"{bindir}:/usr/bin:/bin", record
 
@@ -60,22 +64,33 @@ def _home_with_repo(tmp_path) -> tuple[Path, Path]:
 
 
 @pytest.mark.parametrize("cmd", ["up", "down", "build", "logs"])
-def test_commands_exit_cleanly_without_any_deployment(tmp_path, cmd):
+def test_commands_exit_cleanly_without_any_deployment(tmp_path, docker_shim, cmd):
+    path, _ = docker_shim
     home = tmp_path / "home"
     home.mkdir()
-    r = _run_cli([cmd], home, cwd=home)
+    r = _run_cli([cmd], home, cwd=home, path=path)
     assert r.returncode == 2, r.stderr
     assert "no agentibrain deployment found" in r.stdout
     assert "FileNotFoundError" not in r.stderr
 
 
-def test_status_degrades_gracefully_without_any_deployment(tmp_path):
+def test_status_degrades_gracefully_without_any_deployment(tmp_path, docker_shim):
+    path, _ = docker_shim
     home = tmp_path / "home"
     home.mkdir()
-    r = _run_cli(["status"], home, cwd=home)
+    r = _run_cli(["status"], home, cwd=home, path=path)
     assert r.returncode == 0, r.stderr
     assert "no deployment found" in r.stdout
     assert "FileNotFoundError" not in r.stderr
+
+
+def test_uninstall_without_a_stack_still_completes(tmp_path, docker_shim):
+    path, _ = docker_shim
+    home = tmp_path / "home"
+    home.mkdir()
+    r = _run_cli(["uninstall", "--no-unlink"], home, cwd=home, path=path)
+    assert r.returncode == 0, r.stderr
+    assert "no local compose stack found" in r.stdout
 
 
 def test_build_targets_pinned_repo_from_any_cwd(tmp_path, docker_shim):
@@ -138,3 +153,99 @@ def test_status_uses_detected_deployment(tmp_path, docker_shim):
     assert r.returncode == 0, r.stderr
     assert f"{repo} :: compose ps" in record.read_text()
     assert "root-compose" in r.stdout
+
+
+def test_down_then_up_follow_the_running_checkout(tmp_path, docker_shim):
+    """A stack in ~/.agentibrain beside a running checkout captures neither down nor the next up."""
+    path, record = docker_shim
+    home = tmp_path / "home"
+    cfg = home / ".agentibrain"
+    cfg.mkdir(parents=True)
+    (cfg / "compose.yml").write_text(MARKER_COMPOSE)
+    (cfg / ".env").write_text("LOG_LEVEL=INFO\n")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "compose.yml").write_text(MARKER_COMPOSE)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    (tmp_path / "docker-ps.txt").write_text(f"agentibrain_brain_api\tkernel\t{repo}\n")
+    r = _run_cli(["down"], home, cwd=elsewhere, path=path)
+    assert r.returncode == 0, r.stderr
+    assert f"{repo} :: compose down" in record.read_text()
+    assert (cfg / ".env").read_text() == f"LOG_LEVEL=INFO\nAGENTIBRAIN_REPO={repo}\n"
+
+    (tmp_path / "docker-ps.txt").unlink()
+    r = _run_cli(["up"], home, cwd=elsewhere, path=path)
+    assert r.returncode == 0, r.stderr
+    content = record.read_text()
+    assert f"{repo} :: compose up -d" in content
+    assert f"{cfg} :: " not in content
+
+
+def test_uninstall_takes_the_running_stack_down(tmp_path, docker_shim):
+    path, record = docker_shim
+    home, repo = _home_with_repo(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    r = _run_cli(["uninstall", "--no-unlink"], home, cwd=elsewhere, path=path)
+
+    assert r.returncode == 0, r.stderr
+    assert f"{repo} :: compose down" in record.read_text()
+    assert "profile link kept" in r.stdout
+
+
+def test_up_replaces_every_other_stack(tmp_path, docker_shim):
+    """Wherever `up` runs, every agentibrain stack but its target is downed first."""
+    path, record = docker_shim
+    home, repo = _home_with_repo(tmp_path)
+    (tmp_path / "docker-ps.txt").write_text(
+        f"agentibrain_brain_api\tother-checkout\t{tmp_path / 'other'}\n"
+        f"agentibrain_minio\tagentibrain\t{home / '.agentibrain'}\n"
+        f"agentibrain_redis\trepo\t{repo}\n"
+    )
+    r = _run_cli(["up"], home, cwd=repo, path=path)
+    assert r.returncode == 0, r.stderr
+    lines = record.read_text().splitlines()
+    downs = [i for i, ln in enumerate(lines) if "down --remove-orphans" in ln]
+    assert any("compose -p other-checkout down --remove-orphans" in ln for ln in lines)
+    assert any("compose -p agentibrain down --remove-orphans" in ln for ln in lines)
+    assert not any("-p repo down" in ln for ln in lines)
+    assert max(downs) < lines.index(f"{repo} :: compose up -d")
+
+
+def test_checkout_without_env_is_linked_to_the_brain_env(tmp_path, docker_shim):
+    """compose reads the project .env; a checkout missing it falls back to compose defaults."""
+    path, _ = docker_shim
+    home, repo = _home_with_repo(tmp_path)
+    r = _run_cli(["up"], home, cwd=home, path=path)
+    assert r.returncode == 0, r.stderr
+    link = repo / ".env"
+    assert link.is_symlink()
+    assert link.resolve() == (home / ".agentibrain" / ".env").resolve()
+
+
+def test_compose_env_drops_variables_the_brain_owns(tmp_path, monkeypatch):
+    from agentibrain import bootstrap
+
+    (tmp_path / ".env").write_text("LOG_LEVEL=INFO\n")
+    (tmp_path / "compose.yml").write_text("x: ${REDIS_URL:-redis://redis}\ny: $${KEEP_ME}\n")
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    monkeypatch.setenv("REDIS_URL", "redis://elsewhere")
+    monkeypatch.setenv("KEEP_ME", "1")
+    env = bootstrap._compose_env(tmp_path)
+    assert "LOG_LEVEL" not in env
+    assert "REDIS_URL" not in env
+    assert env["KEEP_ME"] == "1"
+
+
+def test_a_stack_command_never_rewrites_an_existing_pin(tmp_path, docker_shim):
+    path, _ = docker_shim
+    home, pinned = _home_with_repo(tmp_path)
+    other = tmp_path / "checkout-b"
+    other.mkdir()
+    (other / "compose.yml").write_text(MARKER_COMPOSE)
+    r = _run_cli(["build"], home, cwd=other, path=path)
+    assert r.returncode == 0, r.stderr
+    assert (home / ".agentibrain" / ".env").read_text() == f"AGENTIBRAIN_REPO={pinned}\n"

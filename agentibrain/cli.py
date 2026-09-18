@@ -50,100 +50,46 @@ def main() -> None:
     """agentibrain — standalone brain + KB kernel."""
 
 
-@main.command()
-@click.option("--vault", type=click.Path(), required=False, help="Path to the vault.")
-@click.option("--local", "local_mode", is_flag=True, help="Use MinIO instead of S3.")
-@click.option("--s3-bucket", help="S3 bucket name (required without --local).")
-@click.option("--s3-endpoint", help="S3 endpoint override (e.g. for external MinIO).")
-@click.option("--postgres-url", help="External Postgres DSN. Defaults to bundled.")
-@click.option("--redis-url", help="External Redis URL. Defaults to bundled.")
-@click.option("--openai-key", help="OpenAI API key.", envvar="OPENAI_API_KEY")
-@click.option("--llm-gateway-url", help="Optional inference-gateway URL (operator path).")
-@click.option(
-    "--ollama",
-    "use_ollama",
-    is_flag=True,
-    help="Bundle Ollama and point chat + embeddings at it. No API key needed.",
-)
-def init(
-    vault: str | None,
-    local_mode: bool,
-    s3_bucket: str | None,
-    s3_endpoint: str | None,
-    postgres_url: str | None,
-    redis_url: str | None,
-    openai_key: str | None,
-    llm_gateway_url: str | None,
-    use_ollama: bool,
-) -> None:
-    """Initialize a new brain deployment (writes config + prepares compose)."""
-    mode = "local" if local_mode else "s3"
-    if not local_mode and not s3_bucket:
-        console.print("[red]--s3-bucket required without --local[/red]")
-        sys.exit(2)
-
-    vault_path = Path(vault).expanduser().resolve() if vault else Path.home() / "agentibrain-vault"
-
-    settings = BrainSettings(
-        mode=mode,
-        vault_path=vault_path,
-        s3_bucket=s3_bucket,
-        s3_endpoint=s3_endpoint,
-        postgres_url=postgres_url,
-        redis_url=redis_url,
-        openai_api_key=SecretStr(openai_key) if openai_key else None,
-        llm_gateway_url=llm_gateway_url,
-        ollama=use_ollama,
-        _env_file=None,
-    )
-
-    token = bootstrap.generate_token()
-
-    settings.vault_path.mkdir(parents=True, exist_ok=True)
-    cfg_path = bootstrap.write_config(settings)
-    env_path = bootstrap.write_env_file(settings, token)
-    rendered = bootstrap.render_compose(settings)
-    compose_path = bootstrap.write_compose(settings, rendered)
-
-    console.print(f"[green]✓[/green] config     → {cfg_path}")
-    console.print(f"[green]✓[/green] env        → {env_path}  (chmod 600)")
-    console.print(f"[green]✓[/green] compose    → {compose_path}")
-    console.print(f"[green]✓[/green] vault path → {settings.vault_path}")
-    if use_ollama:
-        console.print(
-            f"[green]✓[/green] inference  → bundled Ollama "
-            f"({settings.ollama_chat_model} + {settings.ollama_embed_model}, "
-            "pulled on first `up`)"
-        )
-    console.print()
-    console.print("[bold]KB_ROUTER_TOKEN[/bold] (save this):")
-    console.print(f"  {token}")
-    console.print()
-    console.print(
-        "Next: [cyan]agentibrain scaffold[/cyan] to seed the vault, "
-        "then [cyan]agentibrain up[/cyan] to start the stack."
-    )
-
-
 def _find_deployment_or_exit() -> tuple[str, Path, BrainSettings]:
     """Detect the compose deployment (any mode, any cwd) or exit 2."""
     settings = _load_settings()
     dep = bootstrap.find_deployment(settings)
     if dep is None:
         console.print(
-            "[red]no agentibrain deployment found — run ./local/bootstrap.sh "
-            "in the repo, or `agentibrain init`[/red]"
+            "[red]no agentibrain deployment found — run `agentibrain install`, "
+            "or ./local/bootstrap.sh in the repo[/red]"
         )
         sys.exit(2)
     mode, compose_dir = dep
+    if mode == "root-compose" and compose_dir != settings.config_dir.expanduser():
+        bootstrap.pin_repo(settings, compose_dir)
+        if bootstrap.link_checkout_env(settings, compose_dir):
+            console.print(
+                f"linked {compose_dir / '.env'} → {settings.config_dir.expanduser() / '.env'}"
+            )
     return mode, compose_dir, settings
+
+
+def _remove_other_stacks(keep: Path | None) -> None:
+    for project, proc in bootstrap.remove_other_stacks(keep):
+        if proc.returncode != 0:
+            console.print(f"[red]removing stack {project} failed[/red]\n{proc.stderr}")
+            sys.exit(proc.returncode)
+        console.print(f"[yellow]removed stack[/yellow] {project}")
+
+
+def _root_compose_command(settings: BrainSettings, args: list[str]) -> list[str]:
+    if settings.ollama:
+        return ["-f", "compose.yml", "-f", "local/compose.ollama.yml", *args]
+    return args
 
 
 @main.command("up")
 def up_cmd() -> None:
     """Start the brain stack wherever it lives (docker compose up -d)."""
     mode, compose_dir, settings = _find_deployment_or_exit()
-    if mode == "init":
+    _remove_other_stacks(compose_dir)
+    if mode == "home":
         proc = bootstrap.compose_up(settings)
         if proc.returncode != 0:
             console.print(f"[red]compose up failed[/red]\n{proc.stderr}")
@@ -154,7 +100,7 @@ def up_cmd() -> None:
             console.print(f"  {line}")
         return
     console.print(f"[bold]starting[/bold] ({mode} @ {compose_dir})")
-    rc = bootstrap.compose_stream(["up", "-d"], compose_dir)
+    rc = bootstrap.compose_stream(_root_compose_command(settings, ["up", "-d"]), compose_dir)
     if rc != 0:
         sys.exit(rc)
 
@@ -168,9 +114,13 @@ def build_cmd(services: tuple[str, ...]) -> None:
     deployment, rebuilds changed images, recreates their containers, then
     shows the resulting ps.
     """
-    _, compose_dir, _ = _find_deployment_or_exit()
+    mode, compose_dir, settings = _find_deployment_or_exit()
+    _remove_other_stacks(compose_dir)
     console.print(f"[bold]build + up[/bold] @ {compose_dir}")
-    rc = bootstrap.compose_stream(["up", "-d", "--build", *services], compose_dir)
+    args = ["up", "-d", "--build", *services]
+    if mode == "root-compose":
+        args = _root_compose_command(settings, args)
+    rc = bootstrap.compose_stream(args, compose_dir)
     if rc != 0:
         sys.exit(rc)
     ps = bootstrap._docker_compose(["ps"], compose_dir)
@@ -184,7 +134,7 @@ def build_cmd(services: tuple[str, ...]) -> None:
 @click.option("--tail", default=None, type=int, help="Number of trailing lines per service.")
 def logs_cmd(service: str | None, follow: bool, since: str | None, tail: int | None) -> None:
     """Show service logs (docker compose logs passthrough)."""
-    _, compose_dir, _ = _find_deployment_or_exit()
+    mode, compose_dir, settings = _find_deployment_or_exit()
     args = ["logs"]
     if follow:
         args.append("-f")
@@ -194,6 +144,8 @@ def logs_cmd(service: str | None, follow: bool, since: str | None, tail: int | N
         args += ["--tail", str(tail)]
     if service:
         args.append(service)
+    if mode == "root-compose":
+        args = _root_compose_command(settings, args)
     sys.exit(bootstrap.compose_stream(args, compose_dir))
 
 
@@ -201,14 +153,53 @@ def logs_cmd(service: str | None, follow: bool, since: str | None, tail: int | N
 def down_cmd() -> None:
     """Stop the brain stack (docker compose down — volumes survive)."""
     mode, compose_dir, settings = _find_deployment_or_exit()
-    if mode == "init":
+    if mode == "home":
         proc = bootstrap.compose_down(settings)
     else:
-        proc = bootstrap._docker_compose(["down"], compose_dir)
+        proc = bootstrap._docker_compose(_root_compose_command(settings, ["down"]), compose_dir)
     if proc.returncode != 0:
         console.print(f"[red]compose down failed[/red]\n{proc.stderr}")
         sys.exit(proc.returncode)
     console.print(proc.stdout or "[green]compose down ok[/green]")
+    _remove_other_stacks(None)
+
+
+@main.command("uninstall")
+@click.option("--name", default="brain", show_default=True, help="Linked profile alias to remove.")
+@click.option("--no-unlink", is_flag=True, help="Keep the agentihooks profile link.")
+@click.option("--dry-run", is_flag=True, help="Report actions without changing anything.")
+def uninstall_cmd(name: str, no_unlink: bool, dry_run: bool) -> None:
+    """Stop the compose stack and unlink the brain profile. Data survives."""
+    settings = _load_settings()
+    deployment = bootstrap.find_deployment(settings)
+    if deployment is None:
+        console.print("[yellow]no local compose stack found[/yellow]")
+    else:
+        mode, compose_dir = deployment
+        if dry_run:
+            console.print(f"would run docker compose down ({mode} @ {compose_dir})")
+        else:
+            proc = (
+                bootstrap.compose_down(settings)
+                if mode == "home"
+                else bootstrap._docker_compose(["down"], compose_dir)
+            )
+            if proc.returncode != 0:
+                console.print(f"[red]compose down failed[/red]\n{proc.stderr}")
+                sys.exit(proc.returncode)
+            console.print(proc.stdout or "[green]compose down ok[/green]")
+            _remove_other_stacks(None)
+
+    if no_unlink:
+        console.print("[yellow]profile link kept (--no-unlink)[/yellow]")
+        return
+    cmd = [_agentihooks_bin(), "link-profile", "unlink", name]
+    if dry_run:
+        console.print(f"would run {escape(' '.join(cmd))}")
+        return
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        sys.exit(result.returncode)
 
 
 @main.command("status")
@@ -224,8 +215,8 @@ def status_cmd() -> None:
     else:
         # The HTTP health check below still runs.
         console.print(
-            "[yellow]no deployment found — run ./local/bootstrap.sh in the repo, "
-            "or `agentibrain init`[/yellow]"
+            "[yellow]no deployment found — run `agentibrain install`, "
+            "or ./local/bootstrap.sh in the repo[/yellow]"
         )
 
     token_path = settings.config_dir.expanduser() / ".env"
@@ -237,7 +228,7 @@ def status_cmd() -> None:
                 break
 
     if not token:
-        console.print("[yellow]no KB_ROUTER_TOKEN — run `agentibrain init` first[/yellow]")
+        console.print("[yellow]no KB_ROUTER_TOKEN — run `agentibrain install` first[/yellow]")
         return
 
     try:
@@ -275,7 +266,7 @@ def _resolve_token(settings: BrainSettings, token: str | None) -> str:
     found = _token_from_env_file(settings)
     if found:
         return found
-    console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain init`[/red]")
+    console.print("[red]no KB_ROUTER_TOKEN — set env var or run `agentibrain install`[/red]")
     sys.exit(2)
 
 
@@ -550,8 +541,10 @@ def check_cmd(
             hooks_cfg["reader_enabled"] and hooks_cfg["writer_enabled"]
         ):
             console.print(
-                "      [yellow]→ run `agentibrain install` to republish BRAIN_URL and the "
-                "token into the agentihooks env chain[/yellow]"
+                "      [yellow]→ agentihooks reads BRAIN_URL, the token and BRAIN_*_ENABLED from "
+                "~/.agentibrain/.env; a value exported in the shell or set in ~/.agentihooks/*.env "
+                "overrides it. Remove that copy, restart the session, then `agentibrain install` "
+                "if a key is missing[/yellow]"
             )
 
     # Exit contract mirrors `sync`: 0 clean, 1 hard failure, 2 degraded.
@@ -965,19 +958,42 @@ def _agentihooks_bin() -> str:
 
 
 def _create_deployment(
-    settings: BrainSettings, *, vault: str | None, use_ollama: bool, dry_run: bool
+    settings: BrainSettings,
+    *,
+    vault: str | None,
+    use_ollama: bool,
+    s3_bucket: str | None,
+    s3_endpoint: str | None,
+    postgres_url: str | None,
+    redis_url: str | None,
+    openai_key: str | None,
+    llm_gateway_url: str | None,
+    dry_run: bool,
 ) -> BrainSettings:
-    """Render a local stack. Mirrors `init`, minus printing the token."""
+    """Render a stack into ~/.agentibrain: bundled MinIO, or S3 when a bucket is named."""
     vault_path = Path(vault).expanduser().resolve() if vault else settings.vault_path
-    fresh = BrainSettings(mode="local", vault_path=vault_path, ollama=use_ollama, _env_file=None)
+    fresh = BrainSettings(
+        mode="s3" if s3_bucket else "local",
+        vault_path=vault_path,
+        s3_bucket=s3_bucket,
+        s3_endpoint=s3_endpoint,
+        postgres_url=postgres_url,
+        redis_url=redis_url,
+        openai_api_key=SecretStr(openai_key) if openai_key else None,
+        llm_gateway_url=llm_gateway_url,
+        ollama=use_ollama,
+        _env_file=None,
+    )
     if dry_run:
-        console.print(f"  would render a local stack → {fresh.config_dir}")
+        console.print(f"  would render a {fresh.mode} stack → {fresh.config_dir}")
         return fresh
 
     token = _token_from_env_file(fresh) or bootstrap.generate_token()
     fresh.vault_path.mkdir(parents=True, exist_ok=True)
     cfg_path = bootstrap.write_config(fresh)
-    env_path = bootstrap.write_env_file(fresh, token)
+    env_path = fresh.config_dir.expanduser() / ".env"
+    if not env_path.exists():
+        bootstrap.write_env_file(fresh, token)
     bootstrap.write_compose(fresh, bootstrap.render_compose(fresh))
     console.print(f"  [green]✓[/green] config → {cfg_path}")
     console.print(f"  [green]✓[/green] env    → {env_path}  (chmod 600)")
@@ -995,7 +1011,11 @@ def _start_stack(settings: BrainSettings) -> None:
         console.print("  [red]✗ no compose deployment to start[/red]")
         sys.exit(2)
     mode, compose_dir = deployment
-    if mode == "init":
+    if mode == "root-compose" and bootstrap.link_checkout_env(settings, compose_dir):
+        brain_env = settings.config_dir.expanduser() / ".env"
+        console.print(f"  [green]✓[/green] linked {compose_dir / '.env'} → {brain_env}")
+    _remove_other_stacks(compose_dir)
+    if mode == "home":
         proc = bootstrap.compose_up(settings)
         if proc.returncode != 0:
             console.print(f"  [red]✗ compose up failed[/red]\n{proc.stderr}")
@@ -1003,10 +1023,34 @@ def _start_stack(settings: BrainSettings) -> None:
         for line in bootstrap.run_migrations(settings):
             console.print(f"  {line}")
     else:
-        rc = bootstrap.compose_stream(["up", "-d"], compose_dir)
+        rc = bootstrap.compose_stream(_root_compose_command(settings, ["up", "-d"]), compose_dir)
         if rc != 0:
             sys.exit(rc)
     console.print(f"  [green]✓[/green] up ({mode} @ {compose_dir})")
+
+
+def _sync_env_manifest(
+    settings: BrainSettings,
+    deployment: tuple[str, Path] | None,
+    vault: Path | None = None,
+) -> list[str]:
+    env_path = bootstrap.deployment_env_path(settings, deployment)
+    compose_dir = deployment[1] if deployment else None
+    compose_path = compose_dir / "compose.yml" if compose_dir else None
+    compose_text = (
+        compose_path.read_text()
+        if compose_path is not None and compose_path.is_file()
+        else bootstrap.render_compose(settings)
+    )
+    packaged = bootstrap.render_compose(settings)
+    if packaged != compose_text:
+        compose_text += f"\n{packaged}"
+    defaults = {
+        "BRAIN_URL": settings.brain_url,
+        "KB_ROUTER_TOKEN": "",
+        **_hooks_env.client_defaults(vault),
+    }
+    return bootstrap.sync_env_manifest(env_path, compose_text, defaults)
 
 
 @main.command("install")
@@ -1049,6 +1093,14 @@ def _start_stack(settings: BrainSettings) -> None:
     "--no-init", is_flag=True, help="Register the link but skip the agentihooks re-install."
 )
 @click.option("--dry-run", is_flag=True, help="Report every step without changing anything.")
+@click.option("--s3-bucket", help="Store artifacts in this S3 bucket instead of bundled MinIO.")
+@click.option("--s3-endpoint", help="S3 endpoint override, with --s3-bucket.")
+@click.option("--postgres-url", help="External Postgres DSN for the stack this run creates.")
+@click.option("--redis-url", help="External Redis URL for the stack this run creates.")
+@click.option(
+    "--openai-key", help="Written as LLM_API_KEY and INFERENCE_API_KEY if the .env lacks them."
+)
+@click.option("--llm-gateway-url", help="Written as INFERENCE_URL if the .env lacks it.")
 def install_cmd(
     vault: str | None,
     use_ollama: bool,
@@ -1061,6 +1113,12 @@ def install_cmd(
     no_link: bool,
     no_init: bool,
     dry_run: bool,
+    s3_bucket: str | None,
+    s3_endpoint: str | None,
+    postgres_url: str | None,
+    redis_url: str | None,
+    openai_key: str | None,
+    llm_gateway_url: str | None,
 ) -> None:
     """Set this machine up end to end: stack, vault, agentihooks config, profile.
 
@@ -1087,13 +1145,41 @@ def install_cmd(
         if deployment is not None:
             mode, compose_dir = deployment
             console.print(f"  [green]✓[/green] reusing {mode} @ {compose_dir}")
+            if use_ollama:
+                overlay = compose_dir / "local/compose.ollama.yml"
+                if mode == "root-compose" and not overlay.is_file():
+                    console.print(f"  [red]✗ Ollama overlay missing: {overlay}[/red]")
+                    sys.exit(2)
+                settings.ollama = True
+                if not dry_run:
+                    bootstrap.write_config(settings)
+                    if mode == "home":
+                        bootstrap.write_compose(settings, bootstrap.render_compose(settings))
+                console.print(
+                    f"  [green]✓[/green] inference → bundled Ollama "
+                    f"({settings.ollama_chat_model} + {settings.ollama_embed_model})"
+                )
+            if s3_bucket or s3_endpoint or postgres_url or redis_url:
+                console.print(
+                    "  [yellow]![/yellow] --s3-*, --postgres-url and --redis-url only shape "
+                    "a stack install creates — this one already exists"
+                )
         elif no_stack:
             console.print(
                 f"  [yellow]![/yellow] none found; configuring against {settings.brain_url}"
             )
         else:
             settings = _create_deployment(
-                settings, vault=vault, use_ollama=use_ollama, dry_run=dry_run
+                settings,
+                vault=vault,
+                use_ollama=use_ollama,
+                s3_bucket=s3_bucket,
+                s3_endpoint=s3_endpoint,
+                postgres_url=postgres_url,
+                redis_url=redis_url,
+                openai_key=openai_key,
+                llm_gateway_url=llm_gateway_url,
+                dry_run=dry_run,
             )
             if not dry_run:
                 deployment = bootstrap.find_deployment(settings)
@@ -1114,7 +1200,76 @@ def install_cmd(
             f"({result['folders_created']} folders, {result['files_written']} files)"
         )
 
-    console.print("\n[bold]3. stack[/bold]")
+    console.print("\n[bold]3. brain config[/bold]")
+    if not remote:
+        found_url, found_token = bootstrap.resolve_endpoint(settings, deployment)
+        settings.brain_url = found_url
+        token = token or found_token
+    token = token or _token_from_env_file(settings)
+    if remote and not token and not dry_run:
+        console.print(
+            f"  [red]✗ no bearer token for {settings.brain_url} — "
+            "pass --token, or set KB_ROUTER_TOKEN[/red]"
+        )
+        sys.exit(2)
+
+    compose_dir = deployment[1] if deployment else None
+    if dry_run:
+        console.print(f"  would complete {bootstrap.deployment_env_path(settings, deployment)}")
+    else:
+        root_compose = deployment is not None and deployment[0] == "root-compose"
+        if root_compose and bootstrap.link_checkout_env(settings, compose_dir):
+            brain_file = settings.config_dir.expanduser() / ".env"
+            console.print(f"  [green]✓[/green] linked {compose_dir / '.env'} → {brain_file}")
+        brain_env = bootstrap.deployment_env_path(settings, deployment)
+        for outbox in _hooks_env.ensure_outbox_dirs():
+            console.print(f"  [green]✓[/green] outbox → {outbox}")
+        values = {
+            "BRAIN_URL": settings.brain_url,
+            "KB_ROUTER_TOKEN": token or bootstrap.generate_token(),
+        }
+        vault = None
+        if not remote:
+            vault = Path(
+                bootstrap._read_env_value(brain_env, "VAULT_ROOT_HOST") or settings.vault_path
+            )
+            values.update(bootstrap.stack_env_defaults(compose_dir, brain_env))
+            if root_compose:
+                values["AGENTIBRAIN_REPO"] = str(compose_dir)
+            if openai_key:
+                values["LLM_API_KEY"] = openai_key
+                values["INFERENCE_API_KEY"] = openai_key
+            if llm_gateway_url:
+                values["INFERENCE_URL"] = llm_gateway_url
+        values.update(_hooks_env.client_defaults(vault))
+        added = bootstrap.upsert_env_values(brain_env, values)
+        manifest_added = _sync_env_manifest(settings, deployment, vault)
+        console.print(f"  [green]✓[/green] brain env → {brain_env}  (chmod 600)")
+        summary = ", ".join(added) if added else "nothing — every key is already set"
+        console.print(f"       added {summary}", markup=False)
+        if manifest_added:
+            console.print(f"       documented {len(manifest_added)} available settings")
+        if not remote:
+            unset = [
+                k for k in bootstrap.INFERENCE_KEYS if not bootstrap._read_env_value(brain_env, k)
+            ]
+            if unset:
+                console.print(
+                    f"  [yellow]![/yellow] inference is yours to set in {brain_env}: "
+                    f"{escape(', '.join(unset))}"
+                )
+        migrated = _hooks_env.migrate_client_defaults(brain_env)
+        if migrated:
+            console.print(f"       migrated {', '.join(migrated)}", markup=False)
+        swept = _hooks_env.sweep_managed_file()
+        if swept:
+            console.print(f"  [green]✓[/green] removed duplicated copy → {swept}")
+        console.print(
+            "       agentihooks reads this file directly — nothing is copied into ~/.agentihooks",
+            markup=False,
+        )
+
+    console.print("\n[bold]4. stack[/bold]")
     if remote:
         console.print("  [--] skipped — client-only")
     elif no_stack:
@@ -1123,41 +1278,6 @@ def install_cmd(
         console.print("  would start the compose stack")
     else:
         _start_stack(settings)
-
-    console.print("\n[bold]4. brain config[/bold]")
-    if not remote:
-        found_url, found_token = bootstrap.resolve_endpoint(settings, deployment)
-        settings.brain_url = found_url
-        token = token or found_token
-    token = token or _token_from_env_file(settings)
-    if not token and not dry_run:
-        fix = (
-            "pass --token, or set KB_ROUTER_TOKEN"
-            if remote
-            else f"no KB_ROUTER_TOKEN in {bootstrap.deployment_env_path(settings, deployment)}"
-        )
-        console.print(f"  [red]✗ no bearer token for {settings.brain_url} — {fix}[/red]")
-        sys.exit(2)
-
-    brain_env = bootstrap.deployment_env_path(settings, deployment)
-    if dry_run:
-        console.print(f"  would complete {brain_env}")
-    else:
-        for outbox in _hooks_env.ensure_outbox_dirs():
-            console.print(f"  [green]✓[/green] outbox → {outbox}")
-        added = bootstrap.upsert_env_values(
-            brain_env, {"BRAIN_URL": settings.brain_url, "KB_ROUTER_TOKEN": token}
-        )
-        console.print(f"  [green]✓[/green] brain env → {brain_env}  (chmod 600)")
-        if added:
-            console.print(f"       added {', '.join(added)}", markup=False)
-        swept = _hooks_env.sweep_managed_file()
-        if swept:
-            console.print(f"  [green]✓[/green] removed duplicated copy → {swept}")
-        console.print(
-            "       agentihooks reads this file directly — nothing is copied into ~/.agentihooks",
-            markup=False,
-        )
 
     console.print("\n[bold]5. profile[/bold]")
     if no_link:
@@ -1181,6 +1301,34 @@ def install_cmd(
 def version_cmd() -> None:
     """Print the kernel version."""
     console.print(__version__)
+
+
+@main.command("update")
+@click.option("--check", is_flag=True, help="Report whether an update exists; install nothing.")
+@click.option("--index-url", default=None, help="Custom package index URL to upgrade from.")
+def update_cmd(check: bool, index_url: str | None) -> None:
+    """Upgrade agentibrain to the latest release on PyPI."""
+    from agentibrain.updater import run_update
+
+    rc = run_update(check_only=check, index_url=index_url)
+    if rc:
+        sys.exit(rc)
+    if not check:
+        result = subprocess.run([sys.executable, "-m", "agentibrain.cli", "env-sync"])
+        if result.returncode:
+            sys.exit(result.returncode)
+
+
+@main.command("env-sync", hidden=True)
+def env_sync_cmd() -> None:
+    """Complete ~/.agentibrain/.env from the installed package."""
+    settings = _load_settings()
+    env_path = settings.config_dir.expanduser() / ".env"
+    active = bootstrap.upsert_env_values(env_path, _hooks_env.client_defaults(None))
+    documented = _sync_env_manifest(settings, None)
+    console.print(
+        f"brain env current ({len(active)} active, {len(documented)} documented settings added)"
+    )
 
 
 if __name__ == "__main__":

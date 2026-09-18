@@ -7,6 +7,8 @@ reads LLM_API_KEY, not OPENAI_API_KEY.
 
 from __future__ import annotations
 
+import ast
+import re
 from pathlib import Path
 
 from agentibrain import bootstrap
@@ -88,8 +90,8 @@ def test_rerunning_init_never_costs_the_operator_their_configuration(tmp_path):
     assert active["KB_ROUTER_TOKEN"] == "rotated-by-the-operator"
     assert active["LLM_API_KEY"] == "set-by-hand"
     assert active["LLM_API_BASE"] == "https://my-proxy.example/v1"
-    # A key it now holds must not also be offered as a commented placeholder.
-    assert "LLM_API_KEY" not in _commented(second)
+    # Nothing was missing, so the rerun leaves the file exactly as edited.
+    assert second == edited
 
 
 def test_the_internal_embeddings_key_is_stable_across_runs(tmp_path):
@@ -105,11 +107,98 @@ def test_the_internal_embeddings_key_is_stable_across_runs(tmp_path):
     assert again["EMBEDDINGS_API_KEYS"] == key
 
 
-def test_an_explicitly_typed_flag_overrides_the_stored_value(tmp_path):
+def test_a_typed_flag_never_overwrites_a_stored_value(tmp_path):
     _env_text(tmp_path)
     (tmp_path / "cfg" / ".env").write_text("LLM_API_KEY=stale\n")
     text = _env_text(tmp_path, openai_api_key="sk-typed-this-run")
     active = dict(
         line.split("=", 1) for line in text.splitlines() if line and not line.startswith("#")
     )
-    assert active["LLM_API_KEY"] == "sk-typed-this-run"
+    assert active["LLM_API_KEY"] == "stale"
+    assert active["INFERENCE_API_KEY"] == "sk-typed-this-run"
+
+
+def test_manifest_adds_every_compose_setting_without_activating_defaults(tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("LOG_LEVEL=DEBUG\n# BRAIN_PROMOTE_HEAT=8\n")
+    compose = """
+services:
+  brain:
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      BRAIN_PROMOTE_HEAT: ${BRAIN_PROMOTE_HEAT:-5}
+      NEW_SETTING: ${NEW_SETTING:-enabled}
+      TOKEN: ${TOKEN:-}
+"""
+
+    added = bootstrap.sync_env_manifest(env_path, compose)
+    body = env_path.read_text()
+
+    assert {"AGENTIBRAIN_TICK_WAIT_SECONDS", "NEW_SETTING", "TOKEN"} <= set(added)
+    assert body.startswith("LOG_LEVEL=DEBUG\n# BRAIN_PROMOTE_HEAT=8\n")
+    assert body.count("LOG_LEVEL=") == 1
+    assert body.count("BRAIN_PROMOTE_HEAT=") == 1
+    assert "# NEW_SETTING=enabled\n" in body
+    assert "# TOKEN=\n" in body
+    assert bootstrap.sync_env_manifest(env_path, compose) == []
+
+
+def test_generated_manifest_covers_the_rendered_stack(tmp_path):
+    settings = BrainSettings(
+        mode="local",
+        vault_path=tmp_path / "v",
+        config_dir=tmp_path / "cfg",
+        _env_file=None,
+    )
+    env_path = bootstrap.write_env_file(settings, "token-for-the-test")
+    known = bootstrap._known_assignments(env_path)
+    stack = bootstrap.compose_env_defaults(bootstrap.render_compose(settings))
+
+    assert set(stack) <= known
+    assert "AGENTIBRAIN_TICK_WAIT_SECONDS" in known
+    assert "BRAIN_PROMOTE_HEAT" in known
+    assert "BRAIN_VERIFIER_ENABLED" in known
+    assert "KB_RRF_K" in known
+
+
+def test_rendered_stack_uses_configured_brain_api_port(tmp_path):
+    settings = BrainSettings(
+        PORT_BRAIN_API=9191,
+        vault_path=tmp_path / "v",
+        config_dir=tmp_path / "cfg",
+        _env_file=None,
+    )
+    assert "0.0.0.0:9191:8080" in bootstrap.render_compose(settings)
+
+
+def test_manifest_covers_service_environment_variables():
+    root = Path(__file__).parents[2]
+    used = set()
+    for source in (root / "services").rglob("*.py"):
+        tree = ast.parse(source.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            if not isinstance(node.args[0], ast.Constant):
+                continue
+            name = node.args[0].value
+            func = node.func
+            if (
+                isinstance(name, str)
+                and re.fullmatch(r"[A-Z][A-Z0-9_]*", name)
+                and isinstance(func, ast.Attribute)
+                and func.attr in {"getenv", "get"}
+                and (
+                    isinstance(func.value, ast.Name)
+                    and func.value.id in {"os", "_os"}
+                    or isinstance(func.value, ast.Attribute)
+                    and func.value.attr == "environ"
+                )
+            ):
+                used.add(name)
+
+    known = set(bootstrap.PROGRAM_ENV_DEFAULTS)
+    known.update(
+        bootstrap.compose_env_defaults(bootstrap.render_compose(BrainSettings(_env_file=None)))
+    )
+    assert used - {"HOSTNAME"} <= known

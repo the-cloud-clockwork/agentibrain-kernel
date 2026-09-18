@@ -53,6 +53,26 @@ def test_outbox_dirs_are_created_user_owned(hooks_home):
     assert all(d.is_dir() for d in created)
 
 
+def test_fallback_reads_only_the_brain_owned_file(no_agentihooks, monkeypatch, tmp_path):
+    brain_home = tmp_path / ".agentibrain"
+    brain_home.mkdir()
+    monkeypatch.setenv("AGENTIBRAIN_HOME", str(brain_home))
+    (brain_home / ".env").write_text(
+        "BRAIN_URL=http://brain:8103\n"
+        "KB_ROUTER_TOKEN=test-token\n"
+        "BRAIN_ENABLED=true\n"
+        "BRAIN_WRITER_ENABLED=true\n"
+    )
+
+    resolved = hooks_env.resolve_consumer_config()
+
+    assert resolved["source"] == "env-chain"
+    assert resolved["brain_url"] == "http://brain:8103"
+    assert resolved["reader_enabled"] is True
+    assert resolved["writer_enabled"] is True
+    assert resolved["token_present"] is True
+
+
 # ── the probe that check runs ─────────────────────────────────────────
 
 
@@ -98,7 +118,7 @@ def test_install_dry_run_changes_nothing(hooks_home, tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     flat = " ".join(result.output.split())
-    for step in ("1. deployment", "2. vault", "3. stack", "4. brain config", "5. profile"):
+    for step in ("1. deployment", "2. vault", "3. brain config", "4. stack", "5. profile"):
         assert step in flat
     assert not hooks_env.managed_env_path().exists()
 
@@ -219,11 +239,24 @@ def test_a_file_the_operator_wrote_is_not_swept(running_checkout):
     (running_checkout / ".env").write_text("KB_ROUTER_TOKEN=t\n")
     mine = hooks_env.managed_env_path()
     mine.parent.mkdir(parents=True, exist_ok=True)
-    mine.write_text("BRAIN_REFRESH_INTERVAL=5\n")
+    mine.write_text("BRAIN_REFRESH_TOOL_CALLS=5\n")
 
     CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
 
     assert mine.exists()
+
+
+def test_install_migrates_previous_brain_client_defaults(running_checkout):
+    env = running_checkout / ".env"
+    env.write_text("KB_ROUTER_TOKEN=t\nBRAIN_HOT_ARCS_TOP_N=5\nBRAIN_REFRESH_INTERVAL=30\n")
+
+    result = CliRunner().invoke(cli.main, ["install", "--no-stack", "--no-link"])
+
+    assert result.exit_code == 0, result.output
+    body = env.read_text()
+    assert "BRAIN_HOT_ARCS_TOP_N=10\n" in body
+    assert "BRAIN_REFRESH_TOOL_CALLS=20\n" in body
+    assert "BRAIN_REFRESH_INTERVAL=" not in body
 
 
 def test_ambient_brain_url_does_not_make_the_install_client_only(running_checkout, monkeypatch):

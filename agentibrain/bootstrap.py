@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import platform
+import re
 import secrets
 import shutil
 import subprocess
+import tempfile
 import time
 from importlib import resources
 from pathlib import Path
@@ -23,6 +26,66 @@ COMPOSE_TEMPLATE = "compose.yml.j2"
 DEFAULT_POSTGRES_PASSWORD = "agentibrain"
 DEFAULT_MINIO_USER = "agentibrain"
 DEFAULT_MINIO_PASSWORD = "agentibrain"
+
+SERVICE_ENV_DEFAULTS = {
+    "AMYGDALA_CLEAR_WINDOW": "900",
+    "BRAIN_DECAY_INTERVAL_DAYS": "4",
+    "BRAIN_DECAY_START_DAYS": "7",
+    "BRAIN_FEEDBACK_LOOKBACK": "6",
+    "BRAIN_HOT_ARC_BLURB_CHARS": "220",
+    "BRAIN_LESSON_MIN_CHARS": "40",
+    "BRAIN_SIGNAL_KEEP_MIN": "25",
+    "BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS": "14",
+    "BRAIN_SIGNAL_RETAIN_DAYS": "90",
+    "BRAIN_STALE_CRITICAL_DAYS": "5",
+    "BRAIN_STALE_INJECT_DAYS": "30",
+    "BRAIN_STALE_SIGNAL_DAYS": "3",
+    "BRAIN_SYNTH_IGNITION_CHARS": "240",
+    "BRAIN_SYNTH_MARKER_CHARS": "200",
+    "BRAIN_TICK_COMPLETED_RETAIN_DAYS": "7",
+    "BRAIN_TICK_FAILED_RETAIN_DAYS": "30",
+    "BRAIN_TICK_QUEUE_KEEP_MIN": "20",
+    "BRAIN_VERIFIER_ENABLED": "true",
+    "FEED_CACHE_TTL_SECONDS": "30",
+    "IDEMPOTENCY_TTL_SECONDS": "3600",
+    "KB_RRF_K": "60",
+    "MAX_FILE_BYTES": "5242880",
+    "OUTBOX_DRAIN_MAX_SECONDS": "600",
+    "PIPELINE_AI_PHASE_LAG_HOURS": "24",
+    "PIPELINE_MAX_SCAN": "5000",
+}
+
+PROGRAM_ENV_DEFAULTS = {
+    **SERVICE_ENV_DEFAULTS,
+    "AMYGDALA_SIGNAL_PATH": "brain-feed/amygdala-active.md",
+    "API_KEYS": "",
+    "BRAIN_API_TOKEN": "",
+    "BRAIN_API_URL": "http://brain-api:8080",
+    "BRAIN_FEED_DIR": "brain-feed",
+    "CLICKHOUSE_PASSWORD": "",
+    "CLICKHOUSE_URL": "",
+    "CLICKHOUSE_USER": "default",
+    "CLUSTERS_DIR": "clusters",
+    "EMBEDDINGS_URL": "http://embeddings:8080",
+    "EMBED_API_KEY": "",
+    "EMBED_API_URL": "http://embeddings:8080",
+    "EMBED_TEST_POSTGRES_URL": "",
+    "EVENT_BUS_DB": "11",
+    "EVENT_BUS_STREAM": "events:brain",
+    "EVENT_BUS_TOPIC": "agentibrain-system",
+    "EXTRACT_PROJECTS_DIR": "",
+    "KB_ROUTER_TOKENS": "",
+    "LITELLM_KEY": "",
+    "LITELLM_URL": "",
+    "OBSIDIAN_READER_TOKEN": "",
+    "OBSIDIAN_READER_URL": "http://agentibrain-brain-api:8080",
+    "POSTGRES_URL": "",
+    "RAW_INBOX_PREFIX": "raw/inbox",
+    "TICK_COMPLETED_DIR": "brain-feed/ticks/completed",
+    "TICK_FAILED_DIR": "brain-feed/ticks/failed",
+    "TICK_REQUESTS_DIR": "brain-feed/ticks/requested",
+    "VAULT_ROOT": "/vault",
+}
 
 
 def _templates_dir() -> Path:
@@ -53,6 +116,8 @@ def render_compose(settings: BrainSettings) -> str:
         ollama=settings.ollama,
         ollama_chat_model=settings.ollama_chat_model,
         ollama_embed_model=settings.ollama_embed_model,
+        brain_api_port=settings.port_brain_api,
+        service_env_defaults=SERVICE_ENV_DEFAULTS,
     )
 
 
@@ -72,6 +137,9 @@ def write_config(settings: BrainSettings) -> Path:
         "s3_endpoint": settings.s3_endpoint,
         "brain_url": settings.brain_url,
         "llm_gateway_url": settings.llm_gateway_url,
+        "ollama": settings.ollama,
+        "ollama_chat_model": settings.ollama_chat_model,
+        "ollama_embed_model": settings.ollama_embed_model,
         # postgres_url / redis_url are NOT written here — they may contain
         # passwords. If operators override them via flags, they come from env.
     }
@@ -100,6 +168,113 @@ def _existing_assignments(env_path: Path) -> dict[str, str]:
     return found
 
 
+def _known_assignments(env_path: Path) -> set[str]:
+    if not env_path.exists():
+        return set()
+    found = set()
+    for line in env_path.read_text().splitlines():
+        match = re.match(r"^\s*#?\s*([A-Z][A-Z0-9_]*)\s*=", line)
+        if match:
+            found.add(match.group(1))
+    return found
+
+
+def compose_env_defaults(compose_text: str) -> dict[str, str]:
+    defaults: dict[str, str] = {}
+    pattern = re.compile(r"(?<!\$)\$\{([A-Z][A-Z0-9_]*)(?:(?::-|-)([^}]*))?\}")
+    for name, value in pattern.findall(compose_text):
+        if name not in defaults or not defaults[name]:
+            defaults[name] = value
+    return defaults
+
+
+def python_env_defaults() -> dict[str, str]:
+    excluded = {"HOME", "HOSTNAME", "PIPX_HOME", "UV_TOOL_DIR", "XDG_DATA_HOME"}
+    defaults: dict[str, str] = {}
+    for source in sorted(Path(__file__).parent.rglob("*.py")):
+        try:
+            tree = ast.parse(source.read_text())
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            if not isinstance(node.args[0], ast.Constant):
+                continue
+            name = node.args[0].value
+            if not isinstance(name, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
+                continue
+            func = node.func
+            getenv = (
+                isinstance(func, ast.Attribute)
+                and func.attr == "getenv"
+                and isinstance(func.value, ast.Name)
+                and func.value.id in {"os", "_os"}
+            )
+            environ_get = (
+                isinstance(func, ast.Attribute)
+                and func.attr == "get"
+                and isinstance(func.value, ast.Attribute)
+                and func.value.attr == "environ"
+                and isinstance(func.value.value, ast.Name)
+                and func.value.value.id in {"os", "_os"}
+            )
+            if not (getenv or environ_get) or name in excluded:
+                continue
+            default = node.args[1] if len(node.args) > 1 else None
+            value = default.value if isinstance(default, ast.Constant) else ""
+            if name not in defaults or not defaults[name]:
+                defaults[name] = "" if value is None else str(value)
+    return defaults
+
+
+def settings_env_defaults() -> dict[str, str]:
+    settings = BrainSettings.model_construct()
+    defaults = {}
+    for field_name, field in BrainSettings.model_fields.items():
+        alias = field.validation_alias
+        names = (
+            list(alias.choices) if hasattr(alias, "choices") else [f"BRAIN_{field_name.upper()}"]
+        )
+        value = getattr(settings, field_name)
+        if hasattr(value, "get_secret_value") or value is None:
+            rendered = ""
+        elif isinstance(value, bool):
+            rendered = str(value).lower()
+        else:
+            rendered = str(value)
+        defaults.update({str(name): rendered for name in names})
+    return defaults
+
+
+def sync_env_manifest(
+    env_path: Path,
+    compose_text: str,
+    extra_defaults: dict[str, str] | None = None,
+) -> list[str]:
+    """Append newly supported settings as commented defaults."""
+    defaults = settings_env_defaults()
+    defaults.update(python_env_defaults())
+    defaults.update(PROGRAM_ENV_DEFAULTS)
+    defaults.update(compose_env_defaults(compose_text))
+    defaults.update(extra_defaults or {})
+    existing = _known_assignments(env_path)
+    added = sorted(name for name in defaults if name not in existing)
+    if not added:
+        return []
+
+    body = env_path.read_text() if env_path.exists() else ""
+    if body and not body.endswith("\n"):
+        body += "\n"
+    if "# --- settings available in agentibrain ---" not in body:
+        body += "\n# --- settings available in agentibrain ---\n"
+    body += "".join(f"# {name}={defaults[name]}\n" for name in added)
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text(body)
+    env_path.chmod(0o600)
+    return added
+
+
 def write_env_file(settings: BrainSettings, token: str) -> Path:
     """Persist runtime secrets + compose credentials to ``<config_dir>/.env``.
 
@@ -107,19 +282,23 @@ def write_env_file(settings: BrainSettings, token: str) -> Path:
     via ``--env-file``. Includes generated defaults for bundled Postgres/MinIO
     so first-run users never have to guess.
 
-    Re-running init MUST NOT cost the operator their configuration. Any key
-    already assigned in the file keeps its value: a rotated KB_ROUTER_TOKEN
-    stays rotated, hand-set provider keys survive, and only names absent from
-    the file are added. Nothing is ever removed. An explicit flag
-    (``--openai-key``, ``--llm-gateway-url``) is the one thing that overrides,
-    because the operator just typed it.
+    Re-running init MUST NOT cost the operator their configuration. An
+    existing file is only appended to: keys it lacks are added, and a key it
+    already has — even an empty one, even one a flag like ``--openai-key``
+    names — is never rewritten or removed, and nothing is backed up.
     """
     cfg_dir = settings.config_dir.expanduser()
     cfg_dir.mkdir(parents=True, exist_ok=True)
     env_path = cfg_dir / ".env"
     existing = _existing_assignments(env_path)
 
-    embeddings_key = existing.get("EMBEDDINGS_API_KEY") or generate_token()
+    embeddings_key = (
+        existing.get("EMBEDDINGS_API_KEY")
+        or existing.get("EMBEDDINGS_API_KEYS", "").split(",")[0].strip()
+        or generate_token()
+    )
+    # `or`, not a getenv default: a shell exporting these empty (agentienv
+    # sources ~/.env) would otherwise write an empty password.
     generated: dict[str, str] = {
         "KB_ROUTER_TOKEN": token,
         # agentihooks reads this file to learn where the brain is; without the
@@ -127,14 +306,15 @@ def write_env_file(settings: BrainSettings, token: str) -> Path:
         "BRAIN_URL": settings.brain_url,
         "EMBEDDINGS_API_KEY": embeddings_key,
         "EMBEDDINGS_API_KEYS": embeddings_key,
-        "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD", DEFAULT_POSTGRES_PASSWORD),
+        "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD") or DEFAULT_POSTGRES_PASSWORD,
         "LOG_LEVEL": "INFO",
     }
     if settings.mode == "local":
-        generated["MINIO_ROOT_USER"] = os.getenv("MINIO_ROOT_USER", DEFAULT_MINIO_USER)
-        generated["MINIO_ROOT_PASSWORD"] = os.getenv("MINIO_ROOT_PASSWORD", DEFAULT_MINIO_PASSWORD)
+        generated["MINIO_ROOT_USER"] = os.getenv("MINIO_ROOT_USER") or DEFAULT_MINIO_USER
+        generated["MINIO_ROOT_PASSWORD"] = (
+            os.getenv("MINIO_ROOT_PASSWORD") or DEFAULT_MINIO_PASSWORD
+        )
 
-    # Typed this run, so it wins over whatever the file holds.
     explicit: dict[str, str] = {}
     if settings.openai_api_key is not None:
         # LLM_API_KEY is what the embeddings service reads; OPENAI_API_KEY is
@@ -145,12 +325,17 @@ def write_env_file(settings: BrainSettings, token: str) -> Path:
     if settings.llm_gateway_url:
         explicit["INFERENCE_URL"] = settings.llm_gateway_url
 
-    resolved = {**generated, **existing, **explicit}
+    values = {**generated, **explicit}
+    if env_path.exists():
+        upsert_env_values(env_path, values)
+        sync_env_manifest(env_path, render_compose(settings))
+        return env_path
 
-    lines = [f"{key}={value}" for key, value in resolved.items()]
-    lines += _commented_settings(settings, offered=set(resolved))
+    lines = [f"{key}={value}" for key, value in values.items() if value]
+    lines += _commented_settings(settings, offered=set(values))
     env_path.write_text("\n".join(lines) + "\n")
     env_path.chmod(0o600)
+    sync_env_manifest(env_path, render_compose(settings))
     return env_path
 
 
@@ -177,24 +362,75 @@ _OPTIONAL_ENV: tuple[tuple[str, str, str], ...] = (
 
 
 def upsert_env_values(env_path: Path, values: dict[str, str]) -> list[str]:
-    """Add missing assignments to an env file, preserving everything else.
+    """Append assignments for keys the env file does not define, preserving everything else.
 
-    A key already carrying a value is never touched — a rotated token stays
-    rotated and a hand-edited URL stays hand-edited. Returns the names added.
+    A key already in the file is never touched, even with an empty value — a
+    rotated token stays rotated, a hand-edited URL stays hand-edited, and a
+    rerun cannot duplicate a line. Empty values are not written. Returns the
+    names added.
     """
     env_path.parent.mkdir(parents=True, exist_ok=True)
     existing = _existing_assignments(env_path)
-    missing = {k: v for k, v in values.items() if v and not existing.get(k, "").strip()}
+    missing = {k: v for k, v in values.items() if v and k not in existing}
     if missing:
         body = env_path.read_text() if env_path.exists() else ""
         if body and not body.endswith("\n"):
             body += "\n"
         body += "".join(f"{k}={v}\n" for k, v in missing.items())
         env_path.write_text(body)
-    else:
-        env_path.touch(exist_ok=True)
+    elif not env_path.exists():
+        env_path.touch()
     env_path.chmod(0o600)
     return list(missing)
+
+
+# The operator's to set: written only when the deployment's compose file
+# carries a default for them, which a bundled-Ollama stack does.
+INFERENCE_KEYS = ("LLM_API_KEY", "LLM_API_BASE", "INFERENCE_URL", "INFERENCE_API_KEY")
+
+_STACK_ENV_FALLBACKS: dict[str, str] = {
+    "POSTGRES_PASSWORD": DEFAULT_POSTGRES_PASSWORD,
+    "LOG_LEVEL": "INFO",
+    "MINIO_ROOT_USER": DEFAULT_MINIO_USER,
+    "MINIO_ROOT_PASSWORD": DEFAULT_MINIO_PASSWORD,
+    "LLM_API_KEY": "",
+    "LLM_API_BASE": "",
+    "LLM_EMBED_MODEL": "text-embedding-3-small",
+    "EMBED_DIM": "",
+    "INFERENCE_URL": "",
+    "INFERENCE_API_KEY": "",
+    "BRAIN_CLASSIFY_MODEL": "brain-classify",
+    "BRAIN_BRIEF_MODEL": "brain-brief",
+    "TICK_INTERVAL_SECONDS": "7200",
+    "TICK_DRAIN_INTERVAL_SECONDS": "30",
+    "BRAIN_LLM_TIMEOUT_SECONDS": "600",
+    "PORT_POSTGRES": "5432",
+}
+
+
+def stack_env_defaults(compose_dir: Path | None, env_path: Path) -> dict[str, str]:
+    """The stack's own keys at the values the deployment already runs with.
+
+    Each default is read from the deployment's compose file (``${NAME:-default}``),
+    so writing it changes nothing for a running stack; a name the file does not
+    use falls back to the kernel default. The embeddings key pair is generated
+    once and shared, or completed from whichever half the env file holds.
+    """
+    compose = compose_dir / "compose.yml" if compose_dir else None
+    text = compose.read_text() if compose and compose.is_file() else ""
+    values = {}
+    for name, fallback in _STACK_ENV_FALLBACKS.items():
+        match = re.search(r"\$\{" + re.escape(name) + r":?-([^}]*)\}", text)
+        values[name] = match.group(1) if match else fallback
+    existing = _existing_assignments(env_path)
+    embeddings_key = (
+        existing.get("EMBEDDINGS_API_KEY")
+        or existing.get("EMBEDDINGS_API_KEYS", "").split(",")[0].strip()
+        or generate_token()
+    )
+    values["EMBEDDINGS_API_KEY"] = embeddings_key
+    values["EMBEDDINGS_API_KEYS"] = embeddings_key
+    return values
 
 
 def _commented_settings(settings: BrainSettings, offered: set[str] | None = None) -> list[str]:
@@ -243,17 +479,61 @@ def _read_env_value(env_path: Path, key: str) -> str:
     return ""
 
 
+def _kernel_containers() -> list[list[str]]:
+    """``[name, compose project, compose working dir]`` per agentibrain_* container."""
+    if not shutil.which("docker"):
+        return []
+    proc = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "-a",
+            "--filter",
+            "name=^agentibrain_",
+            "--format",
+            '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t'
+            '{{.Label "com.docker.compose.project.working_dir"}}',
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return []
+    return [ln.split("\t") for ln in proc.stdout.splitlines() if ln.count("\t") == 2]
+
+
+def remove_other_stacks(keep: Path | None) -> list[tuple[str, subprocess.CompletedProcess]]:
+    """`down` every compose project holding agentibrain_* containers except the
+    one running from ``keep``. Both compose files hardcode the container names,
+    so a stack can only replace another. Runs by project name from an empty
+    dir: a compose file in cwd would otherwise be loaded under that name.
+    Volumes survive.
+    """
+    projects = {project: workdir for _, project, workdir in _kernel_containers() if project}
+    results = []
+    for project, workdir in projects.items():
+        if keep is not None and workdir and Path(workdir).resolve() == keep.resolve():
+            continue
+        with tempfile.TemporaryDirectory() as empty:
+            proc = _docker_compose(["-p", project, "down", "--remove-orphans"], Path(empty))
+        results.append((project, proc))
+    return results
+
+
 def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[str, Path] | None:
     """Locate the compose deployment the CLI should drive.
 
     Returns ``(mode, compose_dir)`` — mode is ``"root-compose"`` (repo
-    checkout managed by local/bootstrap.sh) or ``"init"`` (stack rendered by
-    ``agentibrain init``) — or None when no deployment exists.
+    checkout managed by local/bootstrap.sh) or ``"home"`` (stack rendered into
+    ~/.agentibrain by ``agentibrain install``) — or None when no deployment exists.
 
     Order: the checkout you are standing in wins — running a command from
     inside checkout B must never target checkout A that an old bootstrap
-    pinned. The AGENTIBRAIN_REPO pin (written by local/bootstrap.sh into
-    ~/.agentibrain/.env) covers every other cwd; the init-rendered stack
+    pinned. Next, the stack Docker reports holding agentibrain_brain_api, so
+    a command run from anywhere drives what is actually up. The
+    AGENTIBRAIN_REPO pin (written by local/bootstrap.sh into
+    ~/.agentibrain/.env) covers every other cwd; the ~/.agentibrain stack
     comes last.
     """
     cfg_dir = settings.config_dir.expanduser()
@@ -267,6 +547,13 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
         except OSError:
             continue
 
+    owner = next(
+        (Path(wd) for name, _, wd in _kernel_containers() if name == COMPOSE_MARKER and wd),
+        None,
+    )
+    if owner is not None and (owner / "compose.yml").is_file():
+        return ("home" if owner == cfg_dir else "root-compose", owner)
+
     repo = _read_env_value(cfg_dir / ".env", "AGENTIBRAIN_REPO")
     if repo:
         repo_dir = Path(repo).expanduser()
@@ -274,14 +561,41 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
             return ("root-compose", repo_dir)
 
     if (cfg_dir / "compose.yml").is_file():
-        return ("init", cfg_dir)
+        return ("home", cfg_dir)
     return None
+
+
+def pin_repo(settings: BrainSettings, repo: Path) -> None:
+    """Record ``repo`` as AGENTIBRAIN_REPO when the brain's .env has no pin yet.
+
+    `down` removes the containers find_deployment located the stack by, so
+    without the pin the next `up` from another cwd lands on the ~/.agentibrain stack.
+    An existing pin is never rewritten.
+    """
+    upsert_env_values(settings.config_dir.expanduser() / ".env", {"AGENTIBRAIN_REPO": str(repo)})
+
+
+def link_checkout_env(settings: BrainSettings, compose_dir: Path) -> bool:
+    """Point a checkout's .env at the brain's own, as local/bootstrap.sh does.
+
+    compose reads the project .env; without the link it falls back to compose
+    defaults and whatever the shell exports. An existing file or link is kept;
+    an absent brain .env is created empty so the link has something to point at.
+    """
+    link = compose_dir / ".env"
+    if link.exists() or link.is_symlink():
+        return False
+    target = settings.config_dir.expanduser() / ".env"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.touch(mode=0o600, exist_ok=True)
+    link.symlink_to(target)
+    return True
 
 
 def deployment_env_path(settings: BrainSettings, deployment: tuple[str, Path] | None) -> Path:
     """The .env the discovered deployment actually reads.
 
-    A repo checkout reads its own; only the init-rendered stack reads the one
+    A repo checkout reads its own; only the ~/.agentibrain stack reads the one
     under config_dir. The two are usually the same file — local/bootstrap.sh
     symlinks them — but nothing guarantees it, and a second checkout breaks it.
     """
@@ -332,14 +646,36 @@ def _compose_binargs() -> list[str]:
     return ["docker", "compose"]  # fail loudly with docker's own message
 
 
+_COMPOSE_VAR = re.compile(r"(?<!\$)\$\{([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def _compose_env(cwd: Path) -> dict[str, str]:
+    """The process env minus every variable the deployment's .env or compose file names.
+
+    docker compose resolves ${VAR} from the shell before .env, so a shell that
+    sourced other env files (agentihooks' agentienv loads ~/.env and
+    ~/.agentihooks/*.env) overrides the brain's own config: an exported-empty
+    POSTGRES_PASSWORD recreates postgres, an unrelated REDIS_URL repoints the
+    stack. The deployment's .env and the compose defaults are the only sources.
+    """
+    owned = set(_existing_assignments(cwd / ".env"))
+    compose = cwd / "compose.yml"
+    if compose.is_file():
+        owned.update(_COMPOSE_VAR.findall(compose.read_text()))
+    return {k: v for k, v in os.environ.items() if k not in owned}
+
+
 def compose_stream(cmd: list[str], cwd: Path) -> int:
     """Run ``docker compose`` with inherited stdio for long/streaming commands
     (build, logs -f) so output reaches the terminal live."""
-    return subprocess.run([*_compose_binargs(), *cmd], cwd=cwd, check=False).returncode
+    return subprocess.run(
+        [*_compose_binargs(), *cmd], cwd=cwd, check=False, env=_compose_env(cwd)
+    ).returncode
 
 
 def _docker_compose(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
     """Run ``docker compose``; fall back to ``docker-compose`` for older installs."""
+    env = _compose_env(cwd)
     if shutil.which("docker"):
         proc = subprocess.run(
             ["docker", "compose", *cmd],
@@ -347,6 +683,7 @@ def _docker_compose(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
             check=False,
             capture_output=True,
             text=True,
+            env=env,
         )
         if proc.returncode != 127:
             return proc
@@ -356,6 +693,7 @@ def _docker_compose(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess:
         check=False,
         capture_output=True,
         text=True,
+        env=env,
     )
 
 
