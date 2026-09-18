@@ -40,9 +40,9 @@ DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.yaml"
 class BrainSettings(BaseSettings):
     """Runtime settings for the agentibrain kernel.
 
-    Two storage modes:
-    - ``mode="s3"``  — use AWS S3 (``s3_bucket`` + AWS creds from env)
-    - ``mode="local"`` — use MinIO bundled with the compose stack
+    The vault is a filesystem path the stack bind-mounts; the object store
+    settings below are recorded for callers that use one and are not part of
+    the compose stack.
     """
 
     model_config = SettingsConfigDict(
@@ -67,14 +67,14 @@ class BrainSettings(BaseSettings):
         description="Where rendered compose + state live.",
     )
 
-    # --- Storage: S3 / MinIO ---
+    # --- Storage: S3, for callers that keep artifacts in a bucket ---
     s3_bucket: str | None = Field(
         default=None,
         description="S3 bucket name. Required when mode='s3'.",
     )
     s3_endpoint: str | None = Field(
         default=None,
-        description="S3 endpoint URL. Set to the MinIO endpoint when mode='local'.",
+        description="S3 endpoint URL, for an S3-compatible store.",
     )
     s3_region: str = Field(default="us-east-1")
 

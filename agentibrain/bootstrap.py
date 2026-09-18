@@ -24,8 +24,6 @@ COMPOSE_TEMPLATE = "compose.yml.j2"
 # Defaults for the bundled stack — written to .env so `.env` is the single
 # source of truth for the compose credentials.
 DEFAULT_POSTGRES_PASSWORD = "agentibrain"
-DEFAULT_MINIO_USER = "agentibrain"
-DEFAULT_MINIO_PASSWORD = "agentibrain"
 
 SERVICE_ENV_DEFAULTS = {
     "AMYGDALA_CLEAR_WINDOW": "900",
@@ -110,9 +108,7 @@ def render_compose(settings: BrainSettings) -> str:
     env = _env()
     tmpl = env.get_template(COMPOSE_TEMPLATE)
     return tmpl.render(
-        storage_mode=settings.mode,
         vault_path=str(settings.vault_path.expanduser().resolve()),
-        s3_bucket=settings.s3_bucket or "agentibrain-artifacts",
         ollama=settings.ollama,
         ollama_chat_model=settings.ollama_chat_model,
         ollama_embed_model=settings.ollama_embed_model,
@@ -309,11 +305,6 @@ def write_env_file(settings: BrainSettings, token: str) -> Path:
         "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD") or DEFAULT_POSTGRES_PASSWORD,
         "LOG_LEVEL": "INFO",
     }
-    if settings.mode == "local":
-        generated["MINIO_ROOT_USER"] = os.getenv("MINIO_ROOT_USER") or DEFAULT_MINIO_USER
-        generated["MINIO_ROOT_PASSWORD"] = (
-            os.getenv("MINIO_ROOT_PASSWORD") or DEFAULT_MINIO_PASSWORD
-        )
 
     explicit: dict[str, str] = {}
     if settings.openai_api_key is not None:
@@ -391,8 +382,6 @@ INFERENCE_KEYS = ("LLM_API_KEY", "LLM_API_BASE", "INFERENCE_URL", "INFERENCE_API
 _STACK_ENV_FALLBACKS: dict[str, str] = {
     "POSTGRES_PASSWORD": DEFAULT_POSTGRES_PASSWORD,
     "LOG_LEVEL": "INFO",
-    "MINIO_ROOT_USER": DEFAULT_MINIO_USER,
-    "MINIO_ROOT_PASSWORD": DEFAULT_MINIO_PASSWORD,
     "LLM_API_KEY": "",
     "LLM_API_BASE": "",
     "LLM_EMBED_MODEL": "text-embedding-3-small",
