@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import pytest
+
+_BRAIN_TOOLS = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_BRAIN_TOOLS))
+
+import brain_tick  # noqa: E402
+
+
+def test_schema_uses_configured_database_and_table():
+    ddl = brain_tick._brain_schema_ddl("telemetry", "brain_ticks")
+    assert ddl[0] == "CREATE DATABASE IF NOT EXISTS telemetry"
+    assert "telemetry.brain_ticks" in ddl[1]
+    assert "telemetry.brain_ticks" in ddl[2]
+
+
+@pytest.mark.parametrize("value", ["brain.tick_health", "brain-name", "1brain", ""])
+def test_schema_rejects_unsafe_identifiers(value):
+    with pytest.raises(ValueError):
+        brain_tick._clickhouse_ident(value)
+
+
+def test_export_uses_configured_table(monkeypatch):
+    requests = []
+    monkeypatch.setattr(brain_tick, "CLICKHOUSE_URL", "http://user:pass@clickhouse:8123")
+    monkeypatch.setattr(brain_tick, "CLICKHOUSE_DATABASE", "telemetry")
+    monkeypatch.setattr(brain_tick, "CLICKHOUSE_TICK_TABLE", "brain_ticks")
+    monkeypatch.setattr(brain_tick, "_ch_request", lambda base, sql, auth: requests.append(sql))
+
+    brain_tick._push_clickhouse({"phases": {}, "total_ms": 1})
+
+    assert requests[-1].startswith("INSERT INTO telemetry.brain_ticks ")

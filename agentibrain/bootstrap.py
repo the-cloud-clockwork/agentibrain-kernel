@@ -61,6 +61,8 @@ PROGRAM_ENV_DEFAULTS = {
     "BRAIN_API_URL": "http://brain-api:8080",
     "BRAIN_FEED_DIR": "brain-feed",
     "CLICKHOUSE_PASSWORD": "",
+    "CLICKHOUSE_DATABASE": "brain",
+    "CLICKHOUSE_TICK_TABLE": "tick_health",
     "CLICKHOUSE_URL": "",
     "CLICKHOUSE_USER": "default",
     "CLUSTERS_DIR": "clusters",
