@@ -214,7 +214,7 @@ def _ch_request(base_url: str, sql: str, auth_header: str | None) -> None:
     urllib.request.urlopen(req, timeout=5)
 
 
-def _push_clickhouse(report: dict) -> None:
+def _push_clickhouse(report: dict, brain_feed_dir: Path | None = None) -> None:
     """Push tick metrics to ClickHouse brain.tick_health (best-effort).
 
     Idempotently bootstraps the brain.tick_health schema before insert so the
@@ -223,6 +223,12 @@ def _push_clickhouse(report: dict) -> None:
     det = report.get("phases", {}).get("deterministic", {}).get("stats", {})
     ai = report.get("phases", {}).get("apply", {})
     health = ai.get("result", {}).get("health", {}) if isinstance(ai.get("result"), dict) else {}
+    if not health and brain_feed_dir:
+        last_tick = brain_feed_dir / "last-tick-diff.md"
+        if last_tick.exists():
+            match = re.search(r"Health score:\s*(\d+)/10", last_tick.read_text())
+            if match:
+                health = {"score": int(match.group(1)), "reason": "last recorded health"}
     prompt_gen = report.get("phases", {}).get("prompt_gen", {})
 
     reason = health.get("reason", "n/a")[:500].replace("'", "")
@@ -364,6 +370,11 @@ def run_tick(
         report["phases"]["ai"] = {"skipped": True}
         report["phases"]["apply"] = {"skipped": True}
         report["total_ms"] = int((time.time() - t0) * 1000)
+        if not dry_run and CLICKHOUSE_URL:
+            try:
+                _push_clickhouse(report, brain_feed_dir)
+            except Exception as e:
+                print(f"WARN: ClickHouse push failed: {e}", file=sys.stderr)
         return report
 
     # ── Phase 2: Generate AI prompt ───────────────────────────────
@@ -392,6 +403,11 @@ def run_tick(
         if ai_output.startswith("ERROR"):
             print(f"  AI ERROR: {ai_output[:200]}", file=sys.stderr)
             report["total_ms"] = int((time.time() - t0) * 1000)
+            if CLICKHOUSE_URL:
+                try:
+                    _push_clickhouse(report, brain_feed_dir)
+                except Exception as e:
+                    print(f"WARN: ClickHouse push failed: {e}", file=sys.stderr)
             return report
 
     # ── Phase 4: Apply recommendations ────────────────────────────
@@ -436,7 +452,7 @@ def run_tick(
     # don't pay a 5s timeout per tick.
     if not dry_run and CLICKHOUSE_URL:
         try:
-            _push_clickhouse(report)
+            _push_clickhouse(report, brain_feed_dir)
         except Exception as e:
             print(f"WARN: ClickHouse push failed: {e}", file=sys.stderr)
 

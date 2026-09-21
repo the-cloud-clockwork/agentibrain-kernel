@@ -52,3 +52,14 @@ def test_export_uses_separate_credentials(monkeypatch):
 
     expected = base64.b64encode(b"brain-writer:test-value").decode()
     assert requests[-1] == f"Basic {expected}"
+
+
+def test_export_reuses_last_health_when_ai_is_skipped(monkeypatch, tmp_path):
+    requests = []
+    (tmp_path / "last-tick-diff.md").write_text("Health score: 8/10\n")
+    monkeypatch.setattr(brain_tick, "CLICKHOUSE_URL", "http://clickhouse:8123")
+    monkeypatch.setattr(brain_tick, "_ch_request", lambda base, sql, auth: requests.append(sql))
+
+    brain_tick._push_clickhouse({"phases": {}, "total_ms": 1}, tmp_path)
+
+    assert "VALUES (8," in requests[-1]
