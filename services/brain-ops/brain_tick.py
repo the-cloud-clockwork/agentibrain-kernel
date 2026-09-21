@@ -72,6 +72,8 @@ BRAIN_LLM_TIMEOUT_SECONDS = int(os.getenv("BRAIN_LLM_TIMEOUT_SECONDS", "600"))
 # burning 5s on a connection-refused timeout every tick. Set this to a
 # real ClickHouse base URL in production to enable tick-health metrics.
 CLICKHOUSE_URL = os.getenv("CLICKHOUSE_URL", "")
+CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER", "default")
+CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD", "")
 CLICKHOUSE_DATABASE = os.getenv("CLICKHOUSE_DATABASE", "brain")
 CLICKHOUSE_TICK_TABLE = os.getenv("CLICKHOUSE_TICK_TABLE", "tick_health")
 # REDIS_URL + EVENT_BUS_DB + EVENT_BUS_STREAM + EVENT_BUS_TOPIC control where
@@ -259,9 +261,15 @@ def _push_clickhouse(report: dict) -> None:
     parsed_ch = urllib.parse.urlparse(CLICKHOUSE_URL)
     base_url = f"{parsed_ch.scheme}://{parsed_ch.hostname}:{parsed_ch.port or 8123}"
     auth_header = None
-    if parsed_ch.username:
+    username = urllib.parse.unquote(parsed_ch.username) if parsed_ch.username else CLICKHOUSE_USER
+    password = (
+        urllib.parse.unquote(parsed_ch.password or "")
+        if parsed_ch.username
+        else CLICKHOUSE_PASSWORD
+    )
+    if username:
         creds = base64.b64encode(
-            f"{parsed_ch.username}:{parsed_ch.password or ''}".encode()
+            f"{username}:{password}".encode()
         ).decode()
         auth_header = f"Basic {creds}"
 

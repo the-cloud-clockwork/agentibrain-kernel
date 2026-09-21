@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import sys
 from pathlib import Path
 
@@ -34,3 +35,20 @@ def test_export_uses_configured_table(monkeypatch):
     brain_tick._push_clickhouse({"phases": {}, "total_ms": 1})
 
     assert requests[-1].startswith("INSERT INTO telemetry.brain_ticks ")
+
+
+def test_export_uses_separate_credentials(monkeypatch):
+    requests = []
+    monkeypatch.setattr(brain_tick, "CLICKHOUSE_URL", "http://clickhouse:8123")
+    monkeypatch.setattr(brain_tick, "CLICKHOUSE_USER", "brain-writer")
+    monkeypatch.setattr(brain_tick, "CLICKHOUSE_PASSWORD", "test-value")
+    monkeypatch.setattr(
+        brain_tick,
+        "_ch_request",
+        lambda base, sql, auth: requests.append(auth),
+    )
+
+    brain_tick._push_clickhouse({"phases": {}, "total_ms": 1})
+
+    expected = base64.b64encode(b"brain-writer:test-value").decode()
+    assert requests[-1] == f"Basic {expected}"
