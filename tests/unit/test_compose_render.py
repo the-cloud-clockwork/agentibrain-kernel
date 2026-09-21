@@ -122,3 +122,10 @@ def test_render_mounts_vault(tmp_path):
     data = yaml.safe_load(rendered)
     mounts = data["services"]["brain-api"]["volumes"]
     assert any(str(vault.resolve()) in m for m in mounts)
+
+
+def test_tick_workers_receive_external_telemetry_configuration(tmp_path):
+    data = yaml.safe_load(render_compose(_settings(tmp_path / "v")))
+    expected = {"CLICKHOUSE_URL", "CLICKHOUSE_DATABASE", "CLICKHOUSE_TICK_TABLE"}
+    for name in ("tick-cron", "tick-drain"):
+        assert expected <= set(data["services"][name]["environment"])
