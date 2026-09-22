@@ -108,10 +108,13 @@ def _brain_schema_ddl(database: str, table: str) -> tuple[str, ...]:
             "heat_changes UInt32, promotions UInt32, demotions UInt32, graduations UInt32, "
             "hot_arcs_written UInt32, total_ms UInt32, tick_type String, "
             "signals_written UInt32, signals_tombstoned_stale UInt32, "
-            "signals_tombstoned_cleared UInt32, prompt_length UInt32 DEFAULT 0"
+            "signals_tombstoned_cleared UInt32, prompt_length UInt32 DEFAULT 0, "
+            "vault_bytes UInt64 DEFAULT 0, vault_files UInt32 DEFAULT 0"
             ") ENGINE = MergeTree ORDER BY timestamp TTL timestamp + INTERVAL 90 DAY"
         ),
         f"ALTER TABLE {qualified} ADD COLUMN IF NOT EXISTS prompt_length UInt32 DEFAULT 0",
+        f"ALTER TABLE {qualified} ADD COLUMN IF NOT EXISTS vault_bytes UInt64 DEFAULT 0",
+        f"ALTER TABLE {qualified} ADD COLUMN IF NOT EXISTS vault_files UInt32 DEFAULT 0",
     )
 
 
@@ -214,6 +217,19 @@ def _ch_request(base_url: str, sql: str, auth_header: str | None) -> None:
     urllib.request.urlopen(req, timeout=5)
 
 
+def _vault_metrics(vault_root: Path) -> tuple[int, int]:
+    bytes_total = 0
+    file_count = 0
+    for path in vault_root.rglob("*"):
+        if path.is_file():
+            try:
+                bytes_total += path.stat().st_size
+                file_count += 1
+            except OSError:
+                continue
+    return bytes_total, file_count
+
+
 def _push_clickhouse(report: dict, brain_feed_dir: Path | None = None) -> None:
     """Push tick metrics to ClickHouse brain.tick_health (best-effort).
 
@@ -230,6 +246,7 @@ def _push_clickhouse(report: dict, brain_feed_dir: Path | None = None) -> None:
             if match:
                 health = {"score": int(match.group(1)), "reason": "last recorded health"}
     prompt_gen = report.get("phases", {}).get("prompt_gen", {})
+    vault = report.get("vault", {})
 
     reason = health.get("reason", "n/a")[:500].replace("'", "")
     row = (
@@ -248,7 +265,9 @@ def _push_clickhouse(report: dict, brain_feed_dir: Path | None = None) -> None:
         f"{det.get('signals_written', 0)}, "
         f"{det.get('signals_tombstoned_stale', 0)}, "
         f"{det.get('signals_tombstoned_cleared', 0)}, "
-        f"{prompt_gen.get('prompt_length', 0)}"
+        f"{prompt_gen.get('prompt_length', 0)}, "
+        f"{vault.get('bytes', 0)}, "
+        f"{vault.get('files', 0)}"
     )
     database = _clickhouse_ident(CLICKHOUSE_DATABASE)
     table = _clickhouse_ident(CLICKHOUSE_TICK_TABLE)
@@ -258,7 +277,7 @@ def _push_clickhouse(report: dict, brain_feed_dir: Path | None = None) -> None:
         "(score, reason, arcs_scanned, signals_collected, lessons_collected, "
         "heat_changes, promotions, demotions, graduations, hot_arcs_written, "
         "total_ms, tick_type, signals_written, signals_tombstoned_stale, "
-        "signals_tombstoned_cleared, prompt_length) "
+        "signals_tombstoned_cleared, prompt_length, vault_bytes, vault_files) "
         f"VALUES ({row})"
     )
 
@@ -360,6 +379,8 @@ def run_tick(
         "duration_ms": phase1_ms,
         "stats": det_stats,
     }
+    vault_bytes, vault_files = _vault_metrics(vault_root)
+    report["vault"] = {"bytes": vault_bytes, "files": vault_files}
     print(
         f"Phase 1 (deterministic): {phase1_ms}ms — {det_stats.get('arcs_scanned', 0)} arcs, "
         f"{det_stats.get('signals_collected', 0)} signals, {det_stats.get('lessons_collected', 0)} lessons",
