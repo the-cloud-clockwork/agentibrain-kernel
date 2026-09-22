@@ -30,20 +30,20 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
-import urllib.request
 import urllib.error
 import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import brain_apply
-import redact
 import brain_keeper
 import brain_tick_prompt
-
+import redact
 
 # INFERENCE_URL is optional — when empty, the AI reasoning phase is skipped and
 # the tick runs deterministic-only. Operators configure this via env.
@@ -72,6 +72,10 @@ BRAIN_LLM_TIMEOUT_SECONDS = int(os.getenv("BRAIN_LLM_TIMEOUT_SECONDS", "600"))
 # burning 5s on a connection-refused timeout every tick. Set this to a
 # real ClickHouse base URL in production to enable tick-health metrics.
 CLICKHOUSE_URL = os.getenv("CLICKHOUSE_URL", "")
+CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER", "default")
+CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD", "")
+CLICKHOUSE_DATABASE = os.getenv("CLICKHOUSE_DATABASE", "brain")
+CLICKHOUSE_TICK_TABLE = os.getenv("CLICKHOUSE_TICK_TABLE", "tick_health")
 # REDIS_URL + EVENT_BUS_DB + EVENT_BUS_STREAM + EVENT_BUS_TOPIC control where
 # the tick announces itself. Empty REDIS_URL = no announce. EVENT_BUS_DB
 # defaults to 11 (the canonical event-bus DB shared with the amygdala).
@@ -83,24 +87,32 @@ EVENT_BUS_STREAM = os.getenv("EVENT_BUS_STREAM", "events:brain")
 EVENT_BUS_TOPIC = os.getenv("EVENT_BUS_TOPIC", "agentibrain-system")
 
 
-_BRAIN_SCHEMA_DDL = (
-    "CREATE DATABASE IF NOT EXISTS brain",
-    (
-        "CREATE TABLE IF NOT EXISTS brain.tick_health ("
-        "timestamp DateTime DEFAULT now(), "
-        "score Float32, reason String, "
-        "arcs_scanned UInt32, signals_collected UInt32, lessons_collected UInt32, "
-        "heat_changes UInt32, promotions UInt32, demotions UInt32, graduations UInt32, "
-        "hot_arcs_written UInt32, total_ms UInt32, tick_type String, "
-        "signals_written UInt32, signals_tombstoned_stale UInt32, signals_tombstoned_cleared UInt32, "
-        "prompt_length UInt32 DEFAULT 0"
-        ") ENGINE = MergeTree ORDER BY timestamp TTL timestamp + INTERVAL 90 DAY"
-    ),
-    # Self-heal tables created before prompt_length existed. Trending the AI
-    # prompt size is the early-warning for the context-overflow bug that zeroed
-    # tick health — alert if it climbs back toward the model context window.
-    "ALTER TABLE brain.tick_health ADD COLUMN IF NOT EXISTS prompt_length UInt32 DEFAULT 0",
-)
+_CLICKHOUSE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _clickhouse_ident(value: str) -> str:
+    if not _CLICKHOUSE_IDENT.fullmatch(value):
+        raise ValueError(f"invalid ClickHouse identifier: {value!r}")
+    return value
+
+
+def _brain_schema_ddl(database: str, table: str) -> tuple[str, ...]:
+    qualified = f"{database}.{table}"
+    return (
+        f"CREATE DATABASE IF NOT EXISTS {database}",
+        (
+            f"CREATE TABLE IF NOT EXISTS {qualified} ("
+            "timestamp DateTime DEFAULT now(), "
+            "score Float32, reason String, "
+            "arcs_scanned UInt32, signals_collected UInt32, lessons_collected UInt32, "
+            "heat_changes UInt32, promotions UInt32, demotions UInt32, graduations UInt32, "
+            "hot_arcs_written UInt32, total_ms UInt32, tick_type String, "
+            "signals_written UInt32, signals_tombstoned_stale UInt32, "
+            "signals_tombstoned_cleared UInt32, prompt_length UInt32 DEFAULT 0"
+            ") ENGINE = MergeTree ORDER BY timestamp TTL timestamp + INTERVAL 90 DAY"
+        ),
+        f"ALTER TABLE {qualified} ADD COLUMN IF NOT EXISTS prompt_length UInt32 DEFAULT 0",
+    )
 
 
 def _classify_tick_severity(report: dict) -> str:
@@ -202,7 +214,7 @@ def _ch_request(base_url: str, sql: str, auth_header: str | None) -> None:
     urllib.request.urlopen(req, timeout=5)
 
 
-def _push_clickhouse(report: dict) -> None:
+def _push_clickhouse(report: dict, brain_feed_dir: Path | None = None) -> None:
     """Push tick metrics to ClickHouse brain.tick_health (best-effort).
 
     Idempotently bootstraps the brain.tick_health schema before insert so the
@@ -211,6 +223,12 @@ def _push_clickhouse(report: dict) -> None:
     det = report.get("phases", {}).get("deterministic", {}).get("stats", {})
     ai = report.get("phases", {}).get("apply", {})
     health = ai.get("result", {}).get("health", {}) if isinstance(ai.get("result"), dict) else {}
+    if not health and brain_feed_dir:
+        last_tick = brain_feed_dir / "last-tick-diff.md"
+        if last_tick.exists():
+            match = re.search(r"Health score:\s*(\d+)/10", last_tick.read_text())
+            if match:
+                health = {"score": int(match.group(1)), "reason": "last recorded health"}
     prompt_gen = report.get("phases", {}).get("prompt_gen", {})
 
     reason = health.get("reason", "n/a")[:500].replace("'", "")
@@ -232,8 +250,11 @@ def _push_clickhouse(report: dict) -> None:
         f"{det.get('signals_tombstoned_cleared', 0)}, "
         f"{prompt_gen.get('prompt_length', 0)}"
     )
+    database = _clickhouse_ident(CLICKHOUSE_DATABASE)
+    table = _clickhouse_ident(CLICKHOUSE_TICK_TABLE)
+    qualified = f"{database}.{table}"
     sql = (
-        "INSERT INTO brain.tick_health "
+        f"INSERT INTO {qualified} "
         "(score, reason, arcs_scanned, signals_collected, lessons_collected, "
         "heat_changes, promotions, demotions, graduations, hot_arcs_written, "
         "total_ms, tick_type, signals_written, signals_tombstoned_stale, "
@@ -246,16 +267,22 @@ def _push_clickhouse(report: dict) -> None:
     parsed_ch = urllib.parse.urlparse(CLICKHOUSE_URL)
     base_url = f"{parsed_ch.scheme}://{parsed_ch.hostname}:{parsed_ch.port or 8123}"
     auth_header = None
-    if parsed_ch.username:
+    username = urllib.parse.unquote(parsed_ch.username) if parsed_ch.username else CLICKHOUSE_USER
+    password = (
+        urllib.parse.unquote(parsed_ch.password or "")
+        if parsed_ch.username
+        else CLICKHOUSE_PASSWORD
+    )
+    if username:
         creds = base64.b64encode(
-            f"{parsed_ch.username}:{parsed_ch.password or ''}".encode()
+            f"{username}:{password}".encode()
         ).decode()
         auth_header = f"Basic {creds}"
 
-    for ddl in _BRAIN_SCHEMA_DDL:
+    for ddl in _brain_schema_ddl(database, table):
         _ch_request(base_url, ddl, auth_header)
     _ch_request(base_url, sql, auth_header)
-    print("ClickHouse: tick_health row inserted", file=sys.stderr)
+    print(f"ClickHouse: {qualified} row inserted", file=sys.stderr)
 
 
 INFERENCE_TOKEN_ENV = "INFERENCE_API_KEY"
@@ -343,6 +370,11 @@ def run_tick(
         report["phases"]["ai"] = {"skipped": True}
         report["phases"]["apply"] = {"skipped": True}
         report["total_ms"] = int((time.time() - t0) * 1000)
+        if not dry_run and CLICKHOUSE_URL:
+            try:
+                _push_clickhouse(report, brain_feed_dir)
+            except Exception as e:
+                print(f"WARN: ClickHouse push failed: {e}", file=sys.stderr)
         return report
 
     # ── Phase 2: Generate AI prompt ───────────────────────────────
@@ -371,6 +403,11 @@ def run_tick(
         if ai_output.startswith("ERROR"):
             print(f"  AI ERROR: {ai_output[:200]}", file=sys.stderr)
             report["total_ms"] = int((time.time() - t0) * 1000)
+            if CLICKHOUSE_URL:
+                try:
+                    _push_clickhouse(report, brain_feed_dir)
+                except Exception as e:
+                    print(f"WARN: ClickHouse push failed: {e}", file=sys.stderr)
             return report
 
     # ── Phase 4: Apply recommendations ────────────────────────────
@@ -415,7 +452,7 @@ def run_tick(
     # don't pay a 5s timeout per tick.
     if not dry_run and CLICKHOUSE_URL:
         try:
-            _push_clickhouse(report)
+            _push_clickhouse(report, brain_feed_dir)
         except Exception as e:
             print(f"WARN: ClickHouse push failed: {e}", file=sys.stderr)
 
