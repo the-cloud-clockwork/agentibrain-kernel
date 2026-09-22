@@ -410,7 +410,7 @@ Previous intent (last tick):
 
 ### 5. Brain Health
 Rate the brain's health 1-10. Consider: coverage (are there gaps in what's tracked?), freshness (are hot things actually hot?), connectivity (enough edges?), signal quality (are amygdala signals actionable?).
-One line: `Brain health: N/10 — reason`
+One line only: `HEALTH_JSON: {"score": N, "reason": "reason"}`
 
 ### 6. Arc Summaries
 For EACH arc under "Unsynthesized Arcs" above, write one sentence saying what
