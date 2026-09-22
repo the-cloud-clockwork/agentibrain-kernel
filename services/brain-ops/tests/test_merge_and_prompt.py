@@ -132,7 +132,8 @@ class TestBuildPrompt:
         assert "--parent--> t1" in prompt
         assert "--related--> t1" not in prompt
 
-    def test_edge_map_capped(self, tmp_path):
+    def test_edge_map_capped(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(brain_tick_prompt, "MAX_PROMPT_CHARS", 400_000)
         feed = tmp_path / "brain-feed"
         edges = "".join(
             f"<!-- @edge type=related target=t{i} -->\n"
