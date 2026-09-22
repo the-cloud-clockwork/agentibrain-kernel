@@ -306,6 +306,7 @@ def _push_clickhouse(report: dict, brain_feed_dir: Path | None = None) -> None:
 
 INFERENCE_TOKEN_ENV = "INFERENCE_API_KEY"
 BRAIN_BRIEF_MODEL = os.getenv("BRAIN_BRIEF_MODEL", "brain-brief")
+BRAIN_LLM_MAX_TOKENS = int(os.getenv("BRAIN_LLM_MAX_TOKENS", "512"))
 
 
 def call_llm(prompt: str, inference_url: str = INFERENCE_URL) -> str:
@@ -319,7 +320,7 @@ def call_llm(prompt: str, inference_url: str = INFERENCE_URL) -> str:
         {
             "model": BRAIN_BRIEF_MODEL,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 4096,
+            "max_tokens": BRAIN_LLM_MAX_TOKENS,
             "temperature": 0.3,
         }
     ).encode()

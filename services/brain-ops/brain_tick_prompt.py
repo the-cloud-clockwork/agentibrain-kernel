@@ -40,14 +40,12 @@ import brain_keeper
 import markers
 from brain_apply import _rank
 
-# Prompt-size guards. The AI reasoning model has a finite context window
-# (claude-max-sonnet: 200K tokens ≈ ~800K chars). An unbounded edge map or arc
-# table overflows it — the model then returns an unparseable stub and the tick
-# scores 0/10 → nuclear. These caps plus the final char budget keep the prompt
-# inside the window regardless of vault size or merge/edge corruption.
+# Prompt-size guards. The AI reasoning model has a finite context window. An
+# unbounded edge map or arc table overflows it, so the final budget remains
+# configurable for the inference backend rather than assuming a provider.
 MAX_EDGE_LINES = 500  # rendered edge lines after (source, target) dedup
 MAX_ARC_ROWS = 250  # arc-table rows, highest heat first
-MAX_PROMPT_CHARS = 400_000  # ~100K tokens — hard ceiling enforced before POST
+MAX_PROMPT_CHARS = int(os.getenv("BRAIN_PROMPT_MAX_CHARS", "12000"))
 # Synthesis (Task 6). Bounded per tick: an unsynthesized backlog drains over
 # successive ticks rather than blowing one prompt. Summaries persist to arc
 # frontmatter, so each arc is paid for exactly once.
