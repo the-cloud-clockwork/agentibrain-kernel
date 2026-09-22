@@ -350,6 +350,8 @@ _OPTIONAL_ENV: tuple[tuple[str, str, str], ...] = (
     ("TICK_INTERVAL_SECONDS", "7200", "scheduled tick cadence"),
     ("TICK_DRAIN_INTERVAL_SECONDS", "30", "on-demand tick poll interval"),
     ("BRAIN_LLM_TIMEOUT_SECONDS", "600", "deadline for the AI synthesis call"),
+    ("BRAIN_PROMPT_MAX_CHARS", "12000", "maximum AI synthesis prompt size"),
+    ("BRAIN_LLM_MAX_TOKENS", "512", "maximum AI synthesis response size"),
     ("ARTIFACT_STORE_URL", "", "optional; binary ingest fails clearly when unset"),
 )
 
