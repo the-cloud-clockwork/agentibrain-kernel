@@ -175,9 +175,22 @@ def parse_signals(section: str) -> list[dict]:
 
 def parse_health(section: str) -> dict:
     """Parse '### 5. Brain Health' section."""
-    m = re.search(r"(\d+)/10\s*[—–-]\s*(.*)", section)
+    json_match = re.search(r"HEALTH_JSON:\s*(\{.*\})", section, re.IGNORECASE)
+    if json_match:
+        try:
+            health = json.loads(json_match.group(1))
+            score = int(health["score"])
+            reason = str(health["reason"]).strip()
+            if 1 <= score <= 10 and reason:
+                return {"score": score, "reason": reason}
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            pass
+    m = re.search(r"(?:brain health:\s*)?(\d+)/10\s*[—–-]\s*(.*)", section, re.IGNORECASE)
     if m:
-        return {"score": int(m.group(1)), "reason": m.group(2).strip()}
+        score = int(m.group(1))
+        reason = m.group(2).strip()
+        if 1 <= score <= 10 and reason:
+            return {"score": score, "reason": reason}
     return {"score": 0, "reason": "unparseable"}
 
 
@@ -659,6 +672,23 @@ def append_health(health_file: Path, health: dict, tick_stats: dict, dry_run: bo
     print(f"  HEALTH: {health['score']}/10 — {health['reason'][:80]}")
 
 
+def last_confirmed_health(health_file: Path) -> dict | None:
+    try:
+        lines = health_file.read_text().splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        try:
+            health = json.loads(line)
+            score = int(health.get("score", 0))
+            reason = str(health.get("reason", ""))
+            if 1 <= score <= 10 and reason and "unparseable" not in reason:
+                return {"score": score, "reason": reason}
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+    return None
+
+
 def generate_diff_report(vault_root: Path, actions: dict) -> str:
     """Generate a human-readable diff of what this tick changed."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -787,6 +817,13 @@ def apply(vault_root: Path, brain_feed_dir: Path, ai_output: str, dry_run: bool 
         if (brain_feed_dir.parent / "brain-etl").exists()
         else brain_feed_dir / "health.jsonl"
     )
+    if parsed["health"]["reason"] == "unparseable":
+        previous_health = last_confirmed_health(health_file)
+        if previous_health:
+            parsed["health"] = {
+                "score": previous_health["score"],
+                "reason": f"last confirmed: {previous_health['reason']}",
+            }
     append_health(health_file, parsed["health"], {}, dry_run)
     actions["health"] = parsed["health"]
 

@@ -259,6 +259,8 @@ services:
       # Deadline for the AI synthesis call. 120s suits a hosted frontier
       # model; a local 7B needs several times that for a full-vault prompt.
       BRAIN_LLM_TIMEOUT_SECONDS: ${BRAIN_LLM_TIMEOUT_SECONDS:-600}
+      BRAIN_PROMPT_MAX_CHARS: ${BRAIN_PROMPT_MAX_CHARS:-12000}
+      BRAIN_LLM_MAX_TOKENS: ${BRAIN_LLM_MAX_TOKENS:-512}
       BRAIN_LESSON_FEED_MAX: ${BRAIN_LESSON_FEED_MAX:-6}
       # Heat thresholds govern which arcs sit in frontal-lobe/conscious. Unset
       # here they fell through to the code defaults (promote 5 / demote 3),
@@ -433,6 +435,8 @@ services:
       # Deadline for the AI synthesis call. 120s suits a hosted frontier
       # model; a local 7B needs several times that for a full-vault prompt.
       BRAIN_LLM_TIMEOUT_SECONDS: ${BRAIN_LLM_TIMEOUT_SECONDS:-600}
+      BRAIN_PROMPT_MAX_CHARS: ${BRAIN_PROMPT_MAX_CHARS:-12000}
+      BRAIN_LLM_MAX_TOKENS: ${BRAIN_LLM_MAX_TOKENS:-512}
       BRAIN_LESSON_FEED_MAX: ${BRAIN_LESSON_FEED_MAX:-6}
       # Same reason these must mirror tick-cron: a drain-triggered tick that
       # promoted/demoted on different thresholds would fight the scheduled one.
