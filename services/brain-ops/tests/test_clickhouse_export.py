@@ -17,6 +17,8 @@ def test_schema_uses_configured_database_and_table():
     assert ddl[0] == "CREATE DATABASE IF NOT EXISTS telemetry"
     assert "telemetry.brain_ticks" in ddl[1]
     assert "telemetry.brain_ticks" in ddl[2]
+    assert "vault_bytes UInt64" in ddl[1]
+    assert "vault_files UInt32" in ddl[1]
 
 
 @pytest.mark.parametrize("value", ["brain.tick_health", "brain-name", "1brain", ""])
