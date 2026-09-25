@@ -164,6 +164,83 @@ def down_cmd() -> None:
     _remove_other_stacks(None)
 
 
+@main.command("fix")
+@click.option("--dry-run", is_flag=True, help="Report what is broken without changing anything.")
+def fix_cmd(dry_run: bool) -> None:
+    """Repair a stack that will not come up: port clashes and broken containers.
+
+    A published port held by something outside the stack moves to the next
+    free one in the deployment's .env. A container whose start failed, that
+    runs without its network, or that is unhealthy is recreated. Then the
+    stack is brought up.
+    """
+    mode, compose_dir, settings = _find_deployment_or_exit()
+    env_path = bootstrap.deployment_env_path(settings, (mode, compose_dir))
+    if not dry_run:
+        _remove_other_stacks(compose_dir)
+
+    console.print("[bold]1. ports[/bold]")
+    compose_text = (compose_dir / "compose.yml").read_text()
+    overlay = compose_dir / "local/compose.ollama.yml"
+    if mode == "root-compose" and settings.ollama and overlay.is_file():
+        compose_text += overlay.read_text()
+    port_vars = bootstrap.compose_port_vars(compose_text)
+    conflicts = bootstrap.port_conflicts(port_vars, env_path)
+    env = bootstrap._existing_assignments(env_path)
+    taken = {int(env[v]) if env.get(v, "").isdigit() else d for v, d in port_vars.items()}
+    moves: dict[str, str] = {}
+    for var, port, holder in conflicts:
+        new = bootstrap.free_port(port, taken)
+        taken.add(new)
+        moves[var] = str(new)
+        console.print(f"  [yellow]![/yellow] {port} ({var}) held by {holder} → {new}")
+        if var == "PORT_BRAIN_API" and env.get("BRAIN_URL") == f"http://localhost:{port}":
+            moves["BRAIN_URL"] = f"http://localhost:{new}"
+    if not conflicts:
+        console.print("  [green]✓[/green] no clashes")
+
+    console.print("\n[bold]2. containers[/bold]")
+    broken = bootstrap.broken_services(compose_dir)
+    for service, reason in broken:
+        console.print(f"  [yellow]![/yellow] {service}: {escape(reason)}")
+    if not broken:
+        console.print("  [green]✓[/green] none broken")
+
+    console.print("\n[bold]3. repair[/bold]")
+    if dry_run:
+        for key, value in moves.items():
+            console.print(f"  would set {key}={value} in {env_path}")
+        if broken:
+            console.print(f"  would recreate {', '.join(s for s, _ in broken)}")
+        console.print("  would start the compose stack")
+        return
+    if moves:
+        bootstrap.set_env_values(env_path, moves)
+        console.print(
+            f"  [green]✓[/green] {env_path}: {', '.join(f'{k}={v}' for k, v in moves.items())}"
+        )
+    if broken:
+        args = ["up", "-d", "--force-recreate", "--no-deps", *(s for s, _ in broken)]
+        if mode == "root-compose":
+            args = _root_compose_command(settings, args)
+        else:
+            args = ["--env-file", ".env", *args]
+        rc = bootstrap.compose_stream(args, compose_dir)
+        if rc != 0:
+            sys.exit(rc)
+    if mode == "home":
+        proc = bootstrap.compose_up(settings)
+        if proc.returncode != 0:
+            console.print(f"  [red]✗ compose up failed[/red]\n{proc.stderr}")
+            sys.exit(proc.returncode)
+    else:
+        rc = bootstrap.compose_stream(_root_compose_command(settings, ["up", "-d"]), compose_dir)
+        if rc != 0:
+            sys.exit(rc)
+    console.print(f"  [green]✓[/green] up ({mode} @ {compose_dir})")
+    console.print("\nVerify: [cyan]agentibrain check[/cyan]")
+
+
 @main.command("uninstall")
 @click.option("--name", default="brain", show_default=True, help="Linked profile alias to remove.")
 @click.option("--no-unlink", is_flag=True, help="Keep the agentihooks profile link.")
