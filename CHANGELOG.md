@@ -8,6 +8,13 @@ Tags are issued by the release workflow, not locally. Cut one by dispatching `.g
 
 ## [Unreleased]
 
+### Added
+
+- **`agentibrain fix`** repairs local stacks with occupied published ports,
+  failed starts, missing Compose-network attachments, or unhealthy containers,
+  then brings the stack back up. `--dry-run` reports the repair without changing
+  the deployment.
+
 ### Changed
 
 - **One brain stack per machine.** `up`, `build` and `install` bring down every other
@@ -39,6 +46,9 @@ Tags are issued by the release workflow, not locally. Cut one by dispatching `.g
 
 ### Bug Fixes
 
+- **Embedding rows containing NUL bytes** no longer fail PostgreSQL storage.
+  Text fields and nested metadata are sanitized before insertion, allowing a
+  complete semantic-index rebuild from vault content.
 - **Merge rationale was being written into arc titles** (`brain_apply.py`) — a MERGE
   line reads ``MERGE: a + b → `new-id` — why these two are the same thing``, and the
   title capture was anchored at end-of-line, so it swallowed the justification and
