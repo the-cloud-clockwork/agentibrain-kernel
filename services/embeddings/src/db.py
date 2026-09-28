@@ -30,6 +30,16 @@ def _force_migrate() -> bool:
 _pool = None
 
 
+def _without_nul(value):
+    if isinstance(value, str):
+        return value.replace("\x00", "")
+    if isinstance(value, dict):
+        return {_without_nul(key): _without_nul(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_without_nul(item) for item in value]
+    return value
+
+
 def get_pool() -> ConnectionPool:
     global _pool
     if _pool is None:
@@ -148,12 +158,12 @@ def upsert_chunks(
                    (key, chunk_idx, producer, content_type, text_preview, metadata, embedding)
                    VALUES (%s, %s, %s, %s, %s, %s, %s::vector)""",
                 (
-                    key,
+                    _without_nul(key),
                     chunk["chunk_idx"],
-                    producer,
-                    content_type,
-                    chunk["text_preview"][:1000],
-                    Jsonb(chunk.get("metadata", {})),
+                    _without_nul(producer),
+                    _without_nul(content_type),
+                    _without_nul(chunk["text_preview"][:1000]),
+                    Jsonb(_without_nul(chunk.get("metadata", {}))),
                     str(chunk["embedding"]),
                 ),
             )

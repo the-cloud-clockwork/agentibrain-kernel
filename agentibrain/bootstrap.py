@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 import platform
 import re
 import secrets
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
@@ -512,6 +514,125 @@ def remove_other_stacks(keep: Path | None) -> list[tuple[str, subprocess.Complet
             proc = _docker_compose(["-p", project, "down", "--remove-orphans"], Path(empty))
         results.append((project, proc))
     return results
+
+
+_PORT_VAR = re.compile(r"\$\{(PORT_[A-Z0-9_]+):-(\d+)\}")
+
+
+def compose_port_vars(compose_text: str) -> dict[str, int]:
+    """``PORT_*`` variables the compose file publishes, with their defaults."""
+    return {name: int(default) for name, default in _PORT_VAR.findall(compose_text)}
+
+
+def _published_ports() -> dict[int, str]:
+    """Host port → name of the running container publishing it."""
+    if not shutil.which("docker"):
+        return {}
+    proc = subprocess.run(
+        ["docker", "ps", "--format", "{{.Names}}\t{{.Ports}}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    held: dict[int, str] = {}
+    for line in proc.stdout.splitlines():
+        name, _, ports = line.partition("\t")
+        for port in re.findall(r":(\d+)->", ports):
+            held.setdefault(int(port), name)
+    return held
+
+
+def _port_bindable(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("0.0.0.0", port))
+        except OSError:
+            return False
+    return True
+
+
+def port_conflicts(port_vars: dict[str, int], env_path: Path) -> list[tuple[str, int, str]]:
+    """``(var, port, holder)`` for every stack port something outside the kernel holds.
+
+    A port an ``agentibrain_*`` container publishes is the stack's own and is
+    not a conflict; anything else holding it — another container, or a host
+    process that fails the bind probe — keeps the stack's container from
+    starting.
+    """
+    env = _existing_assignments(env_path)
+    held = _published_ports()
+    conflicts = []
+    for var, default in port_vars.items():
+        value = env.get(var, "").strip()
+        port = int(value) if value.isdigit() else default
+        holder = held.get(port)
+        if holder and holder.startswith("agentibrain_"):
+            continue
+        if holder or not _port_bindable(port):
+            conflicts.append((var, port, holder or "a host process"))
+    return conflicts
+
+
+def free_port(start: int, taken: set[int]) -> int:
+    """First port above ``start`` that no container publishes and the host can bind."""
+    held = set(_published_ports())
+    port = start + 1
+    while port in taken or port in held or not _port_bindable(port):
+        port += 1
+    return port
+
+
+def set_env_values(env_path: Path, values: dict[str, str]) -> None:
+    """Assign each key, replacing its active line when present, appending otherwise."""
+    lines = env_path.read_text().splitlines() if env_path.exists() else []
+    pending = dict(values)
+    for i, line in enumerate(lines):
+        key = line.split("=", 1)[0].strip()
+        if "=" in line and not line.lstrip().startswith("#") and key in pending:
+            lines[i] = f"{key}={pending.pop(key)}"
+    lines += [f"{k}={v}" for k, v in pending.items()]
+    env_path.write_text("\n".join(lines) + "\n")
+    env_path.chmod(0o600)
+
+
+def broken_services(compose_dir: Path) -> list[tuple[str, str]]:
+    """``(service, reason)`` for this stack's containers that need recreating.
+
+    A container whose start failed keeps that failure: a later ``compose up``
+    with unchanged config starts the same container, and Docker can bring it
+    up without the network endpoint the failed start never attached. It then
+    reports healthy from inside while nothing on the stack network resolves it.
+    """
+    names = [
+        name
+        for name, _, workdir in _kernel_containers()
+        if workdir and Path(workdir).resolve() == compose_dir.resolve()
+    ]
+    if not names:
+        return []
+    proc = subprocess.run(
+        ["docker", "inspect", *names], check=False, capture_output=True, text=True
+    )
+    if proc.returncode != 0:
+        return []
+    broken = []
+    for c in json.loads(proc.stdout or "[]"):
+        service = c["Config"]["Labels"].get("com.docker.compose.service", c["Name"].lstrip("/"))
+        state = c["State"]
+        network = c["HostConfig"].get("NetworkMode", "")
+        attached = c.get("NetworkSettings", {}).get("Networks") or {}
+        if state.get("Error"):
+            broken.append((service, f"start failed: {state['Error']}"))
+        elif (
+            state.get("Status") == "running"
+            and network not in ("", "host", "none", "default", "bridge")
+            and not network.startswith("container:")
+            and network not in attached
+        ):
+            broken.append((service, f"running without its network {network}"))
+        elif (state.get("Health") or {}).get("Status") == "unhealthy":
+            broken.append((service, "unhealthy"))
+    return broken
 
 
 def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[str, Path] | None:
