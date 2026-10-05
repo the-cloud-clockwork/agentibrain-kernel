@@ -49,7 +49,8 @@ services:
     image: redis:7-alpine
     container_name: agentibrain_redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    # Agent sessions and test runs on this host share the port; no client may wipe the swarm and inbox state.
+    command: ["redis-server", "--appendonly", "yes", "--user", "default", "on", "nopass", "~*", "&*", "+@all", "-flushall", "-flushdb"]
     volumes:
       - redis-data:/data
     ports:

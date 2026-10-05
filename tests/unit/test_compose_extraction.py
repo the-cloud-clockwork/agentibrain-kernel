@@ -87,3 +87,10 @@ def test_tick_drain_annotates_failed_requests():
     cmd = _services()["tick-drain"]["command"][0]
     assert "annotate_fail.py" in cmd
     assert '> "$${TLOG}" 2>&1' in cmd or '> "$$TLOG" 2>&1' in cmd
+
+
+def test_redis_refuses_flush_commands_to_every_client():
+    command = _services()["redis"]["command"]
+    user = command[command.index("--user") + 1 :]
+    assert user[:2] == ["default", "on"]
+    assert {"-flushall", "-flushdb"} <= set(user)
