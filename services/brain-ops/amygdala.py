@@ -176,6 +176,13 @@ def clear_signal(brain_feed_dir: Path, dry_run: bool) -> bool:
     return False
 
 
+def _read_events(client) -> list:
+    results = client.xreadgroup(GROUP, CONSUMER, dict.fromkeys(STREAMS, "0"), count=50)
+    if any(messages for _, messages in results):
+        return results
+    return client.xreadgroup(GROUP, CONSUMER, dict.fromkeys(STREAMS, ">"), count=50, block=2000)
+
+
 def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: bool = False) -> dict:
     """One-shot consume: read pending events, classify, write signals."""
     if redis is None:
@@ -194,9 +201,7 @@ def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: boo
             if "BUSYGROUP" not in str(e):
                 raise
 
-    results = r.xreadgroup(GROUP, CONSUMER, dict.fromkeys(STREAMS, "0"), count=50)
-    if not any(messages for _, messages in results):
-        results = r.xreadgroup(GROUP, CONSUMER, dict.fromkeys(STREAMS, ">"), count=50, block=2000)
+    results = _read_events(r)
 
     active_events = []
     for stream_name, messages in results:
