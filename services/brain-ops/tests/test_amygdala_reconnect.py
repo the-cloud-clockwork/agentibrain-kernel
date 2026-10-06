@@ -84,6 +84,8 @@ def test_lost_read_reconnects_and_drains_pending_without_loss_or_repeat(
         "redis",
         SimpleNamespace(
             Redis=SimpleNamespace(from_url=store.connect),
+            retry=SimpleNamespace(Retry=lambda backoff, retries: SimpleNamespace(retries=retries)),
+            backoff=SimpleNamespace(NoBackoff=Mock()),
             exceptions=SimpleNamespace(
                 ConnectionError=ConnectionLost,
                 TimeoutError=ConnectionLost,
@@ -110,6 +112,7 @@ def test_lost_read_reconnects_and_drains_pending_without_loss_or_repeat(
     assert sleep.call_args_list[0].args == (1,)
     assert all(options["socket_connect_timeout"] == 5 for _, options in store.connections)
     assert all(options["socket_timeout"] == 5 for _, options in store.connections)
+    assert all(options["retry"].retries == 0 for _, options in store.connections)
 
 
 def test_connection_backoff_is_bounded_and_resets_after_recovery(amygdala, monkeypatch, tmp_path):

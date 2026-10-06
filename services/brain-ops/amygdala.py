@@ -189,7 +189,11 @@ def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: boo
         return {"error": "redis package not installed"}
 
     r = redis.Redis.from_url(
-        redis_url, decode_responses=True, socket_connect_timeout=5, socket_timeout=5
+        redis_url,
+        decode_responses=True,
+        socket_connect_timeout=5,
+        socket_timeout=5,
+        retry=redis.retry.Retry(redis.backoff.NoBackoff(), 0),
     )
     last_event_key = "amygdala:last_event_ts"
 
