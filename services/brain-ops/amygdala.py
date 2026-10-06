@@ -176,12 +176,25 @@ def clear_signal(brain_feed_dir: Path, dry_run: bool) -> bool:
     return False
 
 
+def _read_events(client) -> list:
+    results = client.xreadgroup(GROUP, CONSUMER, dict.fromkeys(STREAMS, "0"), count=50)
+    if any(messages for _, messages in results):
+        return results
+    return client.xreadgroup(GROUP, CONSUMER, dict.fromkeys(STREAMS, ">"), count=50, block=2000)
+
+
 def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: bool = False) -> dict:
     """One-shot consume: read pending events, classify, write signals."""
     if redis is None:
         return {"error": "redis package not installed"}
 
-    r = redis.Redis.from_url(redis_url, decode_responses=True)
+    r = redis.Redis.from_url(
+        redis_url,
+        decode_responses=True,
+        socket_connect_timeout=5,
+        socket_timeout=5,
+        retry=redis.retry.Retry(redis.backoff.NoBackoff(), 0),
+    )
     last_event_key = "amygdala:last_event_ts"
 
     # Ensure consumer groups exist
@@ -192,9 +205,7 @@ def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: boo
             if "BUSYGROUP" not in str(e):
                 raise
 
-    # Read pending + new
-    streams_map = {s: ">" for s in STREAMS}
-    results = r.xreadgroup(GROUP, CONSUMER, streams_map, count=50, block=2000)
+    results = _read_events(r)
 
     active_events = []
     for stream_name, messages in results:
@@ -383,7 +394,9 @@ def _redact_redis_url(url: str) -> str:
     return re.sub(r"(?<=://)[^@/]*@", "***@", url)
 
 
-def run_continuous(redis_url: str, vault_root: Path, brain_feed_dir: Path, poll_interval: int = 5):
+def run_continuous(
+    redis_url: str, vault_root: Path, brain_feed_dir: Path, poll_interval: int = 5
+) -> None:
     """Continuous consumer loop. Blocks on XREADGROUP, checks every poll_interval seconds."""
     sys.stdout.reconfigure(line_buffering=True)
     sys.stderr.reconfigure(line_buffering=True)
@@ -393,9 +406,13 @@ def run_continuous(redis_url: str, vault_root: Path, brain_feed_dir: Path, poll_
         flush=True,
     )
     cycle = 0
+    retry_delay = 1
     while True:
         try:
             stats = consume(redis_url, vault_root, brain_feed_dir)
+            if retry_delay > 1:
+                print("Amygdala: Redis reconnected; resumed consumer group", flush=True)
+            retry_delay = 1
             cycle += 1
             if stats.get("signals_detected", 0) > 0 or stats.get("cleared"):
                 print(f"[cycle {cycle}] {json.dumps(stats)}", flush=True)
@@ -404,6 +421,10 @@ def run_continuous(redis_url: str, vault_root: Path, brain_feed_dir: Path, poll_
         except KeyboardInterrupt:
             print("Amygdala: shutdown", flush=True)
             break
+        except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError):
+            print(f"Amygdala: Redis unavailable; reconnecting in {retry_delay}s", flush=True)
+            time.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 30)
         except Exception as e:
             import traceback
 
