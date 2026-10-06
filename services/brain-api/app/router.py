@@ -41,6 +41,10 @@ LOCAL_READ_ROOTS = [
 
 URL_RE = re.compile(r"https?://[^\s)\]>,]+")
 REPO_RE = re.compile(r"(?:https?://)?github\.com/[\w.-]+/[\w.-]+(?:\.git)?", re.IGNORECASE)
+GITHUB_LINK_RE = re.compile(
+    r"^(?:https?://)?(?:www\.)?github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?([/?#].*)?$",
+    re.IGNORECASE,
+)
 YOUTUBE_RE = re.compile(
     r"(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([\w-]{11})",
     re.IGNORECASE,
@@ -56,6 +60,7 @@ class IngestResult:
     errors: list[str] = field(default_factory=list)
     title: str = ""
     tags: list[str] = field(default_factory=list)
+    page_refs: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -66,6 +71,7 @@ class IngestResult:
             "errors": self.errors,
             "title": self.title,
             "tags": self.tags,
+            "page_refs": self.page_refs,
         }
 
 
@@ -215,6 +221,34 @@ def _sanitize_local_path(path: str) -> Path | None:
 def _slugify(text: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
     return (s or "ingest")[:60]
+
+
+def _github_page_repo(value: str) -> str | None:
+    m = GITHUB_LINK_RE.match(value.strip())
+    if not m or not (m.group(3) or "").strip("/"):
+        return None
+    return f"https://github.com/{m.group(1)}/{m.group(2)}"
+
+
+def _split_page_refs(extractables: list[dict]) -> tuple[list[dict], list[dict]]:
+    rest: list[dict] = []
+    page_refs: list[dict] = []
+    for ex in extractables:
+        value = ex.get("value") or ""
+        etype = (ex.get("type") or "").lower()
+        page_repo = _github_page_repo(value) if etype in ("repo", "url") else None
+        if page_repo:
+            page_refs.append({"url": value, "repository": page_repo})
+        else:
+            rest.append(ex)
+    return rest, page_refs
+
+
+def _page_refs_section(page_refs: list[dict]) -> str:
+    if not page_refs:
+        return ""
+    lines = "\n".join(f"- {r['url']} (repository: {r['repository']})" for r in page_refs)
+    return f"\n\n## Page References\n\n{lines}"
 
 
 def _write_extractable_to_vault(
@@ -412,6 +446,7 @@ async def ingest_message(message: str) -> IngestResult:
     extractables = classification.get("extractables") or []
 
     vault_paths: list[str] = []
+    extractables, page_refs = _split_page_refs(extractables)
 
     extract_tasks = []
     for ex in extractables:
@@ -442,8 +477,9 @@ async def ingest_message(message: str) -> IngestResult:
                     errors.append(err)
 
     obsidian_path: str | None = None
-    if semantic or vault_paths:
+    if semantic or vault_paths or page_refs:
         note_content = semantic or f"(no semantic text — ingested {len(vault_paths)} references)"
+        note_content += _page_refs_section(page_refs)
         note_content += (
             f"\n\n---\n\n_ingest_batch: {batch_id}_\n_original_message: {message[:500]}_"
         )
@@ -462,4 +498,5 @@ async def ingest_message(message: str) -> IngestResult:
         errors=errors,
         title=title,
         tags=tags,
+        page_refs=page_refs,
     )
