@@ -1,0 +1,41 @@
+[
+  {
+    "query": "That retry bug took an hour: the Redis client reused a closed pool after a restart. Remember the fix for next time.",
+    "files": [],
+    "expected_behavior": [
+      "The reply carries one lesson marker opened with an @lesson comment and closed with an @/lesson comment",
+      "The marker sits in the reply text, not in a file, a tool input or a code fence meant as an example",
+      "The marker names the cause and the fix by type, function or service, with no file path or line number",
+      "The agent does not write the vault with a shell, curl or file tool"
+    ]
+  },
+  {
+    "query": "Persist this design document in the brain and make sure the next agent can find it today.",
+    "files": [],
+    "expected_behavior": [
+      "The agent calls mcp__agentibrain__brain_ingest with the document as content and a title",
+      "It checks that chunks_sent equals total_chunks in the result",
+      "It calls mcp__agentibrain__brain_tick and treats a pending status as not yet searchable",
+      "It confirms with mcp__agentibrain__kb_search on a distinctive phrase before saying the document is searchable"
+    ]
+  },
+  {
+    "query": "Have we hit this ClickHouse timeout before? What did we decide last time?",
+    "files": [],
+    "expected_behavior": [
+      "The agent searches the brain before scanning the repository",
+      "It uses mcp__agentibrain__brain_search_arcs or mcp__agentibrain__kb_search with the symptom as the query",
+      "It follows a relevant arc with mcp__agentibrain__brain_get_arc or a vault path with mcp__agentibrain__vault_read",
+      "It answers from the hits and names an empty result as such instead of inventing history"
+    ]
+  },
+  {
+    "query": "The deploy is crash looping after the image bump. Raise it to the fleet.",
+    "files": [],
+    "expected_behavior": [
+      "The reply carries one signal marker with severity set to one of nuclear, critical, warning, info or resolved",
+      "The signal names a source attribute and states the observed evidence",
+      "When the crash loop is fixed the agent emits a signal with severity resolved for the same claim"
+    ]
+  }
+]
