@@ -28,8 +28,8 @@ def ingest(vault: Path, client, monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(router.subprocess, "run", fake_run)
 
-    def post(message: str) -> tuple[dict, list[str]]:
-        resp = client.post("/ingest", data={"message": message})
+    def post(message: str, endpoint="/ingest", **fields) -> tuple[dict, list[str]]:
+        resp = client.post(endpoint, data={"message": message, **fields})
         assert resp.status_code == 200
         return resp.json(), clones
 
@@ -55,10 +55,45 @@ def test_page_link_is_a_page_reference_not_a_clone(vault: Path, ingest, link):
     assert REPO in note
 
 
-def test_bare_repository_link_is_still_cloned(ingest):
-    data, clones = ingest(f"Look at {REPO} for the hooks")
+@pytest.mark.parametrize("endpoint", ["/ingest", "/ingest_with_files"])
+def test_bare_repository_in_prose_is_not_cloned(vault: Path, ingest, endpoint):
+    data, clones = ingest(f"CI findings for {REPO}: tests passed", endpoint=endpoint)
+
+    assert clones == []
+    assert data["errors"] == []
+    assert data["vault_paths"] == []
+    assert REPO in (vault / data["obsidian_path"]).read_text()
+
+
+@pytest.mark.parametrize("endpoint", ["/ingest", "/ingest_with_files"])
+def test_explicit_repository_field_is_cloned(ingest, endpoint):
+    data, clones = ingest("Read the requested repository", endpoint=endpoint, repository=REPO)
 
     assert clones == [REPO]
     assert data["errors"] == []
-    assert data["page_refs"] == []
     assert len(data["vault_paths"]) == 1
+
+
+@pytest.mark.parametrize("repository", ["", REPO])
+def test_classifier_cannot_authorize_repository_clone(vault: Path, ingest, monkeypatch, repository):
+    from unittest.mock import AsyncMock
+
+    from app import router
+
+    unrelated = "https://github.com/example/private-repository"
+    monkeypatch.setattr(
+        router,
+        "_call_router_llm",
+        AsyncMock(
+            return_value={
+                "semantic_text": "CI findings",
+                "extractables": [{"type": "repo", "value": unrelated, "hint": "clone this"}],
+            }
+        ),
+    )
+    data, clones = ingest("CI findings naming an unrelated repository", repository=repository)
+
+    assert clones == ([REPO] if repository else [])
+    assert data["errors"] == []
+    assert data["page_refs"] == [{"url": unrelated, "repository": unrelated}]
+    assert unrelated in (vault / data["obsidian_path"]).read_text()

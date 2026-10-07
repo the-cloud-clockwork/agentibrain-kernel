@@ -434,7 +434,7 @@ async def _write_vault_note(
         return None
 
 
-async def ingest_message(message: str) -> IngestResult:
+async def ingest_message(message: str, repository: str = "") -> IngestResult:
     """Main entry point — classify the message and fan out to vault."""
     batch_id = uuid4().hex[:12]
     errors: list[str] = []
@@ -449,6 +449,8 @@ async def ingest_message(message: str) -> IngestResult:
     extractables, page_refs = _split_page_refs(extractables)
 
     extract_tasks = []
+    if repository:
+        extract_tasks.append(_clone_and_read_repo(repository, "", batch_id))
     for ex in extractables:
         etype = (ex.get("type") or "").lower()
         value = ex.get("value") or ""
@@ -458,7 +460,7 @@ async def ingest_message(message: str) -> IngestResult:
         elif etype == "url":
             extract_tasks.append(_fetch_url(value, hint, batch_id))
         elif etype == "repo":
-            extract_tasks.append(_clone_and_read_repo(value, hint, batch_id))
+            page_refs.append({"url": value, "repository": value})
         elif etype == "local_path":
             extract_tasks.append(_read_local_file(value, hint, batch_id))
         else:
