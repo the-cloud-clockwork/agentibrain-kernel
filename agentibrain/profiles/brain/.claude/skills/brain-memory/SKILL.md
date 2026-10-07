@@ -44,6 +44,6 @@ To check a marker landed, after the turn that wrote it has ended: `mcp__agentibr
 
 ## Search
 
-1. Query with the symptom, service or decision in plain words: `mcp__agentibrain__kb_search` for the whole knowledge base (`producer="brain-lesson"` or `"brain-arc"` narrows it), `mcp__agentibrain__brain_search_arcs` for past units of work like the current one. Done when you hold the ranked hits or an empty result.
+1. Query with the symptom, service or decision in plain words: `mcp__agentibrain__kb_search` for the whole knowledge base (`producer="brain-lesson"` or `"brain-arc"` narrows it), `mcp__agentibrain__brain_search_arcs` for past units of work like the current one, `mcp__agentibrain__kb_brief` for a short synthesized brief over the top hits instead of raw results. Done when you hold the ranked hits or an empty result.
 2. Follow the best hit: `mcp__agentibrain__brain_get_arc` with its `cluster_id`, or `mcp__agentibrain__vault_read` with its path (`mcp__agentibrain__vault_list` with a prefix finds one: `left/reference` for lesson logs, `amygdala` for signals, `brain-feed` for the session feed). Done when you have read the full arc or document behind each hit you will cite.
 3. Verify any code fact it names against the working tree; the brain holds intent and history, the tree holds current code. Done when the answer cites the hits it rests on, or states that the brain returned nothing relevant.

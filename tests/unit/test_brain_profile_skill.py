@@ -49,7 +49,16 @@ def test_body_covers_markers_ingest_and_search() -> None:
     for destination in ("left/reference/lessons-", "left/decisions/ADR-", "amygdala/", "daily/"):
         assert destination in body
     assert "/marker" in body
-    for tool in ("brain_ingest", "brain_tick", "kb_search", "brain_search_arcs"):
+    for tool in (
+        "brain_ingest",
+        "brain_tick",
+        "kb_search",
+        "kb_brief",
+        "brain_search_arcs",
+        "brain_get_arc",
+        "vault_list",
+        "vault_read",
+    ):
         assert f"mcp__agentibrain__{tool}" in body
     bare = re.findall(r"`(brain_\w+|kb_\w+|vault_\w+)`", body)
     assert not bare, f"name MCP tools fully qualified: {bare}"
