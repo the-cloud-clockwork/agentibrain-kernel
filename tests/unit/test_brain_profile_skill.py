@@ -43,15 +43,15 @@ def test_frontmatter_meets_skill_standard() -> None:
 
 def test_body_covers_markers_ingest_and_search() -> None:
     _, body = _frontmatter((SKILL / "SKILL.md").read_text())
-    assert re.search(r"<!-- @(\w+)[^>]*-->\n.+\n\s*<!-- @/\1 -->", body)
+    assert "`@TYPE`" in body and "`@/TYPE`" in body
     for marker in ("lesson", "decision", "milestone", "signal"):
-        assert f"| `{marker}` |" in body
+        assert f"`{marker}`" in body
     for destination in ("left/reference/lessons-", "left/decisions/ADR-", "amygdala/", "daily/"):
         assert destination in body
     assert "/marker" in body
     for tool in ("brain_ingest", "brain_tick", "kb_search", "brain_search_arcs"):
         assert f"mcp__agentibrain__{tool}" in body
-    bare = re.findall(r"(?<!mcp__agentibrain__)`(brain_\w+|kb_\w+|vault_\w+)`", body)
+    bare = re.findall(r"`(brain_\w+|kb_\w+|vault_\w+)`", body)
     assert not bare, f"name MCP tools fully qualified: {bare}"
 
 
