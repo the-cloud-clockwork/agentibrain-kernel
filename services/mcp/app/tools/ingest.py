@@ -32,6 +32,7 @@ def register(mcp: FastMCP):
         title: str = "",
         producer: str = "agent",
         chunk_size: int = 200_000,
+        repository: str = "",
     ) -> str:
         """Write text directly to the brain vault via brain-api /ingest.
 
@@ -43,6 +44,7 @@ def register(mcp: FastMCP):
             title: Optional label prepended to each chunk for context.
             producer: Tag for the source agent (default "agent").
             chunk_size: Max chars per chunk (default 200_000 ≈ 50k tokens).
+            repository: Explicit repository URL to clone; prose references never authorize cloning.
         """
         if not BRAIN_API_URL:
             return json.dumps({"error": "BRAIN_API_URL not configured"})
@@ -65,6 +67,8 @@ def register(mcp: FastMCP):
                 form = aiohttp.FormData()
                 form.add_field("message", prefix + chunk)
                 form.add_field("producer", producer)
+                if repository and i == 0:
+                    form.add_field("repository", repository)
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
                         f"{BRAIN_API_URL.rstrip('/')}/ingest",

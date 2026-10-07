@@ -380,10 +380,10 @@ def vault_write_inbox(
 @app.post("/ingest")
 async def ingest(
     message: str = Form(..., description="Operator message to classify + ingest"),
+    repository: str = Form("", description="Explicit repository to clone and ingest"),
     _: None = Depends(require_token),
 ) -> dict:
-    """Pure-text ingest: classify + fan out URLs/repos/local_paths, write Obsidian note."""
-    result: IngestResult = await ingest_message(message)
+    result: IngestResult = await ingest_message(message, repository=repository)
     return result.to_dict()
 
 
@@ -391,6 +391,7 @@ async def ingest(
 async def ingest_with_files(
     message: str = Form(...),
     files: list[UploadFile] = File(default=[]),
+    repository: str = Form("", description="Explicit repository to clone and ingest"),
     _: None = Depends(require_token),
 ) -> dict:
     """Ingest with multipart files attached. Files are written to the vault inbox
@@ -418,7 +419,7 @@ async def ingest_with_files(
         except Exception as exc:
             errors.append(f"multipart write failed: {filename} — {exc}")
 
-    result: IngestResult = await ingest_message(message)
+    result: IngestResult = await ingest_message(message, repository=repository)
     result.vault_paths = pre_paths + result.vault_paths
     result.errors = errors + result.errors
     return result.to_dict()

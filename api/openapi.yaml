@@ -43,11 +43,15 @@ components:
 
     IngestRequest:
       type: object
-      required: [content]
+      required: [message]
       properties:
-        content:
+        message:
           type: string
           description: Free-form message; router classifies and fans out.
+        repository:
+          type: string
+          default: ""
+          description: Explicit repository URL to clone and ingest. Repository references in message text never authorize cloning.
         title:
           type: string
         tags:
@@ -200,7 +204,7 @@ paths:
       requestBody:
         required: true
         content:
-          application/json:
+          application/x-www-form-urlencoded:
             schema: { $ref: "#/components/schemas/IngestRequest" }
       responses:
         "200":
