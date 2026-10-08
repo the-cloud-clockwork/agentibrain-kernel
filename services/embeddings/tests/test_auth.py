@@ -38,8 +38,8 @@ def client(monkeypatch):
     return TestClient(main.app)
 
 
-def _call(client, method, path, body, token=None):
-    headers = {"Authorization": f"Bearer {token}"} if token is not None else {}
+def _call(client, method, path, body, token=None, scheme="Bearer "):
+    headers = {"Authorization": f"{scheme}{token}"} if token is not None else {}
     if body is None:
         return getattr(client, method)(path, headers=headers)
     return getattr(client, method)(path, json=body, headers=headers)
@@ -85,7 +85,7 @@ def test_required_mode_rejects_missing_and_wrong_keys(client, monkeypatch, metho
     assert wrong.status_code == 401
     assert wrong.json() == {"detail": "Invalid API key"}
 
-    raw = client.post(path, json=body, headers={"Authorization": GOOD})
+    raw = _call(client, method, path, body, GOOD, scheme="")
     assert raw.status_code == 401
     assert raw.json() == {"detail": "missing bearer token"}
 
