@@ -53,14 +53,38 @@ jobs:
             echo "push=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build${{ steps.tag.outputs.push == 'true' && ' + push' || '' }}
+      - name: Build
         uses: docker/build-push-action@v5
         with:
           context: services/${{ matrix.service }}
-          push: ${{ steps.tag.outputs.push == 'true' }}
+          load: true
+          tags: |
+            ghcr.io/the-cloud-clockwork/agentibrain-${{ matrix.service }}:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+      - name: Set up Python
+        if: matrix.service == 'mcp'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Transport authentication of the built image
+        if: matrix.service == 'mcp'
+        env:
+          MCP_IMAGE: ghcr.io/the-cloud-clockwork/agentibrain-mcp:${{ steps.tag.outputs.tag }}
+        run: |
+          python -m pip install pytest
+          python -m pytest -v services/mcp/image_tests
+
+      - name: Push
+        if: steps.tag.outputs.push == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: services/${{ matrix.service }}
+          push: true
           # Only the floating tag is published (per no-hash-pins rule). Rollback
           # is `git revert` on dev, which republishes :dev.
           tags: |
             ghcr.io/the-cloud-clockwork/agentibrain-${{ matrix.service }}:${{ steps.tag.outputs.tag }}
           cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,scope=${{ matrix.service }},mode=max
