@@ -6,10 +6,11 @@ where a stuck pile was parked in the SSH era) as POST {brain-api}/marker.
 Files are deleted on 2xx, quarantined as .bad when unparseable, and left in
 place on HTTP failure so the next pass retries them.
 
-Idempotency-key parity with agentihooks brain_writer_hook: uuid5 of
-"{session_id}-{type}-{content}", so a replay dedupes against the original
-POST. The file's original `ts` rides along in attrs so brain-api backdates
-the marker into its original dated vault files.
+Idempotency-key parity with agentihooks brain_writer_hook: the key the file
+records from its first POST, else uuid5 of "{session_id}-{type}-{content}",
+so a replay dedupes against the original POST. The file's original `ts`
+rides along in attrs so brain-api backdates the marker into its original
+dated vault files.
 
 Safe to run concurrently with an agentihooks session draining the same dirs —
 a file that vanishes mid-pass was simply won by the other drain.
@@ -26,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -35,6 +37,7 @@ from pathlib import Path
 
 REQ_TIMEOUT = 15
 MAX_CONTENT_CHARS = 4096
+RECORDED_KEY = re.compile(r"[0-9a-f]{32}")
 
 
 def _marker_request(entry: dict) -> tuple[dict, str]:
@@ -49,6 +52,9 @@ def _marker_request(entry: dict) -> tuple[dict, str]:
         attrs.setdefault("ts", entry["ts"])
     content = (entry.get("content") or "")[:MAX_CONTENT_CHARS]
     body = {"type": entry.get("type") or "", "content": content, "attrs": attrs}
+    recorded = entry.get("idempotency_key")
+    if isinstance(recorded, str) and RECORDED_KEY.fullmatch(recorded):
+        return body, recorded
     key_src = f"{session_id}-{body['type']}-{content}"
     idem = uuid.uuid5(uuid.NAMESPACE_URL, key_src).hex[:32]
     return body, idem
