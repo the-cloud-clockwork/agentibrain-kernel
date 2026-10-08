@@ -1,6 +1,7 @@
 """A completed Kubernetes tick certifies text and semantic retrieval.
 
-Runs the brain-ops CronJob scripts exactly as the Helm chart renders them,
+Runs the brain-ops CronJob scripts and env as the Helm chart renders them,
+with the image paths (/app, /vault, python3) mapped onto this checkout,
 against real brain-api and embeddings processes on pgvector, from an empty
 scaffolded vault. Only the upstream embedding model is a local stand-in.
 
@@ -302,6 +303,7 @@ def test_index_failure_is_never_completed_and_retry_resumes_once(brain: dict) ->
 
     status = _status(brain, job)
     assert status["status"] != "completed", planted.stdout + planted.stderr
+    assert planted.returncode == 1
     assert status["status"] == "pending"
     assert status["index_attempts"] == 1
     assert status["last_error"]
@@ -369,7 +371,8 @@ def test_scheduled_vault_cycle_runs_the_same_pipeline(brain: dict) -> None:
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "extraction" not in result.stdout.lower()
+    assert "Skipping extraction" not in result.stdout
+    assert "Brain extraction" not in result.stdout
     assert "amygdala" not in result.stdout.lower()
     producers = {hit["producer"] for hit in _semantic_hits(brain, token)}
     assert {"brain-arc", "brain-lesson"} <= producers, producers

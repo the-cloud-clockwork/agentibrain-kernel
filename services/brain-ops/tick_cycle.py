@@ -118,6 +118,22 @@ def _finish(request: Request, data: dict, dest: Path) -> bool:
     return True
 
 
+def _requeue(request: Request, data: dict) -> bool:
+    try:
+        _write(request.path, data)
+    except OSError as exc:
+        print(f"WARN: could not record the retry on {request.path.name}: {exc}")
+        return False
+    return True
+
+
+def _attempts(data: dict) -> int:
+    try:
+        return int(data.get("index_attempts", 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _pending(requested: Path, failed: Path) -> dict[tuple[bool, bool], list[Request]]:
     buckets: dict[tuple[bool, bool], list[Request]] = {}
     for path in sorted(requested.glob("*.json")):
@@ -149,16 +165,16 @@ def _drain_bucket(vault: Path, kind: tuple[bool, bool], requests: list[Request])
             outcome = "failed"
         else:
             data["maintenance"] = "done"
-            data["index_attempts"] = int(data.get("index_attempts", 0)) + 1
+            data["index_attempts"] = _attempts(data) + 1
             data["last_error"] = tail
             outcome = "failed" if data["index_attempts"] >= max_attempts else "retrying"
             if outcome == "failed":
                 data["error_tail"] = tail
         if outcome == "retrying":
-            _write(request.path, data)
-        elif not _finish(request, data, dirs[outcome]):
-            outcome = "stuck"
-        counts[outcome] += 1
+            saved = _requeue(request, data)
+        else:
+            saved = _finish(request, data, dirs[outcome])
+        counts[outcome if saved else "stuck"] += 1
     return counts
 
 
@@ -206,7 +222,7 @@ def amygdala(vault: Path) -> Step:
         [
             str(HERE / "amygdala.py"),
             "--redis-url",
-            f"{redis_url}/{os.environ.get('AMYGDALA_DB', '11')}",
+            f"{redis_url}/{os.environ.get('AMYGDALA_DB') or '11'}",
             "--vault",
             str(vault),
             "--brain-feed",

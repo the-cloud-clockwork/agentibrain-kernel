@@ -35,6 +35,9 @@ command:
 #   vault        pure vault processing: no transcript extraction, no amygdala check
 #   workstation  transcript extraction at EXTRACT_HOUR before, amygdala check after
 # Requested ticks (tick-drain) always run the pipeline alone.
+# Both cycles fail without EMBEDDINGS_API_KEY: an unindexed tick is not a
+# completed one, so the scheduled job exits 1 (and alerts NTFY_URL) and drained
+# requests stay queued. An empty INFERENCE_URL runs the maintenance step --no-ai.
 cycleMode: workstation
 
 env:
