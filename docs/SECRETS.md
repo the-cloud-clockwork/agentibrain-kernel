@@ -27,7 +27,7 @@ charts expect:
 
 The script creates:
 - `agentibrain-router-secrets` — `KB_ROUTER_TOKEN`, `EMBEDDINGS_API_KEY`
-- `embeddings-secrets` — `POSTGRES_URL`, `LLM_API_KEY`, `LLM_API_BASE`, `LLM_EMBED_MODEL`, `EMBEDDINGS_API_KEYS`
+- `embeddings-secrets` — `POSTGRES_URL`, `LLM_API_KEY`, `LLM_API_BASE`, `LLM_EMBED_MODEL`, `API_KEYS` (the accepted keys the embeddings container reads; with `AUTH_MODE=required`, the chart default, protected routes refuse every request until it holds a key)
 - `agenticore-secrets` — only consumed by brain-keeper
 
 Tokens land in `local/.k8s-tokens` (gitignored) so you can re-source them

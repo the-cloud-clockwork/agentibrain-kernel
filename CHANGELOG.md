@@ -8,6 +8,19 @@ Tags are issued by the release workflow, not locally. Cut one by dispatching `.g
 
 ## [Unreleased]
 
+### Security
+
+- **Embeddings refuses protected routes without accepted keys.** `AUTH_MODE=required`,
+  the default and the Helm chart's setting, answers 503 on `/embed`, `/search`,
+  `/prune`, `/by-key`, `/stats` and `/health/deep` while `API_KEYS` is absent, empty
+  or malformed, and 401 on a missing or wrong bearer. `AUTH_MODE=local` selects the
+  unauthenticated local mode. `/health` reports the mode and whether keys are set.
+- **Breaking: the `embeddings-secrets` field is `API_KEYS`.** The chart reads the
+  secret through `envFrom`, so the field `local/k8s-bootstrap.sh` used to write,
+  `EMBEDDINGS_API_KEYS`, never reached the service and left it open. Before upgrading
+  a cluster, add `API_KEYS` with the same value to the secret (or its ExternalSecret
+  record); otherwise the protected routes answer 503 until it is there.
+
 ### Added
 
 - **`agentibrain fix`** repairs local stacks with occupied published ports,

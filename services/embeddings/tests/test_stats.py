@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture()
 def client(monkeypatch):
-    monkeypatch.setenv("API_KEYS", "")  # disable auth (any token passes)
+    monkeypatch.setenv("AUTH_MODE", "local")
     import main
 
     return TestClient(main.app, headers={"Authorization": "Bearer test"})
