@@ -42,6 +42,7 @@ Required env vars:
 | `INFERENCE_URL` | inference-gateway endpoint (used by `kb_brief`) |
 | `KB_BRIEF_ROUTE` | named route in inference-gateway config |
 | `MCP_PROXY_API_KEY` | bearer enforced by mcp-proxy on inbound requests |
+| `MCP_AUTH_MODE` | `required` (image default, set by the chart): refuse to start without `MCP_PROXY_API_KEY`. `local` (set by Compose): the key is optional |
 
 Auth is two-layered:
 1. The proxy authenticates the caller (LiteLLM gateway) with `MCP_PROXY_API_KEY`.

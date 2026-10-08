@@ -66,6 +66,8 @@ jobs:
 
       # Neither of these two ran in CI, so both suites had rotted unnoticed —
       # the marker and ranking regressions this repo just fixed had no gate.
+      - uses: azure/setup-helm@v4
+
       - name: Pytest (mcp service)
         run: |
           pip install -r services/mcp/requirements.txt

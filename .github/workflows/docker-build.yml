@@ -78,12 +78,6 @@ jobs:
 
       - name: Push
         if: steps.tag.outputs.push == 'true'
-        uses: docker/build-push-action@v5
-        with:
-          context: services/${{ matrix.service }}
-          push: true
-          # Only the floating tag is published (per no-hash-pins rule). Rollback
-          # is `git revert` on dev, which republishes :dev.
-          tags: |
-            ghcr.io/the-cloud-clockwork/agentibrain-${{ matrix.service }}:${{ steps.tag.outputs.tag }}
-          cache-from: type=gha,scope=${{ matrix.service }}
+        # Only the floating tag is published (per no-hash-pins rule). Rollback
+        # is `git revert` on dev, which republishes :dev.
+        run: docker push ghcr.io/the-cloud-clockwork/agentibrain-${{ matrix.service }}:${{ steps.tag.outputs.tag }}
