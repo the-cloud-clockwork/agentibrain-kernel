@@ -1,6 +1,4 @@
-"""Required-auth mode refuses protected routes unless accepted keys are configured
-and the caller presents one of them. Local mode is selected explicitly."""
-
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -12,8 +10,11 @@ PROTECTED = [
     ("post", "/embed", {"key": "k", "content": "text", "producer": "p"}),
     ("post", "/search", {"query": "text"}),
     ("post", "/prune", {"producer": "p", "keep_keys": []}),
+    ("get", "/stats", None),
+    ("get", "/by-key/k", None),
+    ("get", "/health/deep", None),
 ]
-VALUES = Path(__file__).resolve().parents[3] / "helm" / "embeddings" / "values.yaml"
+CHART = Path(__file__).resolve().parents[3] / "helm" / "embeddings"
 
 
 @pytest.fixture()
@@ -28,6 +29,10 @@ def client(monkeypatch):
     monkeypatch.setattr(db, "upsert_chunks", lambda **_k: 1)
     monkeypatch.setattr(db, "search", lambda **_k: [{"key": "secret-row"}])
     monkeypatch.setattr(db, "prune", lambda **_k: {"deleted": 0, "kept": 0, "scanned": 0})
+    monkeypatch.setattr(
+        db, "get_producer_stats", lambda: {"producers": [], "total_rows": 0, "total_keys": 0}
+    )
+    monkeypatch.setattr(db, "get_by_key", lambda _k: [{"chunk_index": 0}])
     monkeypatch.setattr(db, "get_vector_count", lambda: 7)
     monkeypatch.setattr(db, "get_schema_dim", lambda *a, **k: 2)
     return TestClient(main.app)
@@ -35,6 +40,8 @@ def client(monkeypatch):
 
 def _call(client, method, path, body, token=None):
     headers = {"Authorization": f"Bearer {token}"} if token is not None else {}
+    if body is None:
+        return getattr(client, method)(path, headers=headers)
     return getattr(client, method)(path, json=body, headers=headers)
 
 
@@ -147,7 +154,14 @@ def test_health_reports_auth_state_without_data(client, monkeypatch, mode, keys,
         }
 
 
-def test_helm_chart_selects_required_mode():
-    values = yaml.safe_load(VALUES.read_text())
+def test_helm_chart_renders_required_mode_and_the_accepted_keys_secret():
+    rendered = subprocess.run(
+        ["helm", "template", "embeddings", str(CHART)], check=True, capture_output=True, text=True
+    ).stdout
+    statefulset = next(
+        doc for doc in yaml.safe_load_all(rendered) if doc and doc["kind"] == "StatefulSet"
+    )
+    container = statefulset["spec"]["template"]["spec"]["containers"][0]
 
-    assert values["tpl"]["env"]["variables"]["AUTH_MODE"] == "required"
+    assert {"name": "AUTH_MODE", "value": "required"} in container["env"]
+    assert container["envFrom"] == [{"secretRef": {"name": "embeddings-secrets"}}]

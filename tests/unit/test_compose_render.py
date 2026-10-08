@@ -68,6 +68,14 @@ def test_brain_api_can_authenticate_to_embeddings(tmp_path):
     assert "OPENAI_API_KEY" not in env
 
 
+def test_embeddings_receives_accepted_keys_and_auth_mode(tmp_path):
+    env = yaml.safe_load(render_compose(_settings(tmp_path / "v")))["services"]["embeddings"][
+        "environment"
+    ]
+    assert env["API_KEYS"] == "${EMBEDDINGS_API_KEYS:-}"
+    assert env["AUTH_MODE"] == "${AUTH_MODE:-}"
+
+
 def test_ollama_mode_needs_no_api_key_anywhere(tmp_path):
     s = BrainSettings(mode="local", vault_path=tmp_path / "v", ollama=True, _env_file=None)
     data = yaml.safe_load(render_compose(s))
