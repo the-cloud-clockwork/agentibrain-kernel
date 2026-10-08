@@ -1,6 +1,6 @@
 """Transport authentication of the built mcp image.
 
-Runs the image named by MCP_IMAGE with docker. CI builds and loads the image
+Runs the image named by --mcp-image with docker. CI builds and loads the image
 before this suite and pushes it only after the suite passes.
 """
 
@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import http.server
 import json
-import os
 import secrets
 import subprocess
 import threading
@@ -31,13 +30,6 @@ BRAIN_TOOLS = {
     "vault_read",
 }
 FEED_MARKER = "stub-feed-" + uuid.uuid4().hex
-
-
-def _image() -> str:
-    image = os.environ.get("MCP_IMAGE", "")
-    if not image:
-        pytest.fail("MCP_IMAGE names the built mcp image under test")
-    return image
 
 
 class _FeedStub(http.server.BaseHTTPRequestHandler):
@@ -68,7 +60,7 @@ def _docker(*args: str, timeout: int = 60) -> subprocess.CompletedProcess:
     return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout)
 
 
-def _start(env: dict[str, str]) -> tuple[str, str]:
+def _start(image: str, env: dict[str, str]) -> tuple[str, str]:
     name = "mcp-auth-" + uuid.uuid4().hex[:12]
     flags = [f"--env={k}={v}" for k, v in env.items()]
     run = _docker(
@@ -78,7 +70,7 @@ def _start(env: dict[str, str]) -> tuple[str, str]:
         "--add-host=host.docker.internal:host-gateway",
         "--publish=127.0.0.1::8080",
         *flags,
-        _image(),
+        image,
     )
     assert run.returncode == 0, run.stderr
     port = _docker("port", name, "8080").stdout.split(":")[-1].strip()
@@ -122,11 +114,11 @@ def _rpc(base: str, method: str, params: dict | None = None, key: str | None = N
     return status, json.loads(text)
 
 
-def _refusal(env: dict[str, str]) -> subprocess.CompletedProcess:
+def _refusal(image: str, env: dict[str, str]) -> subprocess.CompletedProcess:
     name = "mcp-auth-" + uuid.uuid4().hex[:12]
     flags = [f"--env={k}={v}" for k, v in env.items()]
     try:
-        return _docker("run", f"--name={name}", *flags, _image(), timeout=30)
+        return _docker("run", f"--name={name}", *flags, image, timeout=30)
     except subprocess.TimeoutExpired:
         pytest.fail("the image started serving instead of refusing")
     finally:
@@ -139,33 +131,33 @@ def key() -> str:
 
 
 @pytest.fixture(scope="module")
-def required(brain_api, key):
-    name, base = _start({"MCP_PROXY_API_KEY": key, "BRAIN_API_URL": brain_api})
+def required(image, brain_api, key):
+    name, base = _start(image, {"MCP_PROXY_API_KEY": key, "BRAIN_API_URL": brain_api})
     yield name, base
     _docker("rm", "--force", name)
 
 
 @pytest.fixture(scope="module")
-def local(brain_api):
-    name, base = _start({"MCP_AUTH_MODE": "local", "BRAIN_API_URL": brain_api})
+def local(image, brain_api):
+    name, base = _start(image, {"MCP_AUTH_MODE": "local", "BRAIN_API_URL": brain_api})
     yield base
     _docker("rm", "--force", name)
 
 
-def test_default_mode_without_key_refuses_to_start():
-    run = _refusal({})
+def test_default_mode_without_key_refuses_to_start(image):
+    run = _refusal(image, {})
     assert run.returncode != 0
     assert "MCP_PROXY_API_KEY" in run.stderr
 
 
-def test_required_mode_with_empty_key_refuses_to_start():
-    run = _refusal({"MCP_AUTH_MODE": "required", "MCP_PROXY_API_KEY": ""})
+def test_required_mode_with_empty_key_refuses_to_start(image):
+    run = _refusal(image, {"MCP_AUTH_MODE": "required", "MCP_PROXY_API_KEY": ""})
     assert run.returncode != 0
     assert "MCP_PROXY_API_KEY" in run.stderr
 
 
-def test_unknown_mode_refuses_to_start(key):
-    run = _refusal({"MCP_AUTH_MODE": "open", "MCP_PROXY_API_KEY": key})
+def test_unknown_mode_refuses_to_start(image, key):
+    run = _refusal(image, {"MCP_AUTH_MODE": "open", "MCP_PROXY_API_KEY": key})
     assert run.returncode != 0
     assert "MCP_AUTH_MODE" in run.stderr
 

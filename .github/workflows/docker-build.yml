@@ -71,11 +71,10 @@ jobs:
 
       - name: Transport authentication of the built image
         if: matrix.service == 'mcp'
-        env:
-          MCP_IMAGE: ghcr.io/the-cloud-clockwork/agentibrain-mcp:${{ steps.tag.outputs.tag }}
         run: |
           python -m pip install pytest
-          python -m pytest -v services/mcp/image_tests
+          python -m pytest -v services/mcp/image_tests \
+            --mcp-image=ghcr.io/the-cloud-clockwork/agentibrain-mcp:${{ steps.tag.outputs.tag }}
 
       - name: Push
         if: steps.tag.outputs.push == 'true'
