@@ -321,11 +321,16 @@ def drain(vault: Path) -> int:
     totals = {"completed": 0, "failed": 0, "retrying": 0, "stuck": 0}
     buckets = _pending(requested, failed)
     held = {r.data.get("maintenance_receipt") for rs in buckets.values() for r in rs}
-    for receipt in (vault / QUEUE).glob("*.receipt"):
-        if receipt.stem not in held:
+    for receipt in [*(vault / QUEUE).glob("*.receipt"), *(vault / QUEUE).glob(".*.receipt.tmp")]:
+        if receipt.name.lstrip(".").split(".")[0] not in held:
             receipt.unlink(missing_ok=True)
     for kind, requests in sorted(buckets.items()):
-        for key, value in _drain_bucket(vault, kind, requests).items():
+        try:
+            counts = _drain_bucket(vault, kind, requests)
+        except OSError as exc:
+            print(f"WARN: drain cycle stopped before indexing: {exc}")
+            counts = {"stuck": len(requests)}
+        for key, value in counts.items():
             totals[key] += value
     print("drain-summary: " + " ".join(f"{k}={v}" for k, v in totals.items()))
     return 0 if totals["failed"] + totals["retrying"] + totals["stuck"] == 0 else 1

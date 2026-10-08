@@ -372,11 +372,31 @@ def test_unreferenced_receipts_are_swept_and_held_ones_kept(cycle_module, monkey
     request.write_text(json.dumps({"attempts": 10, "maintenance_receipt": held}))
     for identity in (held, stale):
         (queue / f"{identity}.receipt").write_text("{}")
+    (queue / f".{stale}.receipt.tmp").write_text("{")
     cycle_module.drain(tmp_path)
     assert [p.stem for p in queue.glob("*.receipt")] == [held]
+    assert not list(queue.glob(".*.tmp"))
     assert (queue / "failed/request.json").exists()
     cycle_module.drain(tmp_path)
     assert not list(queue.glob("*.receipt"))
+
+
+def test_checkpoint_failure_stops_its_bucket_only(cycle_module, monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(cycle_module, "_qualify_mount", lambda vault: None)
+    _request(tmp_path, "wet")
+    (tmp_path / "brain-feed/ticks/requested/dry.json").write_text(json.dumps({"dry_run": True}))
+    seen = []
+
+    def bucket(vault, kind, requests):
+        seen.append(kind)
+        if not kind[0]:
+            raise OSError("could not save maintenance checkpoint")
+        return {"completed": len(requests)}
+
+    monkeypatch.setattr(cycle_module, "_drain_bucket", bucket)
+    assert cycle_module.drain(tmp_path) == 1
+    assert len(seen) == 2
+    assert "completed=1 failed=0 retrying=0 stuck=1" in capsys.readouterr().out
 
 
 def test_long_instance_names_remain_disjoint():
