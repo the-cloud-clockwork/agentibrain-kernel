@@ -314,6 +314,10 @@ def test_index_failure_is_never_completed_and_retry_resumes_once(brain: dict) ->
     assert retried.returncode == 0, retried.stdout + retried.stderr
     assert "maintenance: resumed" in retried.stdout
     assert _status(brain, job)["status"] == "completed"
+    text = _text_hits(brain, token)
+    assert any(p.startswith("left/reference/lessons-") for p in text), text
+    producers = {hit["producer"] for hit in _semantic_hits(brain, token)}
+    assert {"brain-arc", "brain-lesson"} <= producers, producers
     assert _lesson_entries(brain["vault"], token) == 1
     rows = _rows(brain, token)
     assert len(rows) == len(set(rows)), rows
@@ -336,12 +340,46 @@ def test_exhausted_index_retries_fail_the_request(brain: dict) -> None:
     assert status["error_tail"]
 
 
+def test_retry_resumes_alone_when_a_new_request_arrives(brain: dict) -> None:
+    token = _token()
+    _ingest(brain, token)
+    first = _request_tick(brain)
+    _drain(brain, embeddings_url=f"http://127.0.0.1:{_free_port()}")
+    second = _request_tick(brain)
+
+    result = _drain(brain)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "maintenance: resumed" in result.stdout
+    assert result.stdout.count("Phase 1 (deterministic)") == 1, result.stdout
+    assert _status(brain, first)["status"] == "completed"
+    assert _status(brain, second)["status"] == "completed"
+    assert _lesson_entries(brain["vault"], token) == 1
+
+
+def test_indexing_that_never_finishes_fails_after_its_attempts(brain: dict) -> None:
+    requested = brain["vault"] / "brain-feed" / "ticks" / "requested"
+    requested.mkdir(parents=True, exist_ok=True)
+    (requested / "2026-10-08T00-00-00Z-killedjob.json").write_text(
+        json.dumps({"job_id": "killedjob", "maintenance": "done", "index_attempts": 2})
+    )
+    (requested / "broken-job.json").write_text("[]")
+
+    _drain(brain, extra={"TICK_INDEX_MAX_ATTEMPTS": "2"})
+
+    killed = _status(brain, "killedjob")
+    assert killed["status"] == "failed"
+    assert killed["error_tail"] == "indexing never finished"
+    assert (brain["vault"] / "brain-feed" / "ticks" / "failed" / "broken-job.json").exists()
+
+
 def test_missing_embeddings_key_is_not_completed(brain: dict) -> None:
     _ingest(brain, _token())
     job = _request_tick(brain)
 
-    _drain(brain, extra={"EMBEDDINGS_API_KEY": ""})
+    result = _drain(brain, extra={"EMBEDDINGS_API_KEY": ""})
 
+    assert result.returncode == 1
     assert _status(brain, job)["status"] == "pending"
 
 
@@ -362,17 +400,21 @@ def test_dry_run_tick_leaves_vault_and_index_untouched(brain: dict) -> None:
 def test_scheduled_vault_cycle_runs_the_same_pipeline(brain: dict) -> None:
     token = _token()
     _ingest(brain, token)
+    today = time.strftime("%Y-%m-%d", time.gmtime())
 
     result = _run_job(
         "templates/cronjob.yaml",
         brain["vault"],
-        {"EMBEDDINGS_URL": brain["embeddings"]["url"], "EMBEDDINGS_API_KEY": EMBED_BEARER},
+        {
+            "EMBEDDINGS_URL": brain["embeddings"]["url"],
+            "EMBEDDINGS_API_KEY": EMBED_BEARER,
+            "EXTRACT_HOUR": time.strftime("%H", time.gmtime()),
+        },
         ["--set", "cycleMode=vault"],
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "Skipping extraction" not in result.stdout
-    assert "Brain extraction" not in result.stdout
+    assert not (brain["vault"] / "clusters" / today).exists()
     assert "amygdala" not in result.stdout.lower()
     producers = {hit["producer"] for hit in _semantic_hits(brain, token)}
     assert {"brain-arc", "brain-lesson"} <= producers, producers

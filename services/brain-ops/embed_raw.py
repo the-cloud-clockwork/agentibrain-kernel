@@ -184,6 +184,7 @@ def main() -> int:
             print(f"PRUNE: deleted={stats['pruned']} kept={pr.get('kept', 0)}")
         except Exception as e:
             stats["prune_error"] = str(e)
+            stats["errors"] += 1
             print(f"WARN: prune failed: {e}", file=sys.stderr)
 
     stats["elapsed_sec"] = round(time.time() - t0, 3)

@@ -26,6 +26,7 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -89,7 +90,13 @@ def index(vault: Path) -> Step:
     return Step(True, "".join(outputs))
 
 
-def pipeline(vault: Path, flags: list[str], source: str, resume: bool = False) -> tuple[str, Step]:
+def pipeline(
+    vault: Path,
+    flags: list[str],
+    source: str,
+    resume: bool = False,
+    before_index: Callable[[], None] | None = None,
+) -> tuple[str, Step]:
     if resume:
         print("maintenance: resumed, already done for these requests")
     else:
@@ -98,6 +105,8 @@ def pipeline(vault: Path, flags: list[str], source: str, resume: bool = False) -
             return "maintenance", step
     if "--dry-run" in flags:
         return "done", Step(True, "")
+    if before_index:
+        before_index()
     step = index(vault)
     return ("done" if step.ok else "index"), step
 
@@ -134,40 +143,65 @@ def _attempts(data: dict) -> int:
         return 0
 
 
-def _pending(requested: Path, failed: Path) -> dict[tuple[bool, bool], list[Request]]:
-    buckets: dict[tuple[bool, bool], list[Request]] = {}
+def _pending(requested: Path, failed: Path) -> dict[tuple[bool, bool, bool], list[Request]]:
+    buckets: dict[tuple[bool, bool, bool], list[Request]] = {}
     for path in sorted(requested.glob("*.json")):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
-            _finish(Request(path, {}), {"error_tail": f"unreadable tick request: {exc}"}, failed)
+            data = f"unreadable tick request: {exc}"
+        if not isinstance(data, dict):
+            _finish(Request(path, {}), {"error_tail": str(data)[:TAIL_CHARS]}, failed)
             continue
-        kind = (bool(data.get("dry_run")), bool(data.get("no_ai")))
+        resumed = data.get("maintenance") == "done"
+        kind = (bool(data.get("dry_run")), bool(data.get("no_ai")), resumed)
         buckets.setdefault(kind, []).append(Request(path, data))
     return buckets
 
 
-def _drain_bucket(vault: Path, kind: tuple[bool, bool], requests: list[Request]) -> dict:
-    dirs = {name: vault / QUEUE / name for name in ("completed", "failed")}
-    flags = ["--dry-run"] * kind[0] + ["--no-ai"] * kind[1]
-    resume = all(r.data.get("maintenance") == "done" for r in requests)
-    print(f"drain: {len(requests)} request(s) in one cycle [flags='{' '.join(flags)}']")
-    stage, step = pipeline(vault, flags, "brain-drain", resume=resume)
-    tail = step.output[-TAIL_CHARS:]
-    max_attempts = int(os.environ.get("TICK_INDEX_MAX_ATTEMPTS", "3"))
-    counts = {"completed": 0, "failed": 0, "retrying": 0, "stuck": 0}
+def _fail_exhausted(
+    requests: list[Request], max_attempts: int, failed: Path, counts: dict
+) -> list[Request]:
+    live = []
     for request in requests:
+        if _attempts(request.data) < max_attempts:
+            live.append(request)
+            continue
+        tail = request.data.get("last_error") or "indexing never finished"
+        saved = _finish(request, {**request.data, "error_tail": tail}, failed)
+        counts["failed" if saved else "stuck"] += 1
+    return live
+
+
+def _drain_bucket(vault: Path, kind: tuple[bool, bool, bool], requests: list[Request]) -> dict:
+    dirs = {name: vault / QUEUE / name for name in ("completed", "failed")}
+    dry_run, no_ai, resume = kind
+    flags = ["--dry-run"] * dry_run + ["--no-ai"] * no_ai
+    max_attempts = int(os.environ.get("TICK_INDEX_MAX_ATTEMPTS", "10"))
+    counts = {"completed": 0, "failed": 0, "retrying": 0, "stuck": 0}
+    live = requests
+    if resume:
+        live = _fail_exhausted(requests, max_attempts, dirs["failed"], counts)
+    if not live:
+        return counts
+
+    def index_started() -> None:
+        for request in live:
+            request.data.update(maintenance="done", index_attempts=_attempts(request.data) + 1)
+            _requeue(request, request.data)
+
+    print(f"drain: {len(live)} request(s) in one cycle [flags='{' '.join(flags)}']")
+    stage, step = pipeline(vault, flags, "brain-drain", resume, index_started)
+    tail = step.output[-TAIL_CHARS:]
+    for request in live:
         data = dict(request.data)
-        if stage == "done":
-            outcome = "completed"
-        elif stage == "maintenance":
+        outcome = "completed"
+        if stage == "maintenance":
             data["error_tail"] = tail
             outcome = "failed"
-        else:
-            data["maintenance"] = "done"
-            data["index_attempts"] = _attempts(data) + 1
+        elif stage == "index":
             data["last_error"] = tail
-            outcome = "failed" if data["index_attempts"] >= max_attempts else "retrying"
+            outcome = "failed" if _attempts(data) >= max_attempts else "retrying"
             if outcome == "failed":
                 data["error_tail"] = tail
         if outcome == "retrying":

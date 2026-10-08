@@ -45,7 +45,7 @@ spec:
               # scheduled tick — on-demand and scheduled ticks stay identical.
               env:
                 - name: TICK_INDEX_MAX_ATTEMPTS
-                  value: {{ .Values.tickDrain.indexMaxAttempts | default 3 | quote }}
+                  value: {{ .Values.tickDrain.indexMaxAttempts | default 10 | quote }}
                 {{- range $key, $value := .Values.env }}
                 - name: {{ $key }}
                   value: {{ $value | quote }}

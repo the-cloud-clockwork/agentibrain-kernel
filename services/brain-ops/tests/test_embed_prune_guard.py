@@ -106,3 +106,24 @@ def test_prune_runs_with_a_populated_keep_set(tmp_path: Path, monkeypatch):
     bodies = _prune_bodies(posts, "brain-lesson")
     assert len(bodies) == 1
     assert bodies[0]["keep_keys"] == ["lessons-2026-08-10"]
+
+
+def test_prune_failure_fails_the_run(tmp_path: Path, monkeypatch):
+    """A failed prune leaves removed arcs searchable, so the index is not current."""
+    vault = tmp_path / "vault"
+    (vault / "left").mkdir(parents=True)
+    (vault / "left" / "arc.md").write_text(
+        "---\ntitle: Harbour crane\n---\nThe harbour crane lifts containers every morning.\n"
+    )
+
+    def fake_urlopen(req, *_a, **_k):
+        if req.full_url.endswith("/prune"):
+            raise OSError("embeddings unreachable")
+        return _FakeResponse({"chunks_stored": 1})
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        sys, "argv", ["embed_arcs.py", "--vault", str(vault), "--prune", "--api-key", "k"]
+    )
+
+    assert embed_arcs.main() == 1

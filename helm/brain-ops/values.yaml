@@ -37,7 +37,8 @@ command:
 # Requested ticks (tick-drain) always run the pipeline alone.
 # Both cycles fail without EMBEDDINGS_API_KEY: an unindexed tick is not a
 # completed one, so the scheduled job exits 1 (and alerts NTFY_URL) and drained
-# requests stay queued. An empty INFERENCE_URL runs the maintenance step --no-ai.
+# requests stay queued until tickDrain.indexMaxAttempts, then move to
+# ticks/failed/. An empty INFERENCE_URL runs the maintenance step --no-ai.
 cycleMode: workstation
 
 env:
@@ -153,4 +154,6 @@ tickDrain:
   activeDeadlineSeconds: 300
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
-  indexMaxAttempts: 3
+  # One attempt per drain fire, so 10 rides out about ten minutes of
+  # embeddings outage before a request fails.
+  indexMaxAttempts: 10
