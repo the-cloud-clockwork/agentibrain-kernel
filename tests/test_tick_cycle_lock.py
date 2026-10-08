@@ -34,6 +34,7 @@ with (vault / 'events').open('a') as f:
 (vault / (phase + '.entered')).touch()
 while phase == pause and not (vault / 'release').exists():
     time.sleep(.01)
+sys.exit(int(phase == 'maintenance' and (vault / 'fail').exists()))
 """
 script = vault / 'maintenance.py'
 script.write_text(child)
@@ -185,6 +186,66 @@ def test_dead_parent_maintenance_child_checkpoints_before_recovery(workers, tmp_
     _success(workers(tmp_path))
     assert not request.exists()
     assert (tmp_path / "events").read_text().splitlines().count("maintenance") == 1
+
+
+def _orphan_maintenance(workers, vault, fail=False):
+    proc = workers(vault, pause="maintenance")
+    _wait(vault, "maintenance", proc)
+    proc.kill()
+    proc.wait(timeout=5)
+    if fail:
+        (vault / "fail").touch()
+    (vault / "release").touch()
+    proc.communicate(timeout=5)
+    _released(vault)
+
+
+def test_failed_orphan_maintenance_publishes_no_receipt_and_reruns(workers, tmp_path):
+    request = _request(tmp_path)
+    _orphan_maintenance(workers, tmp_path, fail=True)
+    data = json.loads(request.read_text())
+    assert "maintenance" not in data
+    assert not list((tmp_path / "brain-feed/ticks").glob("*.receipt"))
+    (tmp_path / "fail").unlink()
+    _success(workers(tmp_path))
+    assert not request.exists()
+    assert (tmp_path / "events").read_text().splitlines().count("maintenance") == 2
+    completed = tmp_path / "brain-feed/ticks/completed/request.json"
+    assert json.loads(completed.read_text())["attempts"] == 2
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_coalesced_requests_recover_from_one_receipt(workers, tmp_path, partial):
+    first = _request(tmp_path, "first")
+    second = _request(tmp_path, "second")
+    _orphan_maintenance(workers, tmp_path)
+    identities = {json.loads(p.read_text())["maintenance_receipt"] for p in (first, second)}
+    assert len(identities) == 1
+    assert len(list((tmp_path / "brain-feed/ticks").glob("*.receipt"))) == 1
+    if partial:
+        first.write_text(json.dumps({**json.loads(first.read_text()), "maintenance": "done"}))
+    _success(workers(tmp_path))
+    assert not first.exists() and not second.exists()
+    assert (tmp_path / "events").read_text().splitlines().count("maintenance") == 1
+    assert len(list((tmp_path / "brain-feed/ticks/completed").glob("*.json"))) == 2
+    assert not list((tmp_path / "brain-feed/ticks").glob("*.receipt"))
+
+
+def test_replayed_deterministic_maintenance_accepts_each_write_once(tmp_path):
+    inbox = tmp_path / "raw/inbox"
+    inbox.mkdir(parents=True)
+    (inbox / "probe.md").write_text("---\ntitle: Probe\ntags: [lesson]\n---\n\nProbe body.\n")
+    env = {k: v for k, v in os.environ.items() if k not in ("REDIS_URL", "CLICKHOUSE_URL")}
+    env["INFERENCE_URL"] = ""
+    tick = ROOT / "services/brain-ops/brain_tick.py"
+    argv = [sys.executable, str(tick), "--vault", str(tmp_path), "--no-ai"]
+    argv += ["--brain-feed", str(tmp_path / "brain-feed")]
+    files = []
+    for _ in range(2):
+        subprocess.run(argv, env=env, capture_output=True, check=True, timeout=60)
+        files.append(sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*") if p.is_file()))
+    assert files[0] == files[1]
+    assert [p for p in files[1] if p.name.startswith("probe")] == [Path("left/probe.md")]
 
 
 def test_killed_process_group_releases_ownership_and_keeps_request(workers, tmp_path):

@@ -95,7 +95,7 @@ jobs:
       - name: Pytest (tick cycle end to end)
         env:
           TICK_CYCLE_POSTGRES_URL: postgresql://brain:brain@localhost:5432/brain
-        run: python -m pytest -q tests/test_tick_cycle.py
+        run: python -m pytest -q tests/test_tick_cycle.py tests/test_tick_cycle_lock.py
 
       # Invalid escapes only surface on a FRESH compile, so bytecode caching
       # hides them locally while the container warns on every pod start. This
