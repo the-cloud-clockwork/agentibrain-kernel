@@ -73,3 +73,22 @@ def test_prune_skipped_when_raw_dir_absent(tmp_path, monkeypatch, capsys):
     assert embed_raw.main() == 0
     assert pruned == []
     assert "PRUNE: skipped" in capsys.readouterr().out
+
+
+def test_prune_failure_fails_the_run(tmp_path, monkeypatch, capsys):
+    """A failed prune leaves deleted notes searchable, so the index is not current."""
+    _note(
+        tmp_path,
+        "raw/inbox/full-note.md",
+        "This note carries enough characters to clear the fifty char noop floor easily.",
+    )
+    monkeypatch.setattr(embed_raw, "post_embed", lambda url, key, payload: {"chunks_stored": 1})
+
+    def refuse(*a, **k):
+        raise OSError("embeddings unreachable")
+
+    monkeypatch.setattr(embed_raw.urllib.request, "urlopen", refuse)
+    monkeypatch.setattr(
+        sys, "argv", ["embed_raw", "--vault", str(tmp_path), "--api-key", "k", "--prune"]
+    )
+    assert embed_raw.main() == 1

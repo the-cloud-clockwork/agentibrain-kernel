@@ -115,6 +115,7 @@ def register(mcp: FastMCP):
         elapsed = 0
         status = result["status"]
         unknown_streak = 0
+        last_error = ""
         while status not in _TERMINAL and elapsed < timeout:
             await asyncio.sleep(_POLL_INTERVAL)
             elapsed += _POLL_INTERVAL
@@ -125,9 +126,11 @@ def register(mcp: FastMCP):
                 timeout=15,
             )
             try:
-                status = json.loads(sraw).get("status", status)
+                payload = json.loads(sraw)
             except json.JSONDecodeError:
                 continue
+            status = payload.get("status", status)
+            last_error = payload.get("last_error", "")
             if status == "unknown":
                 unknown_streak += 1
                 if unknown_streak >= 2:  # ~6s of "not found" — stop, don't hang
@@ -142,6 +145,13 @@ def register(mcp: FastMCP):
             result["note"] = "tick complete — new content is indexed and retrievable"
         elif status == "failed":
             result["note"] = "tick failed — check tick-drain CronJob logs"
+        elif last_error:
+            result["retryable"] = True
+            result["last_error"] = last_error[-500:]
+            result["note"] = (
+                "maintenance ran but indexing failed; the drain retries it, so the "
+                "content is not yet retrievable by semantic search"
+            )
         elif status == "unknown":
             result["note"] = (
                 "job not found on the queue — it may have already completed and been "

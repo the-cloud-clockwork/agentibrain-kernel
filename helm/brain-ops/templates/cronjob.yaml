@@ -1,3 +1,6 @@
+{{- if not (has .Values.cycleMode (list "vault" "workstation")) }}
+{{- fail (printf "cycleMode must be vault or workstation, got %q" (toString .Values.cycleMode)) }}
+{{- end }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -19,8 +22,9 @@ spec:
               image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
               imagePullPolicy: {{ .Values.image.pullPolicy }}
               command: {{- toYaml .Values.command | nindent 16 }}
-              {{- if or .Values.env .Values.secretRef .Values.additionalSecretRefs }}
               env:
+                - name: TICK_CYCLE_MODE
+                  value: {{ .Values.cycleMode | quote }}
                 {{- range $key, $value := .Values.env }}
                 - name: {{ $key }}
                   value: {{ $value | quote }}
@@ -35,7 +39,6 @@ spec:
                 - secretRef:
                     name: {{ . }}
                 {{- end }}
-              {{- end }}
               {{- end }}
               resources: {{- toYaml .Values.resources | nindent 16 }}
               volumeMounts:

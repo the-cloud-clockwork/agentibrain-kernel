@@ -467,6 +467,7 @@ def main() -> int:
             print(f"PRUNE[lesson]: deleted={pr.get('deleted', 0)} kept={pr.get('kept', 0)}")
         except Exception as e:
             stats["lesson_prune_error"] = str(e)
+            stats["errors"] += 1
             print(f"WARN: lesson prune failed: {e}", file=sys.stderr)
 
     # Reaper: delete pgvector rows whose cluster_id no longer maps to an
@@ -501,6 +502,7 @@ def main() -> int:
             print(f"PRUNE: deleted={stats['pruned']} kept={stats['pruned_kept']}")
         except Exception as e:
             stats["prune_error"] = str(e)
+            stats["errors"] += 1
             print(f"WARN: prune failed: {e}", file=sys.stderr)
 
     stats["elapsed_sec"] = round(time.time() - t0, 3)
