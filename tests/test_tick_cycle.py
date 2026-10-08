@@ -440,7 +440,7 @@ def test_scheduled_workstation_cycle_keeps_extraction_and_amygdala(
     )
 
     assert (brain["vault"] / "clusters" / today).is_dir(), result.stdout + result.stderr
-    assert "amygdala" in result.stdout.lower(), result.stdout
+    assert "Running amygdala check" in result.stdout, result.stdout
 
 
 def test_chart_default_keeps_the_workstation_mode_explicit() -> None:

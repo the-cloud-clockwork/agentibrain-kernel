@@ -254,6 +254,7 @@ def extract(vault: Path) -> Step:
 
 
 def amygdala(vault: Path) -> Step:
+    print("Running amygdala check...")
     redis_url = os.environ.get("REDIS_URL", "").rsplit("/", 1)[0]
     return _run(
         [
