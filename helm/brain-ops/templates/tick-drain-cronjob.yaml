@@ -15,7 +15,7 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ .Chart.Name }}-tick-drain
+  name: {{ include "brain-ops.fullname" . }}-tick-drain
 spec:
   schedule: {{ .Values.tickDrain.schedule | quote }}
   concurrencyPolicy: Forbid

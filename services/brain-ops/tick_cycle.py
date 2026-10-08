@@ -22,19 +22,65 @@ TICK_CYCLE_MODE selects what the scheduled tick adds around the pipeline:
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
+import re
 import subprocess
 import sys
 import time
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 MODES = ("vault", "workstation")
 TAIL_CHARS = 2000
 QUEUE = Path("brain-feed") / "ticks"
+
+
+WRITER_FDS: ContextVar[tuple[int, ...]] = ContextVar("writer_fds", default=())
+
+
+def _qualify_mount(vault: Path) -> None:
+    if sys.platform != "linux":
+        return
+    mounts = []
+    for line in Path("/proc/self/mountinfo").read_text().splitlines():
+        fields, _, filesystem = line.partition(" - ")
+        parts = fields.split()
+        mount = Path(re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), parts[4]))
+        if vault.resolve().is_relative_to(mount):
+            mounts.append((len(mount.parts), parts[5], filesystem.split()))
+    _, options, filesystem = max(mounts)
+    if filesystem[0] in ("nfs", "nfs4"):
+        options = set(options.split(",") + filesystem[2].split(","))
+        if options & {"nolock", "local_lock=all", "local_lock=flock"}:
+            raise RuntimeError("tick cycle requires server coordinated NFS locking")
+
+
+def _owned(cycle: Callable[..., int]) -> Callable[..., int]:
+    @wraps(cycle)
+    def run(vault: Path, *args, **kwargs) -> int:
+        _qualify_mount(vault)
+        lock_path = vault / QUEUE / ".writer.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as lock:
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                print("tick cycle busy: requests remain pending")
+                return 0
+            token = WRITER_FDS.set((lock.fileno(),))
+            try:
+                return cycle(vault, *args, **kwargs)
+            finally:
+                WRITER_FDS.reset(token)
+                # Closing retains ownership until surviving subprocesses close their copies.
+
+    return run
 
 
 @dataclass(frozen=True)
@@ -51,7 +97,12 @@ class Request:
 
 def _run(argv: list[str], stdin=None) -> Step:
     proc = subprocess.run(
-        [sys.executable, *argv], stdin=stdin, capture_output=True, text=True, check=False
+        [sys.executable, *argv],
+        stdin=stdin,
+        capture_output=True,
+        text=True,
+        check=False,
+        pass_fds=WRITER_FDS.get(),
     )
     output = proc.stdout + proc.stderr
     sys.stdout.write(output)
@@ -215,6 +266,7 @@ def _drain_bucket(vault: Path, kind: tuple[bool, bool, bool], requests: list[Req
     return counts
 
 
+@_owned
 def drain(vault: Path) -> int:
     requested, failed = vault / QUEUE / "requested", vault / QUEUE / "failed"
     for name in ("requested", "completed", "failed"):
@@ -269,6 +321,7 @@ def amygdala(vault: Path) -> Step:
     )
 
 
+@_owned
 def scheduled(vault: Path, mode: str) -> int:
     if mode == "workstation" and not extract(vault).ok:
         print("FAILED: extraction phase")

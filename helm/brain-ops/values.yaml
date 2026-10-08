@@ -4,6 +4,9 @@
 # Operators override environment-specific values (NFS server, INFERENCE_URL, secrets)
 # in their per-env values overlay (e.g. values-prod.yaml).
 
+nameOverride: ""
+fullnameOverride: ""
+
 schedule: "7 */2 * * *"
 
 image:

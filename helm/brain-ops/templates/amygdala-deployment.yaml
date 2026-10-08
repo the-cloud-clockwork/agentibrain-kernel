@@ -2,23 +2,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Chart.Name }}-amygdala
+  name: {{ include "brain-ops.fullname" . }}-amygdala
   labels:
-    app: {{ .Chart.Name }}-amygdala
+    app: {{ include "brain-ops.fullname" . }}-amygdala
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: {{ .Chart.Name }}-amygdala
+      app: {{ include "brain-ops.fullname" . }}-amygdala
   template:
     metadata:
       labels:
-        app: {{ .Chart.Name }}-amygdala
+        app: {{ include "brain-ops.fullname" . }}-amygdala
       annotations:
         reloader.stakater.com/auto: "true"
     spec:
       containers:
-        - name: {{ .Chart.Name }}-amygdala
+        - name: {{ include "brain-ops.fullname" . }}-amygdala
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
