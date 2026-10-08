@@ -42,6 +42,7 @@ Required env vars:
 | `INFERENCE_URL` | inference-gateway endpoint (used by `kb_brief`) |
 | `KB_BRIEF_ROUTE` | named route in inference-gateway config |
 | `MCP_PROXY_API_KEY` | bearer enforced by mcp-proxy on inbound requests |
+| `MCP_AUTH_MODE` | `required` (image default, set by the chart): refuse to start without `MCP_PROXY_API_KEY`. `local` (set by Compose): the key is optional |
 
 Auth is two-layered:
 1. The proxy authenticates the caller (LiteLLM gateway) with `MCP_PROXY_API_KEY`.
@@ -107,7 +108,7 @@ After `docker compose up -d` from the repo root, the MCP server listens on
     "agentibrain": {
       "url": "http://localhost:8104/mcp",
       "headers": {
-        "Authorization": "Bearer ${MCP_PROXY_API_KEY}"
+        "X-API-Key": "${MCP_PROXY_API_KEY}"
       }
     }
   }
@@ -142,7 +143,7 @@ the chart you deployed in the previous section:
     "agentibrain": {
       "url": "http://agentibrain-mcp.<your-namespace>.svc:8080/mcp",
       "headers": {
-        "Authorization": "Bearer ${MCP_PROXY_API_KEY}"
+        "X-API-Key": "${MCP_PROXY_API_KEY}"
       }
     }
   }
@@ -176,4 +177,4 @@ EMBEDDINGS_API_KEY=... \
 python app/server.py    # stdio MCP — connect with mcp-proxy or claude --debug
 ```
 
-Smoke tests: `pytest services/mcp/tests/`.
+Smoke tests: `pytest services/mcp/tests/` (needs `helm` on PATH). Transport authentication of a built image: `pytest services/mcp/image_tests --mcp-image=<image>` (needs Docker).

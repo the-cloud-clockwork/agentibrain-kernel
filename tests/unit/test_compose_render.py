@@ -61,6 +61,19 @@ def test_embeddings_gets_the_variables_the_service_actually_reads(tmp_path):
     assert "OPENAI_API_KEY" not in env
 
 
+def test_mcp_selects_the_local_auth_mode(tmp_path):
+    data = yaml.safe_load(render_compose(_settings(tmp_path / "v")))
+    assert data["services"]["mcp"]["environment"]["MCP_AUTH_MODE"] == "local"
+    assert data["services"]["mcp"]["ports"] == ["127.0.0.1:8104:8080"]
+
+
+def test_repository_compose_keeps_the_local_mcp_on_loopback():
+    data = yaml.safe_load((Path(__file__).parents[2] / "compose.yml").read_text())
+    mcp = data["services"]["mcp"]
+    assert mcp["environment"]["MCP_AUTH_MODE"] == "local"
+    assert [port.split(":")[0] for port in mcp["ports"]] == ["127.0.0.1"]
+
+
 def test_brain_api_can_authenticate_to_embeddings(tmp_path):
     data = yaml.safe_load(render_compose(_settings(tmp_path / "v")))
     env = data["services"]["brain-api"]["environment"]

@@ -64,6 +64,8 @@ jobs:
       - name: Pytest (brain-ops service)
         run: python -m pytest -q services/brain-ops/tests
 
+      - uses: azure/setup-helm@v4
+
       # Neither of these two ran in CI, so both suites had rotted unnoticed —
       # the marker and ranking regressions this repo just fixed had no gate.
       - name: Pytest (mcp service)

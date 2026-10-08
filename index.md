@@ -91,7 +91,7 @@ Bare-cluster path with no platform prerequisites — see [`docs/HELM-QUICKSTART.
     "agentibrain": {
       "url": "http://localhost:8104/mcp",
       "headers": {
-        "Authorization": "Bearer ${MCP_PROXY_API_KEY}"
+        "X-API-Key": "${MCP_PROXY_API_KEY}"
       }
     }
   }
@@ -106,7 +106,7 @@ Bare-cluster path with no platform prerequisites — see [`docs/HELM-QUICKSTART.
     "agentibrain": {
       "url": "http://agentibrain-mcp.<your-namespace>.svc:8080/mcp",
       "headers": {
-        "Authorization": "Bearer ${MCP_PROXY_API_KEY}"
+        "X-API-Key": "${MCP_PROXY_API_KEY}"
       }
     }
   }
