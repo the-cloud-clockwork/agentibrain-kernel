@@ -17,6 +17,12 @@ Tags are issued by the release workflow, not locally. Cut one by dispatching `.g
 
 ### Changed
 
+- **MCP transport authentication is required by default.** The mcp image reads
+  `MCP_AUTH_MODE`: `required` (default, set by the Helm chart) refuses to start
+  without `MCP_PROXY_API_KEY`; `local` (set by Compose) makes the key optional.
+  Any other value, empty included, refuses to start. Clients send the key as
+  `X-API-Key`. The Compose stack now publishes mcp on `127.0.0.1` only, so
+  `BIND_HOST` no longer exposes it to other hosts.
 - **One brain stack per machine.** `up`, `build` and `install` bring down every other
   compose project holding an `agentibrain_*` container before starting, and `down`
   removes all of them (volumes survive). Discovery follows the stack Docker reports
