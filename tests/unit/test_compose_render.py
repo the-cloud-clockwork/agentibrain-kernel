@@ -64,6 +64,7 @@ def test_embeddings_gets_the_variables_the_service_actually_reads(tmp_path):
 def test_mcp_selects_the_local_auth_mode(tmp_path):
     data = yaml.safe_load(render_compose(_settings(tmp_path / "v")))
     assert data["services"]["mcp"]["environment"]["MCP_AUTH_MODE"] == "local"
+    assert data["services"]["mcp"]["ports"] == ["127.0.0.1:8104:8080"]
 
 
 def test_brain_api_can_authenticate_to_embeddings(tmp_path):

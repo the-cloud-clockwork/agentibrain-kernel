@@ -514,7 +514,7 @@ services:
       MCP_PROXY_API_KEY: ""
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
-      - "${BIND_HOST:-0.0.0.0}:${PORT_MCP:-8104}:8080"
+      - "127.0.0.1:${PORT_MCP:-8104}:8080"
 
 volumes:
   pg-data:

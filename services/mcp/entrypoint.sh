@@ -3,7 +3,7 @@ set -eu
 
 # mcp-proxy reads every MCP_PROXY_* variable itself, MCP_PROXY_API_KEY
 # included, so the key never appears on a command line.
-MCP_AUTH_MODE="${MCP_AUTH_MODE:-required}"
+MCP_AUTH_MODE="${MCP_AUTH_MODE-required}"
 case "${MCP_AUTH_MODE}" in
     required)
         if [ -z "${MCP_PROXY_API_KEY:-}" ]; then

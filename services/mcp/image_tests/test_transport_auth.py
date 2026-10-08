@@ -156,8 +156,9 @@ def test_required_mode_with_empty_key_refuses_to_start(image):
     assert "MCP_PROXY_API_KEY" in run.stderr
 
 
-def test_unknown_mode_refuses_to_start(image, key):
-    run = _refusal(image, {"MCP_AUTH_MODE": "open", "MCP_PROXY_API_KEY": key})
+@pytest.mark.parametrize("mode", ["open", ""])
+def test_unknown_mode_refuses_to_start(image, key, mode):
+    run = _refusal(image, {"MCP_AUTH_MODE": mode, "MCP_PROXY_API_KEY": key})
     assert run.returncode != 0
     assert "MCP_AUTH_MODE" in run.stderr
 
@@ -202,3 +203,12 @@ def test_local_mode_serves_without_key(local):
     status, listed = _rpc(local, "tools/list")
     assert status == 200
     assert {tool["name"] for tool in listed["result"]["tools"]} == BRAIN_TOOLS
+
+
+def test_local_mode_enforces_a_key_when_set(image, key):
+    name, base = _start(image, {"MCP_AUTH_MODE": "local", "MCP_PROXY_API_KEY": key})
+    try:
+        assert _rpc(base, "tools/list") == (401, None)
+        assert _rpc(base, "tools/list", key=key)[0] == 200
+    finally:
+        _docker("rm", "--force", name)
