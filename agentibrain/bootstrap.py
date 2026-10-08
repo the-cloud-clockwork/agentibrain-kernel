@@ -88,9 +88,9 @@ PROGRAM_ENV_DEFAULTS = {
     "POSTGRES_URL": "",
     "RAW_INBOX_PREFIX": "raw/inbox",
     "TICK_COMPLETED_DIR": "brain-feed/ticks/completed",
+    "TICK_CYCLE_MAX_ATTEMPTS": "10",
     "TICK_CYCLE_MODE": "",
     "TICK_FAILED_DIR": "brain-feed/ticks/failed",
-    "TICK_INDEX_MAX_ATTEMPTS": "10",
     "TICK_REQUESTS_DIR": "brain-feed/ticks/requested",
     "VAULT_ROOT": "/vault",
 }

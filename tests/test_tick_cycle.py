@@ -305,7 +305,7 @@ def test_index_failure_is_never_completed_and_retry_resumes_once(brain: dict) ->
     assert status["status"] != "completed", planted.stdout + planted.stderr
     assert planted.returncode == 1
     assert status["status"] == "pending"
-    assert status["index_attempts"] == 1
+    assert status["attempts"] == 1
     assert status["last_error"]
     assert _semantic_hits(brain, token) == []
 
@@ -331,12 +331,12 @@ def test_exhausted_index_retries_fail_the_request(brain: dict) -> None:
     _drain(
         brain,
         embeddings_url=f"http://127.0.0.1:{_free_port()}",
-        extra={"TICK_INDEX_MAX_ATTEMPTS": "1"},
+        extra={"TICK_CYCLE_MAX_ATTEMPTS": "1"},
     )
 
     status = _status(brain, job)
     assert status["status"] == "failed"
-    assert status["index_attempts"] == 1
+    assert status["attempts"] == 1
     assert status["error_tail"]
 
 
@@ -361,15 +361,15 @@ def test_indexing_that_never_finishes_fails_after_its_attempts(brain: dict) -> N
     requested = brain["vault"] / "brain-feed" / "ticks" / "requested"
     requested.mkdir(parents=True, exist_ok=True)
     (requested / "2026-10-08T00-00-00Z-killedjob.json").write_text(
-        json.dumps({"job_id": "killedjob", "maintenance": "done", "index_attempts": 2})
+        json.dumps({"job_id": "killedjob", "maintenance": "done", "attempts": 2})
     )
     (requested / "broken-job.json").write_text("[]")
 
-    _drain(brain, extra={"TICK_INDEX_MAX_ATTEMPTS": "2"})
+    _drain(brain, extra={"TICK_CYCLE_MAX_ATTEMPTS": "2"})
 
     killed = _status(brain, "killedjob")
     assert killed["status"] == "failed"
-    assert killed["error_tail"] == "indexing never finished"
+    assert killed["error_tail"] == "the tick cycle never finished"
     assert (brain["vault"] / "brain-feed" / "ticks" / "failed" / "broken-job.json").exists()
 
 
@@ -418,6 +418,29 @@ def test_scheduled_vault_cycle_runs_the_same_pipeline(brain: dict) -> None:
     assert "amygdala" not in result.stdout.lower()
     producers = {hit["producer"] for hit in _semantic_hits(brain, token)}
     assert {"brain-arc", "brain-lesson"} <= producers, producers
+
+
+def test_scheduled_workstation_cycle_keeps_extraction_and_amygdala(
+    brain: dict, tmp_path: Path
+) -> None:
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    projects = tmp_path / "projects"
+    projects.mkdir()
+
+    result = _run_job(
+        "templates/cronjob.yaml",
+        brain["vault"],
+        {
+            "EMBEDDINGS_URL": brain["embeddings"]["url"],
+            "EMBEDDINGS_API_KEY": EMBED_BEARER,
+            "EXTRACT_HOUR": time.strftime("%H", time.gmtime()),
+            "EXTRACT_PROJECTS_DIR": str(projects),
+        },
+        ["--set", "cycleMode=workstation"],
+    )
+
+    assert (brain["vault"] / "clusters" / today).is_dir(), result.stdout + result.stderr
+    assert "amygdala" in result.stdout.lower(), result.stdout
 
 
 def test_chart_default_keeps_the_workstation_mode_explicit() -> None:

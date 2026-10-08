@@ -45,7 +45,7 @@ def _run(monkeypatch, status_payload: dict) -> dict:
 def test_pending_request_with_index_error_is_retryable(monkeypatch):
     result = _run(
         monkeypatch,
-        {"status": "pending", "index_attempts": 1, "last_error": "embed_arcs.py failed"},
+        {"status": "pending", "attempts": 1, "last_error": "embed_arcs.py failed"},
     )
 
     assert result["status"] == "pending"

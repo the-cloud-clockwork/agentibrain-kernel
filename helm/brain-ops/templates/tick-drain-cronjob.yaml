@@ -4,8 +4,10 @@
 # them on a short cadence through tick_cycle.py drain, the same maintenance
 # and index pipeline the scheduled tick runs. A request moves to
 # ticks/completed/ only after brain_tick, embed_arcs and embed_raw succeed;
-# an index failure keeps it queued for retry, resuming at indexing, until
-# tickDrain.indexMaxAttempts, then moves it to ticks/failed/. Idempotent:
+# an index failure keeps it queued for retry, resuming at indexing. Each fire
+# counts one attempt per request; at tickDrain.maxAttempts it moves to
+# ticks/failed/, so a cycle killed by activeDeadlineSeconds is bounded too.
+# Idempotent:
 # exits immediately when the queue is empty.
 #
 # Concurrency: Forbid — never overlap with itself. Forbid applies only within
@@ -44,8 +46,8 @@ spec:
               # (BRAIN_DECAY_*, BRAIN_PROMOTE_HEAT, EMBEDDINGS_URL, ...) as the
               # scheduled tick — on-demand and scheduled ticks stay identical.
               env:
-                - name: TICK_INDEX_MAX_ATTEMPTS
-                  value: {{ .Values.tickDrain.indexMaxAttempts | default 10 | quote }}
+                - name: TICK_CYCLE_MAX_ATTEMPTS
+                  value: {{ .Values.tickDrain.maxAttempts | quote }}
                 {{- range $key, $value := .Values.env }}
                 - name: {{ $key }}
                   value: {{ $value | quote }}

@@ -37,7 +37,7 @@ command:
 # Requested ticks (tick-drain) always run the pipeline alone.
 # Both cycles fail without EMBEDDINGS_API_KEY: an unindexed tick is not a
 # completed one, so the scheduled job exits 1 (and alerts NTFY_URL) and drained
-# requests stay queued until tickDrain.indexMaxAttempts, then move to
+# requests stay queued until tickDrain.maxAttempts, then move to
 # ticks/failed/. An empty INFERENCE_URL runs the maintenance step --no-ai.
 cycleMode: workstation
 
@@ -144,7 +144,8 @@ amygdala:
 # {vault}/brain-feed/ticks/requested/ on a short cadence through
 # tick_cycle.py drain. A request reaches ticks/completed/ only after
 # maintenance and indexing succeed; an index failure keeps it queued for
-# retry until indexMaxAttempts, then moves it to ticks/failed/.
+# retry. Each fire counts one attempt per request, killed cycles included; at
+# maxAttempts it moves to ticks/failed/.
 # Every 1 min so a forced brain_tick (MCP tool / POST /tick) is picked up within
 # ~60s. Idempotent and exits immediately on an empty queue, so the extra fires
 # are nearly free; concurrencyPolicy: Forbid skips a fire if one still runs.
@@ -156,4 +157,4 @@ tickDrain:
   failedJobsHistoryLimit: 3
   # One attempt per drain fire, so 10 rides out about ten minutes of
   # embeddings outage before a request fails.
-  indexMaxAttempts: 10
+  maxAttempts: 10

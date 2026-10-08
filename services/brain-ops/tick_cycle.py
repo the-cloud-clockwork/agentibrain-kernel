@@ -8,10 +8,11 @@ The pipeline is brain_tick (maintenance), embed_arcs (arcs and lesson logs) and
 embed_raw (raw notes). A request reaches ticks/completed/ only after every step
 succeeded, so a completed tick certifies both text and semantic retrieval.
 
-An index failure leaves the request in ticks/requested/ with maintenance
-recorded as done, `index_attempts` and `last_error`; the next drain resumes at
-indexing. After TICK_INDEX_MAX_ATTEMPTS failures the request moves to
-ticks/failed/. Dry runs never index.
+Each drain counts an attempt on a request before its cycle starts. An index
+failure leaves the request in ticks/requested/ with maintenance recorded as
+done and `last_error`; the next drain resumes it at indexing. A request whose
+attempts reach TICK_CYCLE_MAX_ATTEMPTS, including cycles killed mid run, moves
+to ticks/failed/. Dry runs never index.
 
 TICK_CYCLE_MODE selects what the scheduled tick adds around the pipeline:
   vault        pure vault processing
@@ -138,7 +139,7 @@ def _requeue(request: Request, data: dict) -> bool:
 
 def _attempts(data: dict) -> int:
     try:
-        return int(data.get("index_attempts", 0))
+        return int(data.get("attempts", 0))
     except (TypeError, ValueError):
         return 0
 
@@ -148,10 +149,11 @@ def _pending(requested: Path, failed: Path) -> dict[tuple[bool, bool, bool], lis
     for path in sorted(requested.glob("*.json")):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
+            reason = "" if isinstance(data, dict) else "not a JSON object"
         except (OSError, ValueError) as exc:
-            data = f"unreadable tick request: {exc}"
-        if not isinstance(data, dict):
-            _finish(Request(path, {}), {"error_tail": str(data)[:TAIL_CHARS]}, failed)
+            reason = str(exc)
+        if reason:
+            _finish(Request(path, {}), {"error_tail": f"unreadable tick request: {reason}"}, failed)
             continue
         resumed = data.get("maintenance") == "done"
         kind = (bool(data.get("dry_run")), bool(data.get("no_ai")), resumed)
@@ -159,35 +161,36 @@ def _pending(requested: Path, failed: Path) -> dict[tuple[bool, bool, bool], lis
     return buckets
 
 
-def _fail_exhausted(
-    requests: list[Request], max_attempts: int, failed: Path, counts: dict
-) -> list[Request]:
+def _start(requests: list[Request], max_attempts: int, failed: Path) -> tuple[list[Request], dict]:
+    counts = {"completed": 0, "failed": 0, "retrying": 0, "stuck": 0}
     live = []
     for request in requests:
-        if _attempts(request.data) < max_attempts:
-            live.append(request)
+        attempts = _attempts(request.data)
+        if attempts >= max_attempts:
+            tail = request.data.get("last_error") or "the tick cycle never finished"
+            saved = _finish(request, {**request.data, "error_tail": tail}, failed)
+            counts["failed" if saved else "stuck"] += 1
             continue
-        tail = request.data.get("last_error") or "indexing never finished"
-        saved = _finish(request, {**request.data, "error_tail": tail}, failed)
-        counts["failed" if saved else "stuck"] += 1
-    return live
+        request.data["attempts"] = attempts + 1
+        if _requeue(request, request.data):
+            live.append(request)
+        else:
+            counts["stuck"] += 1
+    return live, counts
 
 
 def _drain_bucket(vault: Path, kind: tuple[bool, bool, bool], requests: list[Request]) -> dict:
     dirs = {name: vault / QUEUE / name for name in ("completed", "failed")}
     dry_run, no_ai, resume = kind
     flags = ["--dry-run"] * dry_run + ["--no-ai"] * no_ai
-    max_attempts = int(os.environ.get("TICK_INDEX_MAX_ATTEMPTS", "10"))
-    counts = {"completed": 0, "failed": 0, "retrying": 0, "stuck": 0}
-    live = requests
-    if resume:
-        live = _fail_exhausted(requests, max_attempts, dirs["failed"], counts)
+    max_attempts = int(os.environ.get("TICK_CYCLE_MAX_ATTEMPTS", "10"))
+    live, counts = _start(requests, max_attempts, dirs["failed"])
     if not live:
         return counts
 
     def index_started() -> None:
         for request in live:
-            request.data.update(maintenance="done", index_attempts=_attempts(request.data) + 1)
+            request.data["maintenance"] = "done"
             _requeue(request, request.data)
 
     print(f"drain: {len(live)} request(s) in one cycle [flags='{' '.join(flags)}']")
