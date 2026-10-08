@@ -243,7 +243,9 @@ def test_replayed_deterministic_maintenance_accepts_each_write_once(tmp_path):
     files = []
     for _ in range(2):
         subprocess.run(argv, env=env, capture_output=True, check=True, timeout=60)
-        files.append(sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*") if p.is_file()))
+        files.append(
+            {p.relative_to(tmp_path): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+        )
     assert files[0] == files[1]
     assert [p for p in files[1] if p.name.startswith("probe")] == [Path("left/probe.md")]
 
@@ -347,6 +349,34 @@ def test_failure_closes_descriptor_without_replacing_lock(cycle_module, tmp_path
     assert cycle_module.WRITER_FDS.get() == ()
     assert cycle_module.drain(tmp_path) == 0
     assert lock.stat().st_ino == inode
+
+
+@pytest.mark.parametrize("flags", [[], ["--dry-run"]])
+def test_only_mutating_maintenance_publishes_a_receipt(cycle_module, monkeypatch, tmp_path, flags):
+    seen = []
+    monkeypatch.setattr(cycle_module, "_run", lambda argv, checkpoint=None: seen.append(checkpoint))
+    receipt = tmp_path / "id.receipt"
+    token = cycle_module.MAINTENANCE_RECEIPT.set(receipt)
+    try:
+        cycle_module.maintenance(tmp_path, flags, "brain-drain")
+    finally:
+        cycle_module.MAINTENANCE_RECEIPT.reset(token)
+    assert seen == [None if flags else receipt]
+
+
+def test_unreferenced_receipts_are_swept_and_held_ones_kept(cycle_module, monkeypatch, tmp_path):
+    monkeypatch.setattr(cycle_module, "_qualify_mount", lambda vault: None)
+    queue = tmp_path / "brain-feed/ticks"
+    held, stale = "a" * 32, "b" * 32
+    request = _request(tmp_path)
+    request.write_text(json.dumps({"attempts": 10, "maintenance_receipt": held}))
+    for identity in (held, stale):
+        (queue / f"{identity}.receipt").write_text("{}")
+    cycle_module.drain(tmp_path)
+    assert [p.stem for p in queue.glob("*.receipt")] == [held]
+    assert (queue / "failed/request.json").exists()
+    cycle_module.drain(tmp_path)
+    assert not list(queue.glob("*.receipt"))
 
 
 def test_long_instance_names_remain_disjoint():

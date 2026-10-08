@@ -319,7 +319,12 @@ def drain(vault: Path) -> int:
     for name in ("requested", "completed", "failed"):
         (vault / QUEUE / name).mkdir(parents=True, exist_ok=True)
     totals = {"completed": 0, "failed": 0, "retrying": 0, "stuck": 0}
-    for kind, requests in sorted(_pending(requested, failed).items()):
+    buckets = _pending(requested, failed)
+    held = {r.data.get("maintenance_receipt") for rs in buckets.values() for r in rs}
+    for receipt in (vault / QUEUE).glob("*.receipt"):
+        if receipt.stem not in held:
+            receipt.unlink(missing_ok=True)
+    for kind, requests in sorted(buckets.items()):
         for key, value in _drain_bucket(vault, kind, requests).items():
             totals[key] += value
     print("drain-summary: " + " ".join(f"{k}={v}" for k, v in totals.items()))
