@@ -35,8 +35,10 @@ with (vault / 'events').open('a') as f:
 while phase == pause and not (vault / 'release').exists():
     time.sleep(.01)
 """
+script = vault / 'maintenance.py'
+script.write_text(child)
 def maintenance(vault, flags, source):
-    return m._run(['-c', child, str(vault), 'maintenance', pause])
+    return m._run([str(script), str(vault), 'maintenance', pause], checkpoint=m.MAINTENANCE_RECEIPT.get())
 def index(vault):
     return m._run(['-c', child, str(vault), 'index', pause])
 finish = m._finish
@@ -101,6 +103,15 @@ def _success(proc):
     return "".join(output)
 
 
+def _released(vault):
+    code = "import fcntl,sys; f=open(sys.argv[1], 'a+b'); fcntl.flock(f, fcntl.LOCK_EX)"
+    subprocess.run(
+        [sys.executable, "-c", code, str(vault / "brain-feed/ticks/.writer.lock")],
+        timeout=5,
+        check=True,
+    )
+
+
 @pytest.mark.parametrize("owner", ["scheduled", "drain"])
 @pytest.mark.parametrize("pause", ["maintenance", "index"])
 @pytest.mark.parametrize("contender", ["scheduled", "drain"])
@@ -153,6 +164,24 @@ def test_dead_parent_keeps_child_owned_then_resumes_index(workers, tmp_path):
     assert request.read_bytes() == before
     (tmp_path / "release").touch()
     proc.communicate(timeout=5)
+    _success(workers(tmp_path))
+    assert not request.exists()
+    assert (tmp_path / "events").read_text().splitlines().count("maintenance") == 1
+
+
+def test_dead_parent_maintenance_child_checkpoints_before_recovery(workers, tmp_path):
+    request = _request(tmp_path)
+    proc = workers(tmp_path, pause="maintenance")
+    _wait(tmp_path, "maintenance", proc)
+    proc.kill()
+    proc.wait(timeout=5)
+    assert "busy" in _success(workers(tmp_path))
+    (tmp_path / "release").touch()
+    proc.communicate(timeout=5)
+    _released(tmp_path)
+    data = json.loads(request.read_text())
+    receipt = tmp_path / "brain-feed/ticks" / f"{data['maintenance_receipt']}.receipt"
+    assert receipt.exists()
     _success(workers(tmp_path))
     assert not request.exists()
     assert (tmp_path / "events").read_text().splitlines().count("maintenance") == 1
