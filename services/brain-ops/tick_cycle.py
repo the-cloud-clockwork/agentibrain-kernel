@@ -328,8 +328,8 @@ def drain(vault: Path) -> int:
         try:
             counts = _drain_bucket(vault, kind, requests)
         except OSError as exc:
-            print(f"WARN: drain cycle stopped before indexing: {exc}")
-            counts = {"stuck": len(requests)}
+            print(f"WARN: drain cycle stopped: {exc}")
+            counts = {"stuck": sum(r.path.exists() for r in requests)}
         for key, value in counts.items():
             totals[key] += value
     print("drain-summary: " + " ".join(f"{k}={v}" for k, v in totals.items()))

@@ -384,12 +384,14 @@ def test_unreferenced_receipts_are_swept_and_held_ones_kept(cycle_module, monkey
 def test_checkpoint_failure_stops_its_bucket_only(cycle_module, monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(cycle_module, "_qualify_mount", lambda vault: None)
     _request(tmp_path, "wet")
+    _request(tmp_path, "exhausted")
     (tmp_path / "brain-feed/ticks/requested/dry.json").write_text(json.dumps({"dry_run": True}))
     seen = []
 
     def bucket(vault, kind, requests):
         seen.append(kind)
         if not kind[0]:
+            requests[0].path.unlink()
             raise OSError("could not save maintenance checkpoint")
         return {"completed": len(requests)}
 
