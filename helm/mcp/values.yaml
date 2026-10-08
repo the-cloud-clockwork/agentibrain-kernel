@@ -61,6 +61,8 @@ tpl:
       # alias it at whatever underlying model you want.
       BRAIN_BRIEF_MODEL: brain-brief
       KB_BRIEF_ROUTE: kb-brief
+      # Refuse to start without MCP_PROXY_API_KEY from the secret below.
+      MCP_AUTH_MODE: required
       MCP_PROXY_PORT: "8080"
       MCP_PROXY_STATELESS: "true"
       LOG_LEVEL: INFO

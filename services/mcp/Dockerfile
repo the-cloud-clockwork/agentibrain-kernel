@@ -27,20 +27,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ /app/server/
 
-COPY <<'ENTRYPOINT' /usr/local/bin/entrypoint.sh
-#!/bin/sh
-set -e
-MCP_PROXY_PORT="${MCP_PROXY_PORT:-8080}"
-MCP_PROXY_STATELESS="${MCP_PROXY_STATELESS:-true}"
-CMD="mcp-proxy --port ${MCP_PROXY_PORT}"
-if [ "${MCP_PROXY_STATELESS}" = "true" ]; then
-    CMD="${CMD} --stateless"
-fi
-if [ -n "${MCP_PROXY_API_KEY}" ]; then
-    CMD="${CMD} --apiKey ${MCP_PROXY_API_KEY}"
-fi
-exec ${CMD} -- python3 /app/server/server.py
-ENTRYPOINT
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 8080
