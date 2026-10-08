@@ -25,6 +25,7 @@ tpl:
       # Protected routes refuse every request until the secret delivers
       # API_KEYS. AUTH_MODE=local is for an unauthenticated local deployment.
       AUTH_MODE: required
+      LOG_LEVEL: INFO
   global:
     environment: dev
     project: agentibrain
