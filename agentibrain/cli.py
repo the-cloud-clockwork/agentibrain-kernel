@@ -767,8 +767,9 @@ def _drain_marker_dir(
     Idempotency-key parity with agentihooks (the key recorded with the first
     POST, else uuid5 of session-type-content) so replays dedupe server-side;
     the original `ts` rides in attrs so brain-api backdates the marker into
-    its original dated files. Unparseable or payload-rejected (400/404/422) files quarantine as .bad; transient
-    failures (network, 5xx, 401/403/429) stay put for the next sync.
+    its original dated files. Unparseable or payload-rejected (400/404/422)
+    files quarantine as .bad; transient failures (network, 5xx, 401/403/429)
+    stay put for the next sync.
     """
     import json as _json
     import uuid as _uuid
