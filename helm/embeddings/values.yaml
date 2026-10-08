@@ -21,7 +21,10 @@ tpl:
     #     Set this ONLY when you have accepted that changing the model drops
     #     every existing embedding to be re-embedded from the vault. Leave
     #     unset in steady state.
-    variables: null
+    variables:
+      # Protected routes refuse every request until the secret delivers
+      # API_KEYS. AUTH_MODE=local is for an unauthenticated local deployment.
+      AUTH_MODE: required
   global:
     environment: dev
     project: agentibrain
@@ -64,7 +67,7 @@ tpl:
     enabled: true
     external:
       enabled: true
-      # Reuse the existing embeddings-secrets (same schema: POSTGRES_URL, LLM_API_*).
+      # Reuse the existing embeddings-secrets (same schema: POSTGRES_URL, LLM_API_*, API_KEYS).
       secretName: embeddings-secrets
   service:
     enabled: true
@@ -88,7 +91,7 @@ tpl:
   # ExternalSecrets (ESO) — disabled by default. Operators with OpenBao /
   # AWS SM / Vault flip enabled and point at their store. Without ESO, create
   # the K8s Opaque Secret manually (POSTGRES_URL, LLM_API_KEY, LLM_API_BASE,
-  # LLM_EMBED_MODEL, EMBEDDINGS_API_KEYS) — see local/k8s-bootstrap.sh.
+  # LLM_EMBED_MODEL, API_KEYS) — see local/k8s-bootstrap.sh.
   externalSecret:                                  # nosecret
     enabled: false                                 # nosecret
     storeName: ""                                  # nosecret

@@ -8,12 +8,10 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture()
 def client(monkeypatch):
-    monkeypatch.setenv("API_KEYS", "")  # disable auth (any token passes)
+    monkeypatch.setenv("AUTH_MODE", "local")
     import main
 
-    # require_api_key declares Authorization as a required header, so send one
-    # even though auth is disabled — otherwise FastAPI 422s before the handler.
-    return TestClient(main.app, headers={"Authorization": "Bearer test"})
+    return TestClient(main.app)
 
 
 def _patch(monkeypatch, *, configured=True, model_dim=3072, schema_dim=3072, db_ok=True):

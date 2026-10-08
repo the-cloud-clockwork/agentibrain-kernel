@@ -8,7 +8,7 @@ set -euo pipefail
 #      EMBEDDINGS_API_KEY) and stores them in local/.k8s-tokens (gitignored).
 #   2. Prints (and optionally executes) `kubectl create secret generic` commands
 #      for the three Opaque Secrets the kernel charts expect:
-#        - embeddings-secrets           (POSTGRES_URL, LLM_API_KEY, LLM_API_BASE, LLM_EMBED_MODEL, EMBEDDINGS_API_KEYS)
+#        - embeddings-secrets           (POSTGRES_URL, LLM_API_KEY, LLM_API_BASE, LLM_EMBED_MODEL, API_KEYS)
 #        - agenticore-secrets           (only needed if you deploy brain-keeper)
 #
 # Usage:
@@ -71,7 +71,7 @@ EMBED_CMD="kubectl -n ${NAMESPACE} create secret generic embeddings-secrets \
   --from-literal=LLM_API_KEY=\"\${LLM_API_KEY:-}\" \
   --from-literal=LLM_API_BASE=\"\${LLM_API_BASE:-}\" \
   --from-literal=LLM_EMBED_MODEL=\"\${LLM_EMBED_MODEL:-text-embedding-3-small}\" \
-  --from-literal=EMBEDDINGS_API_KEYS=\"\$EMBEDDINGS_API_KEY\""
+  --from-literal=API_KEYS=\"\$EMBEDDINGS_API_KEY\""
 
 KEEPER_CMD="kubectl -n ${NAMESPACE} create secret generic agenticore-secrets \
   --from-literal=ANTHROPIC_API_KEY=\"\${ANTHROPIC_API_KEY:?set in env}\" \

@@ -60,6 +60,7 @@ def health():
     except Exception:
         result["vector_count"] = -1
     result["embedding_configured"] = embed.is_configured()
+    result["auth"] = auth.auth_status()
     return result
 
 
