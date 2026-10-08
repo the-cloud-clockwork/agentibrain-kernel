@@ -57,8 +57,8 @@ Set by the compose template and the root `compose.yml`; no flag needed.
 
 | Service | Published on | Why |
 |---|---|---|
-| `postgres`, `redis`, `minio`, `embeddings`, `ollama` | `127.0.0.1` | Reached over the compose network. Nothing outside the machine needs them, and some carry generated default credentials. |
-| `brain-api` (8103), `mcp` (8104) | `${BIND_HOST:-0.0.0.0}` | The two a client-only install has to reach. Set `BIND_HOST=127.0.0.1` to keep them local and front them with a proxy. |
+| `postgres`, `redis`, `minio`, `embeddings`, `ollama`, `mcp` (8104) | `127.0.0.1` | Reached over the compose network. Nothing outside the machine needs them, and some carry generated default credentials. |
+| `brain-api` (8103) | `${BIND_HOST:-0.0.0.0}` | What a client-only install has to reach. Set `BIND_HOST=127.0.0.1` to keep it local and front it with a proxy. |
 
 A bare `HOST:CONTAINER` mapping binds every interface, and Docker's DNAT rules
 sit ahead of a host firewall — which is why the datastores are pinned rather

@@ -464,8 +464,9 @@ Same `compose.yml` works on any Linux box with Docker. Bind the vault to a real 
 **What is reachable, and what is not.** Postgres, Redis, MinIO, embeddings and
 Ollama bind `127.0.0.1` — nothing outside the machine has any business reaching
 them, and several still carry generated default credentials. Only `brain-api`
-(8103) and `mcp` (8104) are published on all interfaces, because a client-only
-install needs exactly those two. Narrow them with `BIND_HOST`:
+(8103) is published on all interfaces, because a client-only install needs it.
+`mcp` (8104) runs without a key in Compose, so it binds loopback only. Narrow
+`brain-api` with `BIND_HOST`:
 
 ```bash
 BIND_HOST=127.0.0.1 docker compose up -d   # loopback only; put a proxy in front
@@ -759,7 +760,7 @@ Scaffold is idempotent. Schema-version mismatch is a hard error unless `--force-
 |---|---|---|
 | `VAULT_ROOT` | `/vault` | Vault mount path inside containers (NFS in K8s, bind mount in Compose) |
 | `KB_ROUTER_TOKEN` / `KB_ROUTER_TOKENS` | **required** | Bearer auth (single token or comma-separated list). brain-api fails closed — every endpoint answers `503` until one is set. `install` generates one, so an empty value means misconfigured, not public. |
-| `BIND_HOST` | `0.0.0.0` | Host interface for the two published services, `brain-api` and `mcp`. Set `127.0.0.1` to keep them local and front them with a proxy. Postgres, redis, minio, embeddings and ollama always bind loopback. |
+| `BIND_HOST` | `0.0.0.0` | Host interface for `brain-api`. Set `127.0.0.1` to keep it local and front it with a proxy. Postgres, redis, minio, embeddings, ollama and the keyless `mcp` always bind loopback. |
 | `EMBEDDINGS_URL` | `http://embeddings:8080` | Embeddings service URL |
 | `EMBEDDINGS_API_KEY` | — | Bearer token for the embeddings service |
 | `INFERENCE_URL` | — | OpenAI-compatible LLM gateway. Empty = deterministic-only ticks. See [`docs/GATEWAY-CONTRACT.md`](docs/GATEWAY-CONTRACT.md) |
