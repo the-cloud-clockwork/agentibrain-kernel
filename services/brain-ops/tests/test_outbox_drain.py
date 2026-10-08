@@ -40,6 +40,15 @@ def test_marker_request_idempotency_parity_with_agentihooks():
     assert body["attrs"]["session_id"] == "s1"
 
 
+def test_marker_request_replays_the_key_recorded_with_the_first_post():
+    recorded = "0123456789abcdef0123456789abcdef"
+    entry = {"type": "lesson", "content": "abc", "session_id": "s1", "idempotency_key": recorded}
+    assert outbox_drain._marker_request(entry)[1] == recorded
+    legacy = uuid.uuid5(uuid.NAMESPACE_URL, "s1-lesson-abc").hex[:32]
+    for bad in ("ABCDEF0123456789ABCDEF0123456789", recorded + "0", "", None):
+        assert outbox_drain._marker_request({**entry, "idempotency_key": bad})[1] == legacy
+
+
 def test_drain_deletes_on_success(tmp_path, monkeypatch):
     _write_entry(tmp_path, "a.json")
     _write_entry(tmp_path, "b.json")

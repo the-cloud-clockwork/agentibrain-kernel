@@ -55,6 +55,22 @@ def test_drain_posts_with_parity_key_and_ts(tmp_path, monkeypatch):
     assert list(tmp_path.glob("*.json")) == []
 
 
+def test_drain_replays_the_key_recorded_with_the_first_post(tmp_path, monkeypatch):
+    recorded = "0123456789abcdef0123456789abcdef"
+    _entry(tmp_path, "a.json", idempotency_key=recorded)
+    _entry(tmp_path, "b.json", idempotency_key="not a key")
+    keys = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        keys.append(headers.get("X-Idempotency-Key"))
+        return _Resp(201)
+
+    monkeypatch.setattr(cli.httpx, "post", fake_post)
+    cli._drain_marker_dir(tmp_path, "http://b", {})
+    legacy = uuid.uuid5(uuid.NAMESPACE_URL, "sess-1-milestone-shipped the thing").hex[:32]
+    assert keys == [recorded, legacy]
+
+
 def test_drain_leaves_files_on_transport_failure(tmp_path, monkeypatch):
     _entry(tmp_path, "a.json")
 

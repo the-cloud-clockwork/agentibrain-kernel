@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -763,8 +764,8 @@ def _drain_marker_dir(
 ) -> dict[str, int]:
     """Replay buffered marker files as POST /marker; delete each on success.
 
-    Idempotency-key parity with agentihooks (uuid5 of session-type-content) so
-    replays dedupe server-side; the original `ts` rides in attrs so brain-api
+    Idempotency-key parity with agentihooks (the key recorded with the first
+    POST, else uuid5 of session-type-content) so replays dedupe server-side; the original `ts` rides in attrs so brain-api
     backdates the marker into its original dated files. Unparseable or
     payload-rejected (400/404/422) files quarantine as .bad; transient
     failures (network, 5xx, 401/403/429) stay put for the next sync.
@@ -807,7 +808,10 @@ def _drain_marker_dir(
             attrs.setdefault("project", entry["project"])
         if entry.get("ts"):
             attrs.setdefault("ts", entry["ts"])
-        idem = _uuid.uuid5(_uuid.NAMESPACE_URL, f"{session_id}-{marker_type}-{content}").hex[:32]
+        idem = entry.get("idempotency_key")
+        if not (isinstance(idem, str) and re.fullmatch(r"[0-9a-f]{32}", idem)):
+            key_src = f"{session_id}-{marker_type}-{content}"
+            idem = _uuid.uuid5(_uuid.NAMESPACE_URL, key_src).hex[:32]
 
         try:
             r = httpx.post(
