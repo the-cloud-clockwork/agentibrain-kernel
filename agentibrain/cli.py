@@ -765,8 +765,8 @@ def _drain_marker_dir(
     """Replay buffered marker files as POST /marker; delete each on success.
 
     Idempotency-key parity with agentihooks (the key recorded with the first
-    POST, else uuid5 of session-type-content) so replays dedupe server-side; the original `ts` rides in attrs so brain-api
-    backdates the marker into its original dated files. Unparseable or
+    POST, else uuid5 of session-type-content) so replays dedupe server-side;
+    the original `ts` rides in attrs so brain-api backdates the marker into its original dated files. Unparseable or
     payload-rejected (400/404/422) files quarantine as .bad; transient
     failures (network, 5xx, 401/403/429) stay put for the next sync.
     """

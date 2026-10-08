@@ -8,8 +8,8 @@ place on HTTP failure so the next pass retries them.
 
 Idempotency-key parity with agentihooks brain_writer_hook: the key the file
 records from its first POST, else uuid5 of "{session_id}-{type}-{content}",
-so a replay dedupes against the original POST. The file's original `ts` rides along in attrs so brain-api backdates
-the marker into its original dated vault files.
+so a replay dedupes against the original POST. The file's original `ts`
+rides along in attrs so brain-api backdates the marker into its original dated vault files.
 
 Safe to run concurrently with an agentihooks session draining the same dirs —
 a file that vanishes mid-pass was simply won by the other drain.
