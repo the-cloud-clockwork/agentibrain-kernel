@@ -23,6 +23,10 @@ Tags are issued by the release workflow, not locally. Cut one by dispatching `.g
   Any other value, empty included, refuses to start. Clients send the key as
   `X-API-Key`. The Compose stack now publishes mcp on `127.0.0.1` only, so
   `BIND_HOST` no longer exposes it to other hosts.
+  **Breaking:** before upgrading a Helm release, add `MCP_PROXY_API_KEY` to the
+  `agentibrain-mcp-secrets` secret, or the pod exits at start and never becomes
+  ready. A bare `docker run` of the image also needs the key, or
+  `MCP_AUTH_MODE=local`.
 - **One brain stack per machine.** `up`, `build` and `install` bring down every other
   compose project holding an `agentibrain_*` container before starting, and `down`
   removes all of them (volumes survive). Discovery follows the stack Docker reports
