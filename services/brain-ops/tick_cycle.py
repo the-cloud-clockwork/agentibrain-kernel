@@ -22,19 +22,67 @@ TICK_CYCLE_MODE selects what the scheduled tick adds around the pipeline:
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
+import re
+import runpy
 import subprocess
 import sys
 import time
+import uuid
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 MODES = ("vault", "workstation")
 TAIL_CHARS = 2000
 QUEUE = Path("brain-feed") / "ticks"
+
+
+WRITER_FDS: ContextVar[tuple[int, ...]] = ContextVar("writer_fds", default=())
+
+
+def _qualify_mount(vault: Path) -> None:
+    if sys.platform != "linux":
+        return
+    mounts = []
+    for line in Path("/proc/self/mountinfo").read_text().splitlines():
+        fields, _, filesystem = line.partition(" - ")
+        parts = fields.split()
+        mount = Path(re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), parts[4]))
+        if vault.resolve().is_relative_to(mount):
+            mounts.append((len(mount.parts), parts[5], filesystem.split()))
+    _, options, filesystem = max(mounts)
+    if filesystem[0] in ("nfs", "nfs4"):
+        options = set(options.split(",") + filesystem[2].split(","))
+        if options & {"nolock", "local_lock=all", "local_lock=flock"}:
+            raise RuntimeError("tick cycle requires server coordinated NFS locking")
+
+
+def _owned(cycle: Callable[..., int]) -> Callable[..., int]:
+    @wraps(cycle)
+    def run(vault: Path, *args, **kwargs) -> int:
+        _qualify_mount(vault)
+        lock_path = vault / QUEUE / ".writer.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as lock:
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                print("tick cycle busy: requests remain pending")
+                return 0
+            token = WRITER_FDS.set((lock.fileno(),))
+            try:
+                return cycle(vault, *args, **kwargs)
+            finally:
+                WRITER_FDS.reset(token)
+                # Closing retains ownership until surviving subprocesses close their copies.
+
+    return run
 
 
 @dataclass(frozen=True)
@@ -49,9 +97,25 @@ class Request:
     data: dict
 
 
-def _run(argv: list[str], stdin=None) -> Step:
+MAINTENANCE_RECEIPT: ContextVar[Path | None] = ContextVar("maintenance_receipt", default=None)
+
+
+def _run(argv: list[str], stdin=None, checkpoint: Path | None = None) -> Step:
+    command = [sys.executable, *argv]
+    if checkpoint is not None:
+        bootstrap = (
+            "import sys; sys.path.insert(0, sys.argv[1]); "
+            "from tick_cycle import _checkpointed; "
+            "sys.exit(_checkpointed(sys.argv[2], sys.argv[3:]))"
+        )
+        command = [sys.executable, "-c", bootstrap, str(HERE), str(checkpoint), *argv]
     proc = subprocess.run(
-        [sys.executable, *argv], stdin=stdin, capture_output=True, text=True, check=False
+        command,
+        stdin=stdin,
+        capture_output=True,
+        text=True,
+        check=False,
+        pass_fds=WRITER_FDS.get(),
     )
     output = proc.stdout + proc.stderr
     sys.stdout.write(output)
@@ -75,7 +139,8 @@ def maintenance(vault: Path, flags: list[str], source: str) -> Step:
             source,
             *flags,
             *no_ai,
-        ]
+        ],
+        checkpoint=MAINTENANCE_RECEIPT.get() if "--dry-run" not in flags else None,
     )
 
 
@@ -118,6 +183,24 @@ def _write(path: Path, data: dict) -> None:
     os.replace(tmp, path)
 
 
+def _checkpointed(receipt: str, argv: list[str]) -> int:
+    sys.argv = argv
+    try:
+        runpy.run_path(argv[0], run_name="__main__")
+    except SystemExit as exc:
+        if exc.code not in (None, 0):
+            return exc.code
+    _write(Path(receipt), {"maintenance": "done"})
+    return 0
+
+
+def _receipt_path(vault: Path, data: dict) -> Path | None:
+    identity = str(data.get("maintenance_receipt", ""))
+    if re.fullmatch(r"[0-9a-f]{32}", identity):
+        return vault / QUEUE / f"{identity}.receipt"
+    return None
+
+
 def _finish(request: Request, data: dict, dest: Path) -> bool:
     try:
         _write(request.path, data)
@@ -155,13 +238,16 @@ def _pending(requested: Path, failed: Path) -> dict[tuple[bool, bool, bool], lis
         if reason:
             _finish(Request(path, {}), {"error_tail": f"unreadable tick request: {reason}"}, failed)
             continue
-        resumed = data.get("maintenance") == "done"
+        receipt = _receipt_path(requested.parent.parent.parent, data)
+        resumed = data.get("maintenance") == "done" or bool(receipt and receipt.is_file())
         kind = (bool(data.get("dry_run")), bool(data.get("no_ai")), resumed)
         buckets.setdefault(kind, []).append(Request(path, data))
     return buckets
 
 
-def _start(requests: list[Request], max_attempts: int, failed: Path) -> tuple[list[Request], dict]:
+def _start(
+    requests: list[Request], max_attempts: int, failed: Path, receipt: str
+) -> tuple[list[Request], dict]:
     counts = {"completed": 0, "failed": 0, "retrying": 0, "stuck": 0}
     live = []
     for request in requests:
@@ -172,6 +258,8 @@ def _start(requests: list[Request], max_attempts: int, failed: Path) -> tuple[li
             counts["failed" if saved else "stuck"] += 1
             continue
         request.data["attempts"] = attempts + 1
+        if receipt:
+            request.data["maintenance_receipt"] = receipt
         if _requeue(request, request.data):
             live.append(request)
         else:
@@ -184,17 +272,27 @@ def _drain_bucket(vault: Path, kind: tuple[bool, bool, bool], requests: list[Req
     dry_run, no_ai, resume = kind
     flags = ["--dry-run"] * dry_run + ["--no-ai"] * no_ai
     max_attempts = int(os.environ.get("TICK_CYCLE_MAX_ATTEMPTS", "10"))
-    live, counts = _start(requests, max_attempts, dirs["failed"])
+    receipt_id = "" if resume or dry_run else uuid.uuid4().hex
+    live, counts = _start(requests, max_attempts, dirs["failed"], receipt_id)
     if not live:
         return counts
 
     def index_started() -> None:
         for request in live:
             request.data["maintenance"] = "done"
-            _requeue(request, request.data)
+            if not _requeue(request, request.data):
+                raise OSError("could not save maintenance checkpoint")
+        for request in live:
+            receipt = _receipt_path(vault, request.data)
+            if receipt:
+                receipt.unlink(missing_ok=True)
 
     print(f"drain: {len(live)} request(s) in one cycle [flags='{' '.join(flags)}']")
-    stage, step = pipeline(vault, flags, "brain-drain", resume, index_started)
+    token = MAINTENANCE_RECEIPT.set(_receipt_path(vault, live[0].data) if receipt_id else None)
+    try:
+        stage, step = pipeline(vault, flags, "brain-drain", resume, index_started)
+    finally:
+        MAINTENANCE_RECEIPT.reset(token)
     tail = step.output[-TAIL_CHARS:]
     for request in live:
         data = dict(request.data)
@@ -215,13 +313,24 @@ def _drain_bucket(vault: Path, kind: tuple[bool, bool, bool], requests: list[Req
     return counts
 
 
+@_owned
 def drain(vault: Path) -> int:
     requested, failed = vault / QUEUE / "requested", vault / QUEUE / "failed"
     for name in ("requested", "completed", "failed"):
         (vault / QUEUE / name).mkdir(parents=True, exist_ok=True)
     totals = {"completed": 0, "failed": 0, "retrying": 0, "stuck": 0}
-    for kind, requests in sorted(_pending(requested, failed).items()):
-        for key, value in _drain_bucket(vault, kind, requests).items():
+    buckets = _pending(requested, failed)
+    held = {r.data.get("maintenance_receipt") for rs in buckets.values() for r in rs}
+    for receipt in [*(vault / QUEUE).glob("*.receipt"), *(vault / QUEUE).glob(".*.receipt.tmp")]:
+        if receipt.name.lstrip(".").split(".")[0] not in held:
+            receipt.unlink(missing_ok=True)
+    for kind, requests in sorted(buckets.items()):
+        try:
+            counts = _drain_bucket(vault, kind, requests)
+        except OSError as exc:
+            print(f"WARN: drain cycle stopped: {exc}")
+            counts = {"stuck": sum(r.path.exists() for r in requests)}
+        for key, value in counts.items():
             totals[key] += value
     print("drain-summary: " + " ".join(f"{k}={v}" for k, v in totals.items()))
     return 0 if totals["failed"] + totals["retrying"] + totals["stuck"] == 0 else 1
@@ -269,6 +378,7 @@ def amygdala(vault: Path) -> Step:
     )
 
 
+@_owned
 def scheduled(vault: Path, mode: str) -> int:
     if mode == "workstation" and not extract(vault).ok:
         print("FAILED: extraction phase")
