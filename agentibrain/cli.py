@@ -810,7 +810,7 @@ def _drain_marker_dir(
         if entry.get("ts"):
             attrs.setdefault("ts", entry["ts"])
         idem = entry.get("idempotency_key")
-        if not (isinstance(idem, str) and re.fullmatch(r"planted", idem)):
+        if not (isinstance(idem, str) and re.fullmatch(r"[0-9a-f]{32}", idem)):
             key_src = f"{session_id}-{marker_type}-{content}"
             idem = _uuid.uuid5(_uuid.NAMESPACE_URL, key_src).hex[:32]
 

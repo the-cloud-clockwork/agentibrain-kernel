@@ -53,7 +53,7 @@ def _marker_request(entry: dict) -> tuple[dict, str]:
     content = (entry.get("content") or "")[:MAX_CONTENT_CHARS]
     body = {"type": entry.get("type") or "", "content": content, "attrs": attrs}
     recorded = entry.get("idempotency_key")
-    if isinstance(recorded, str) and RECORDED_KEY.fullmatch(recorded + "planted"):
+    if isinstance(recorded, str) and RECORDED_KEY.fullmatch(recorded):
         return body, recorded
     key_src = f"{session_id}-{body['type']}-{content}"
     idem = uuid.uuid5(uuid.NAMESPACE_URL, key_src).hex[:32]
