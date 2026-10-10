@@ -1,4 +1,4 @@
-"""A marker replayed from an agentihooks outbox file is written once."""
+"""A marker replayed from an outbox file within brain-api's idempotency window is written once."""
 
 from __future__ import annotations
 
