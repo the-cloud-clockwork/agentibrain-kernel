@@ -30,19 +30,23 @@ def _outbox_drain():
     return module
 
 
-def _sync_drain(outbox: Path, client, monkeypatch) -> dict:
+def _sync_drain(outbox: Path, client, monkeypatch, replies: list) -> dict:
     def post(url, headers=None, json=None, timeout=None):
-        return client.post("/marker", headers=headers, json=json)
+        response = client.post("/marker", headers=headers, json=json)
+        replies.append(response.json())
+        return response
 
     monkeypatch.setattr(cli.httpx, "post", post)
     return cli._drain_marker_dir(outbox, "http://brain", {})
 
 
-def _brain_ops_drain(outbox: Path, client, monkeypatch) -> dict:
+def _brain_ops_drain(outbox: Path, client, monkeypatch, replies: list) -> dict:
     drain = _outbox_drain()
 
     def post(brain_url, token, body, idem):
-        client.post("/marker", headers={"X-Idempotency-Key": idem}, json=body).raise_for_status()
+        response = client.post("/marker", headers={"X-Idempotency-Key": idem}, json=body)
+        response.raise_for_status()
+        replies.append(response.json())
 
     monkeypatch.setattr(drain, "_post_marker", post)
     return drain.drain_dir(outbox, "http://brain", "token")
@@ -62,8 +66,12 @@ def test_replayed_marker_is_not_duplicated(drain, vault, client, tmp_path_factor
     assert first.status_code == 201
     outbox = tmp_path_factory.mktemp("outbox")
     (outbox / "marker.json").write_text(json.dumps(ENTRY))
+    replies = []
 
-    assert drain(outbox, client, monkeypatch)["drained"] == 1
+    assert drain(outbox, client, monkeypatch, replies)["drained"] == 1
     assert list(outbox.iterdir()) == []
-    written = (vault / first.json()["vault_path"]).read_text()
-    assert written.count(ENTRY["content"]) == 1
+    assert [(r.get("idempotent_replay"), r["vault_path"]) for r in replies] == [
+        (True, first.json()["vault_path"])
+    ]
+    written = sum(path.read_text().count(ENTRY["content"]) for path in vault.rglob("*.md"))
+    assert written == 1

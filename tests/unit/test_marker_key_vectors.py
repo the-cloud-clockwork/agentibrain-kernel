@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -11,9 +12,9 @@ import pytest
 from agentibrain import cli
 
 ROOT = Path(__file__).resolve().parents[2]
-VECTORS = json.loads((ROOT / "tests/fixtures/marker-idempotency-vectors.json").read_text())[
-    "vectors"
-]
+VECTORS_FILE = ROOT / "tests/fixtures/marker-idempotency-vectors.json"
+VECTORS_SHA256 = "17dce5bb059043e1df403806e910101b11a7bac1a7399feaf0656d76518789a8"
+VECTORS = json.loads(VECTORS_FILE.read_text())["vectors"]
 
 
 def _outbox_drain():
@@ -34,6 +35,10 @@ def _entry(vector: dict) -> dict:
     if "recorded" in vector:
         entry["idempotency_key"] = vector["recorded"]
     return entry
+
+
+def test_vectors_file_is_the_pinned_copy_shared_with_agentihooks():
+    assert hashlib.sha256(VECTORS_FILE.read_bytes()).hexdigest() == VECTORS_SHA256
 
 
 @pytest.mark.parametrize("vector", VECTORS, ids=[v["name"] for v in VECTORS])
