@@ -1,0 +1,4 @@
+/.github/ @nestorcolt
+/scripts/ci_repository_settings.py @nestorcolt
+/tests/unit/test_ci_runner_policy.py @nestorcolt
+/tests/unit/test_ci_repository_settings.py @nestorcolt
