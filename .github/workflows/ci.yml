@@ -5,6 +5,8 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   contents: read
@@ -136,3 +138,20 @@ jobs:
 
       - name: Pytest (brain-ops service)
         run: python -m pytest -q services/brain-ops/tests
+
+  gate-required:
+    name: Gate — Required
+    if: always()
+    needs: [lint, lint-test, macos-smoke]
+    runs-on: ${{ (github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.actor) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.triggering_actor) || (github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/dev') && github.actor == 'github-merge-queue[bot]' && github.triggering_actor == 'github-merge-queue[bot]') && 'anton-oss-light' || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - name: Every job passed
+        env:
+          EVENT: ${{ github.event_name }}
+          MACOS: ${{ needs.macos-smoke.result }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "event=$EVENT results=$RESULTS"
+          if [[ "$EVENT" != pull_request && "$MACOS" == skipped ]]; then RESULTS="${RESULTS/skipped/success}"; fi
+          for result in $RESULTS; do [[ "$result" == success ]] || exit 1; done

@@ -22,6 +22,7 @@ SELECTOR = (
     [
         ("ci.yml", "lint", "anton-oss-light"),
         ("deploy-assets.yml", "validate", "anton-oss-light"),
+        ("ci.yml", "gate-required", "anton-oss-light"),
         ("runner-security.yml", "settings-audit", "anton-oss-light"),
     ],
 )
