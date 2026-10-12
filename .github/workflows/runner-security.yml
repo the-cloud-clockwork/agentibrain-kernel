@@ -1,0 +1,63 @@
+name: Repository security audit
+
+on:
+  schedule:
+    - cron: '23 7 * * 1'
+  workflow_dispatch:
+    inputs:
+      plant:
+        description: Security fault plant
+        type: choice
+        default: none
+        options: [none, settings-drift]
+
+permissions:
+  contents: read
+
+jobs:
+  settings-audit:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.actor) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.triggering_actor)
+    runs-on: ${{ (github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.actor) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.triggering_actor) || (github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/dev') && github.actor == 'github-merge-queue[bot]' && github.triggering_actor == 'github-merge-queue[bot]') && 'anton-oss-light' || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ secrets.TCC_CI_APP_ID }}
+          private-key: ${{ secrets.TCC_CI_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-administration: read
+      - name: Read back repository security settings
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: python scripts/ci_repository_settings.py --repository "$GITHUB_REPOSITORY" --report repository-security.json
+      - name: Preserve security readback
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repository-security-readback
+          path: repository-security.json
+          if-no-files-found: error
+      - name: Plant repository permissions drift
+        if: inputs.plant == 'settings-drift'
+        run: |
+          python - <<'PY'
+          from scripts.ci_repository_settings import check, read_repository
+          import os
+          snapshot = read_repository(os.environ['GITHUB_REPOSITORY'])
+          snapshot['workflow']['can_approve_pull_request_reviews'] = True
+          problems = check(snapshot)
+          for problem in problems:
+              print(f'::error::{problem}')
+          raise SystemExit(bool(problems))
+          PY
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
