@@ -18,17 +18,24 @@ SELECTOR = (
 
 
 @pytest.mark.parametrize(
-    ("workflow", "job"),
-    [("ci.yml", "lint-test"), ("docker-build.yml", "build"), ("deploy-assets.yml", "validate")],
+    ("workflow", "job", "pool"),
+    [
+        ("ci.yml", "lint", "anton-oss-light"),
+        ("deploy-assets.yml", "validate", "anton-oss-light"),
+        ("runner-security.yml", "runner-policy", "anton-oss-light"),
+        ("runner-security.yml", "settings-audit", "anton-oss-light"),
+    ],
 )
-def test_linux_checks_use_the_protected_trusted_selector(workflow, job):
+def test_linux_checks_use_the_protected_trusted_selector(workflow, job, pool):
     data = yaml.safe_load((WORKFLOWS / workflow).read_text())
-    assert data["jobs"][job]["runs-on"] == SELECTOR
+    assert data["jobs"][job]["runs-on"] == SELECTOR.replace("'anton-oss'", f"'{pool}'")
 
 
 @pytest.mark.parametrize(
     ("workflow", "job", "runner"),
     [
+        ("ci.yml", "lint-test", "ubuntu-latest"),
+        ("docker-build.yml", "build", "ubuntu-latest"),
         ("ci.yml", "macos-smoke", "macos-latest"),
         ("pages.yml", "build", "ubuntu-latest"),
         ("pages.yml", "deploy", "ubuntu-latest"),

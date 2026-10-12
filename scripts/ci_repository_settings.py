@@ -67,10 +67,13 @@ def main(argv: list[str] | None = None) -> int:
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--repository")
     source.add_argument("--snapshot", type=Path)
+    parser.add_argument("--report", type=Path)
     args = parser.parse_args(argv)
     snapshot = (
         json.loads(args.snapshot.read_text()) if args.snapshot else read_repository(args.repository)
     )
+    if args.report:
+        args.report.write_text(json.dumps(snapshot, indent=2) + "\n")
     problems = check(snapshot)
     print(f"Repository security: {len(problems)} problems")
     for problem in problems:

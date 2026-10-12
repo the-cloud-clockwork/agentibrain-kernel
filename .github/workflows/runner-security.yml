@@ -1,7 +1,7 @@
 name: Runner security
 
 on:
-  pull_request:
+  pull_request_target:
     branches: [dev, main]
   push:
     branches: [dev, main]
@@ -20,11 +20,12 @@ permissions:
 
 jobs:
   runner-policy:
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.actor) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.triggering_actor) || (github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/dev') && github.actor == 'github-merge-queue[bot]' && github.triggering_actor == 'github-merge-queue[bot]') && 'anton-oss-light' || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           path: candidate
           persist-credentials: false
       - uses: actions/checkout@v4
@@ -67,12 +68,12 @@ jobs:
 
   settings-audit:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.actor) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.triggering_actor)
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.actor) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.triggering_actor) || (github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/dev') && github.actor == 'github-merge-queue[bot]' && github.triggering_actor == 'github-merge-queue[bot]') && 'anton-oss-light' || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || 'dev' }}
+          ref: dev
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
@@ -88,7 +89,14 @@ jobs:
       - name: Read back repository security settings
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
-        run: python scripts/ci_repository_settings.py --repository "$GITHUB_REPOSITORY"
+        run: python scripts/ci_repository_settings.py --repository "$GITHUB_REPOSITORY" --report repository-security.json
+      - name: Preserve security readback
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: repository-security-readback
+          path: repository-security.json
+          if-no-files-found: error
       - name: Plant repository permissions drift
         if: inputs.plant == 'settings-drift'
         run: |
