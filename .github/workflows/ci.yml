@@ -57,8 +57,10 @@ jobs:
 
       - name: Install package (editable) + dev extras
         run: |
-          python -m pip install --upgrade pip
-          pip install -e '.[dev]'
+          python -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/venv/bin/python" -m pip install -e '.[dev]'
 
       - name: Import smoke
         run: python -c "import agentibrain; print(agentibrain.__version__)"
