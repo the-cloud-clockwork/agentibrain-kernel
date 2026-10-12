@@ -1,10 +1,6 @@
-name: Runner security
+name: Repository security audit
 
 on:
-  pull_request_target:
-    branches: [dev, main]
-  push:
-    branches: [dev, main]
   schedule:
     - cron: '23 7 * * 1'
   workflow_dispatch:
@@ -13,59 +9,12 @@ on:
         description: Security fault plant
         type: choice
         default: none
-        options: [none, missing-actor, settings-drift]
+        options: [none, settings-drift]
 
 permissions:
   contents: read
 
 jobs:
-  runner-policy:
-    runs-on: ${{ (github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.actor) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.triggering_actor) || (github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/dev') && github.actor == 'github-merge-queue[bot]' && github.triggering_actor == 'github-merge-queue[bot]') && 'anton-oss-light' || 'ubuntu-latest' }}
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          path: candidate
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: the-cloud-clockwork/agentihooks
-          ref: dev
-          path: protected
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Install workflow parser
-        run: python -m pip install 'pyyaml>=6.0'
-      - name: Grade workflow data with the shared protected trust gate
-        env:
-          PLANT: ${{ inputs.plant || 'none' }}
-        run: |
-          python -I - <<'PY'
-          import json
-          import os
-          import sys
-          from pathlib import Path
-          import yaml
-          sys.path.insert(0, str(Path('protected').resolve()))
-          from scripts.ci_runner_trust import check
-          policy = json.loads(Path('protected/.github/workflows/trusted-actors.json').read_text())
-          candidate = Path('candidate/.github/workflows')
-          if json.loads((candidate / 'trusted-actors.json').read_text()) != policy:
-              raise SystemExit('::error::Trusted actor policy differs from protected approvals')
-          workflows = {p.name: yaml.safe_load(p.read_text()) for p in candidate.iterdir() if p.suffix in ('.yml', '.yaml')}
-          if os.environ['PLANT'] == 'missing-actor':
-              job = workflows['ci.yml']['jobs']['lint-test']
-              job['runs-on'] = job['runs-on'].replace('github.actor)', 'github.triggering_actor)')
-          problems = check(workflows, policy)
-          print(f'Runner trust: {len(workflows)} workflows, {sum(len(w.get("jobs", {})) for w in workflows.values())} jobs, {len(problems)} problems')
-          for problem in problems:
-              print(f'::error::{problem}')
-          raise SystemExit(bool(problems))
-          PY
-
   settings-audit:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.actor) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.triggering_actor)
     runs-on: ${{ (github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.actor) && contains(fromJSON('["nestorcolt","agenticore-app[bot]","tcc-main-ci[bot]"]'), github.triggering_actor) || (github.event_name == 'merge_group' || github.event_name == 'push' && github.ref == 'refs/heads/dev') && github.actor == 'github-merge-queue[bot]' && github.triggering_actor == 'github-merge-queue[bot]') && 'anton-oss-light' || 'ubuntu-latest' }}

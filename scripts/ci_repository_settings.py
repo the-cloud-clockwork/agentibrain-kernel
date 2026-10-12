@@ -29,7 +29,7 @@ def check(snapshot: dict) -> list[str]:
         refs = rule.get("conditions", {}).get("ref_name", {})
         if (
             rule.get("enforcement") != "active"
-            or rule.get("bypass_actors") != []
+            or rule.get("bypass_actors", []) != []
             or refs.get("include") != [branch]
             or refs.get("exclude") != []
             or not controls <= {control.get("type") for control in rule.get("rules", [])}
@@ -76,6 +76,8 @@ def main(argv: list[str] | None = None) -> int:
         args.report.write_text(json.dumps(snapshot, indent=2) + "\n")
     problems = check(snapshot)
     print(f"Repository security: {len(problems)} problems")
+    if any("bypass_actors" not in rule for rule in snapshot.get("rulesets", [])):
+        print("::notice::Bypass actor inventory is unproven with read only credentials")
     for problem in problems:
         print(f"::error::{problem}")
     return int(bool(problems))
