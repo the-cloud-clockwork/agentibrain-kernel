@@ -50,6 +50,12 @@ def test_current_security_settings_pass(snapshot):
     assert settings.check(snapshot) == []
 
 
+def test_read_only_ruleset_responses_omit_bypass_inventory(snapshot):
+    for rule in snapshot["rulesets"]:
+        rule.pop("bypass_actors")
+    assert settings.check(snapshot) == []
+
+
 @pytest.mark.parametrize(
     ("section", "key", "value", "message"),
     [
