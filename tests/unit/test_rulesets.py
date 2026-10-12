@@ -33,6 +33,7 @@ def test_dev_requires_pull_requests_without_bypass():
     }
     assert rules["pull_request"]["parameters"]["required_approving_review_count"] == 0
     assert rules["pull_request"]["parameters"]["allowed_merge_methods"] == ["squash"]
+    assert rules["pull_request"]["parameters"]["require_code_owner_review"] is False
 
 
 def test_dev_requires_the_ci_gate_and_merges_through_the_queue():
@@ -42,7 +43,9 @@ def test_dev_requires_the_ci_gate_and_merges_through_the_queue():
     params = rules["required_status_checks"]["parameters"]
     assert params["strict_required_status_checks_policy"] is False
     assert params["do_not_enforce_on_create"] is False
-    assert [check["context"] for check in params["required_status_checks"]] == ["Gate — Required"]
+    assert params["required_status_checks"] == [
+        {"context": "Gate — Required", "integration_id": 15368}
+    ]
     assert ci["jobs"]["gate-required"]["name"] == "Gate — Required"
     assert rules["merge_queue"]["parameters"]["merge_method"] == "SQUASH"
     assert rules["merge_queue"]["parameters"]["grouping_strategy"] == "ALLGREEN"
@@ -55,3 +58,6 @@ def test_ci_gate_fans_in_every_job_and_runs_even_when_one_fails():
 
     assert set(gate["needs"]) == set(jobs) - {"gate-required"}
     assert gate["if"] == "always()"
+    assert [name for name, job in jobs.items() if "if" in job and name != "gate-required"] == [
+        "macos-smoke"
+    ]
