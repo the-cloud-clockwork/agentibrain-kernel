@@ -21,6 +21,8 @@ SELECTOR = (
     ("workflow", "job", "pool"),
     [
         ("ci.yml", "lint", "anton-oss-light"),
+        ("ci.yml", "lint-test", "anton-oss"),
+        ("docker-build.yml", "build", "anton-oss"),
         ("deploy-assets.yml", "validate", "anton-oss-light"),
         ("ci.yml", "gate-required", "anton-oss-light"),
         ("runner-security.yml", "settings-audit", "anton-oss-light"),
@@ -34,8 +36,6 @@ def test_linux_checks_use_the_protected_trusted_selector(workflow, job, pool):
 @pytest.mark.parametrize(
     ("workflow", "job", "runner"),
     [
-        ("ci.yml", "lint-test", "ubuntu-latest"),
-        ("docker-build.yml", "build", "ubuntu-latest"),
         ("ci.yml", "macos-smoke", "macos-latest"),
         ("pages.yml", "build", "ubuntu-latest"),
         ("pages.yml", "deploy", "ubuntu-latest"),
