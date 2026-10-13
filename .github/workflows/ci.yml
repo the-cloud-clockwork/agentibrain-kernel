@@ -21,7 +21,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install linter
-        run: python -m pip install 'ruff>=0.5' 'PyYAML>=6.0'
+        run: |
+          python -m venv "$RUNNER_TEMP/runner-trust-venv"
+          "$RUNNER_TEMP/runner-trust-venv/bin/python" -m pip install 'ruff>=0.5' 'PyYAML>=6.0'
+          echo "$RUNNER_TEMP/runner-trust-venv/bin" >> "$GITHUB_PATH"
       - name: Check out protected runner trust gate
         uses: actions/checkout@v4
         with:
