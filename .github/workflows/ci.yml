@@ -7,6 +7,7 @@ on:
     branches: [main, dev]
   merge_group:
     types: [checks_requested]
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -20,7 +21,25 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install linter
-        run: python -m pip install 'ruff>=0.5'
+        run: |
+          python -m venv "$RUNNER_TEMP/runner-trust-venv"
+          "$RUNNER_TEMP/runner-trust-venv/bin/python" -m pip install 'ruff>=0.5' 'PyYAML>=6.0'
+          echo "$RUNNER_TEMP/runner-trust-venv/bin" >> "$GITHUB_PATH"
+      - name: Check out protected runner trust gate
+        uses: actions/checkout@v4
+        with:
+          repository: the-cloud-clockwork/agentihooks
+          ref: dev
+          path: .runner-trust
+          persist-credentials: false
+      - name: Require trusted actors before private runner admission
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/runner-trust"
+          mkdir -p "$root/.github/workflows"
+          cp -R .github/workflows/. "$root/.github/workflows/"
+          cp .runner-trust/.github/workflows/trusted-actors.json "$root/.github/workflows/"
+          python -I .runner-trust/scripts/ci_runner_trust.py --root "$root"
       - name: Ruff lint
         run: python -m ruff check agentibrain tests scripts
       - name: Ruff format check
