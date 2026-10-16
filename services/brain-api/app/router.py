@@ -40,6 +40,7 @@ LOCAL_READ_ROOTS = [
 ]
 
 URL_RE = re.compile(r"https?://[^\s)\]>,]+")
+REFERENCE_RE = re.compile(r"(?:https?://|(?:www\.)?github\.com/)[^\s)\]>,]+", re.IGNORECASE)
 REPO_RE = re.compile(r"(?:https?://)?github\.com/[\w.-]+/[\w.-]+(?:\.git)?", re.IGNORECASE)
 GITHUB_LINK_RE = re.compile(
     r"^(?:https?://)?(?:www\.)?github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?([/?#].*)?$",
@@ -437,20 +438,15 @@ async def _write_vault_note(
 def _ground_repository_references(
     message: str, repository: str, semantic: str, extractables: list[dict]
 ) -> tuple[str, list[dict]]:
-    supplied = {match.group(0).rstrip(".,;:!?") for match in URL_RE.finditer(message)}
+    supplied = {match.group(0).rstrip(".,;:!?") for match in REFERENCE_RE.finditer(message)}
     supplied.add(repository)
     grounded = [
         ex
         for ex in extractables
-        if (
-            (ex.get("type") or "").lower() != "repo"
-            and not GITHUB_LINK_RE.fullmatch(ex.get("value") or "")
-        )
-        or ex.get("value") in supplied
+        if (ex.get("type") or "").lower() not in ("repo", "url") or ex.get("value") in supplied
     ]
-    for match in URL_RE.finditer(semantic):
-        link = match.group(0).rstrip(".,;:!?")
-        if GITHUB_LINK_RE.fullmatch(link) and link not in supplied:
+    for match in REFERENCE_RE.finditer(semantic):
+        if match.group(0).rstrip(".,;:!?") not in supplied:
             return message, grounded
     return semantic, grounded
 
