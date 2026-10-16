@@ -95,5 +95,42 @@ def test_classifier_cannot_authorize_repository_clone(vault: Path, ingest, monke
 
     assert clones == ([REPO] if repository else [])
     assert data["errors"] == []
-    assert data["page_refs"] == [{"url": unrelated, "repository": unrelated}]
-    assert unrelated in (vault / data["obsidian_path"]).read_text()
+    assert data["page_refs"] == []
+    assert unrelated not in (vault / data["obsidian_path"]).read_text()
+
+
+@pytest.mark.parametrize("endpoint", ["/ingest", "/ingest/message"])
+@pytest.mark.parametrize("kind", ["repo", "url"])
+def test_ingestion_omits_invented_repository_links(
+    vault: Path, ingest, monkeypatch, endpoint, kind
+):
+    from unittest.mock import AsyncMock
+
+    from app import router
+
+    supplied = f"{REPO}/pull/94"
+    invented = "https://github.com/metrics/metrics/pull/12"
+    message = f"Metrics repair completed. Evidence: {supplied}"
+    monkeypatch.setattr(
+        router,
+        "_call_router_llm",
+        AsyncMock(
+            return_value={
+                "semantic_text": f"Metrics repair completed. Source: {invented}",
+                "extractables": [
+                    {"type": kind, "value": invented},
+                    {"type": "repo", "value": supplied},
+                ],
+            }
+        ),
+    )
+
+    data, clones = ingest(message, endpoint=endpoint)
+
+    assert clones == []
+    assert data["errors"] == []
+    assert data["page_refs"] == [{"url": supplied, "repository": REPO}]
+    note = (vault / data["obsidian_path"]).read_text()
+    assert supplied in note
+    assert invented not in note
+    assert invented not in data["semantic_text_preview"]
