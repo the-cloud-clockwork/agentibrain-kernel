@@ -99,7 +99,7 @@ def test_classifier_cannot_authorize_repository_clone(vault: Path, ingest, monke
     assert unrelated not in (vault / data["obsidian_path"]).read_text()
 
 
-@pytest.mark.parametrize("endpoint", ["/ingest", "/ingest/message"])
+@pytest.mark.parametrize("endpoint", ["/ingest", "/ingest_with_files"])
 @pytest.mark.parametrize("kind", ["repo", "url"])
 def test_ingestion_omits_invented_repository_links(
     vault: Path, ingest, monkeypatch, endpoint, kind
