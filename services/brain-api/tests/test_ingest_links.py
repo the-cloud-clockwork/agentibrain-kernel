@@ -101,15 +101,16 @@ def test_classifier_cannot_authorize_repository_clone(vault: Path, ingest, monke
 
 @pytest.mark.parametrize("endpoint", ["/ingest", "/ingest_with_files"])
 @pytest.mark.parametrize("kind", ["repo", "url"])
+@pytest.mark.parametrize("scheme", ["https://", ""])
 def test_ingestion_omits_invented_repository_links(
-    vault: Path, ingest, monkeypatch, endpoint, kind
+    vault: Path, ingest, monkeypatch, endpoint, kind, scheme
 ):
     from unittest.mock import AsyncMock
 
     from app import router
 
     supplied = f"{REPO}/pull/94"
-    invented = "https://github.com/metrics/metrics/pull/12"
+    invented = f"{scheme}github.com/metrics/metrics/pull/12"
     message = f"Metrics repair completed. Evidence: {supplied}"
     monkeypatch.setattr(
         router,
@@ -133,4 +134,55 @@ def test_ingestion_omits_invented_repository_links(
     note = (vault / data["obsidian_path"]).read_text()
     assert supplied in note
     assert invented not in note
+    assert invented not in data["semantic_text_preview"]
+
+
+@pytest.mark.parametrize("scheme", ["https://", ""])
+def test_classifier_preserves_supplied_repository_links(vault: Path, ingest, monkeypatch, scheme):
+    from unittest.mock import AsyncMock
+
+    from app import router
+
+    link = f"{scheme}github.com/the-cloud-clockwork/agentihooks/pull/94"
+    monkeypatch.setattr(
+        router,
+        "_call_router_llm",
+        AsyncMock(
+            return_value={
+                "semantic_text": "Metrics repair completed",
+                "extractables": [{"type": "repo", "value": link}],
+            }
+        ),
+    )
+
+    data, clones = ingest(f"Metrics repair completed. Evidence: {link}")
+
+    assert clones == []
+    assert data["errors"] == []
+    assert data["page_refs"] == [{"url": link, "repository": REPO}]
+    assert link in (vault / data["obsidian_path"]).read_text()
+
+
+def test_ingestion_omits_invented_non_github_repository_link(vault: Path, ingest, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from app import router
+
+    invented = "https://gitlab.com/metrics/metrics"
+    monkeypatch.setattr(
+        router,
+        "_call_router_llm",
+        AsyncMock(
+            return_value={
+                "semantic_text": f"Metrics repair source: {invented}",
+                "extractables": [{"type": "repo", "value": invented}],
+            }
+        ),
+    )
+
+    data, clones = ingest("Metrics repair completed")
+
+    assert clones == []
+    assert data["page_refs"] == []
+    assert invented not in (vault / data["obsidian_path"]).read_text()
     assert invented not in data["semantic_text_preview"]
