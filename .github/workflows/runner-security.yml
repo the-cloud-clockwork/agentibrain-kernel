@@ -9,7 +9,7 @@ on:
         description: Security fault plant
         type: choice
         default: none
-        options: [none, settings-drift]
+        options: [none, settings-drift, required_status_checks, pull_request, merge_queue]
 
 permissions:
   contents: read
@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: dev
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || 'dev' }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
@@ -46,18 +46,25 @@ jobs:
           name: repository-security-readback
           path: repository-security.json
           if-no-files-found: error
-      - name: Plant repository permissions drift
-        if: inputs.plant == 'settings-drift'
+      - name: Plant repository settings drift
+        if: inputs.plant != '' && inputs.plant != 'none'
         run: |
           python - <<'PY'
-          from scripts.ci_repository_settings import check, read_repository
+          from scripts.ci_repository_settings import check
+          import json
           import os
-          snapshot = read_repository(os.environ['GITHUB_REPOSITORY'])
-          snapshot['workflow']['can_approve_pull_request_reviews'] = True
+          from pathlib import Path
+          snapshot = json.loads(Path('repository-security.json').read_text())
+          plant = os.environ['PLANT']
+          if plant == 'settings-drift':
+              snapshot['workflow']['can_approve_pull_request_reviews'] = True
+          else:
+              dev = next(rule for rule in snapshot['rulesets'] if rule['name'] == 'dev-no-delete')
+              dev['rules'] = [rule for rule in dev['rules'] if rule['type'] != plant]
           problems = check(snapshot)
           for problem in problems:
               print(f'::error::{problem}')
           raise SystemExit(bool(problems))
           PY
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PLANT: ${{ inputs.plant }}

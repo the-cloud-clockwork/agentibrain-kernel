@@ -14,7 +14,17 @@ def check(snapshot: dict) -> list[str]:
     if workflow.get("can_approve_pull_request_reviews") is not False:
         problems.append("workflow tokens must not approve reviews")
     required = {
-        "dev-no-delete": ("refs/heads/dev", {"deletion", "non_fast_forward"}),
+        "dev-no-delete": (
+            "refs/heads/dev",
+            {
+                "deletion",
+                "non_fast_forward",
+                "required_linear_history",
+                "pull_request",
+                "required_status_checks",
+                "merge_queue",
+            },
+        ),
         "main-prod-lockdown": (
             "~DEFAULT_BRANCH",
             {"deletion", "non_fast_forward", "required_linear_history", "pull_request"},
@@ -35,6 +45,40 @@ def check(snapshot: dict) -> list[str]:
             or not controls <= {control.get("type") for control in rule.get("rules", [])}
         ):
             problems.append(f"{name} protection differs from the approved settings")
+        if name == "dev-no-delete":
+            parameters = {
+                "pull_request": {
+                    "allowed_merge_methods": ["squash"],
+                    "required_approving_review_count": 0,
+                    "dismiss_stale_reviews_on_push": False,
+                    "require_code_owner_review": False,
+                    "require_last_push_approval": False,
+                    "required_review_thread_resolution": False,
+                },
+                "required_status_checks": {
+                    "required_status_checks": [
+                        {"context": "Gate — Required", "integration_id": 15368}
+                    ],
+                    "strict_required_status_checks_policy": False,
+                    "do_not_enforce_on_create": False,
+                },
+                "merge_queue": {
+                    "check_response_timeout_minutes": 60,
+                    "grouping_strategy": "ALLGREEN",
+                    "max_entries_to_build": 5,
+                    "max_entries_to_merge": 5,
+                    "merge_method": "SQUASH",
+                    "min_entries_to_merge": 1,
+                    "min_entries_to_merge_wait_minutes": 0,
+                },
+            }
+            for control in rule.get("rules", []):
+                expected = parameters.get(control.get("type"), {})
+                actual = control.get("parameters", {})
+                if any(actual.get(key) != value for key, value in expected.items()):
+                    problems.append(
+                        f"{name} {control['type']} parameters differ from the approved settings"
+                    )
     return problems
 
 

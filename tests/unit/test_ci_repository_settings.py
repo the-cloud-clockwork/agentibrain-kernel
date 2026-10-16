@@ -23,13 +23,7 @@ def snapshot():
             "can_approve_pull_request_reviews": False,
         },
         "rulesets": [
-            {
-                "name": "dev-no-delete",
-                "enforcement": "active",
-                "bypass_actors": [],
-                "conditions": {"ref_name": {"include": ["refs/heads/dev"], "exclude": []}},
-                "rules": [{"type": "deletion"}, {"type": "non_fast_forward"}],
-            },
+            json.loads((ROOT / ".github/rulesets/dev-no-delete.json").read_text()),
             {
                 "name": "main-prod-lockdown",
                 "enforcement": "active",
@@ -85,6 +79,50 @@ def test_branch_protection_drift_fails(snapshot, index, change):
         rule["conditions"]["ref_name"]["include"] = ["refs/heads/other"]
     else:
         rule["conditions"]["ref_name"]["exclude"] = ["refs/heads/main"]
+    assert settings.check(snapshot)
+
+
+@pytest.mark.parametrize(
+    "control",
+    [
+        "deletion",
+        "non_fast_forward",
+        "required_linear_history",
+        "pull_request",
+        "required_status_checks",
+        "merge_queue",
+    ],
+)
+def test_missing_dev_control_fails(snapshot, control):
+    dev = snapshot["rulesets"][0]
+    dev["rules"] = [rule for rule in dev["rules"] if rule["type"] != control]
+    assert settings.check(snapshot)
+
+
+@pytest.mark.parametrize(
+    ("control", "parameter", "value"),
+    [
+        ("pull_request", "allowed_merge_methods", ["merge", "squash"]),
+        ("pull_request", "required_approving_review_count", 1),
+        ("required_status_checks", "required_status_checks", []),
+        (
+            "required_status_checks",
+            "required_status_checks",
+            [{"context": "Other check", "integration_id": 15368}],
+        ),
+        (
+            "required_status_checks",
+            "required_status_checks",
+            [{"context": "Gate — Required", "integration_id": 1}],
+        ),
+        ("required_status_checks", "do_not_enforce_on_create", True),
+        ("merge_queue", "merge_method", "MERGE"),
+        ("merge_queue", "grouping_strategy", "HEADGREEN"),
+    ],
+)
+def test_dev_rule_parameters_drift_fails(snapshot, control, parameter, value):
+    rule = next(rule for rule in snapshot["rulesets"][0]["rules"] if rule["type"] == control)
+    rule["parameters"][parameter] = value
     assert settings.check(snapshot)
 
 
