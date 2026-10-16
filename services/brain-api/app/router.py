@@ -434,6 +434,27 @@ async def _write_vault_note(
         return None
 
 
+def _ground_repository_references(
+    message: str, repository: str, semantic: str, extractables: list[dict]
+) -> tuple[str, list[dict]]:
+    supplied = {match.group(0).rstrip(".,;:!?") for match in URL_RE.finditer(message)}
+    supplied.add(repository)
+    grounded = [
+        ex
+        for ex in extractables
+        if (
+            (ex.get("type") or "").lower() != "repo"
+            and not GITHUB_LINK_RE.fullmatch(ex.get("value") or "")
+        )
+        or ex.get("value") in supplied
+    ]
+    for match in URL_RE.finditer(semantic):
+        link = match.group(0).rstrip(".,;:!?")
+        if GITHUB_LINK_RE.fullmatch(link) and link not in supplied:
+            return message, grounded
+    return semantic, grounded
+
+
 async def ingest_message(message: str, repository: str = "") -> IngestResult:
     """Main entry point — classify the message and fan out to vault."""
     batch_id = uuid4().hex[:12]
@@ -444,6 +465,9 @@ async def ingest_message(message: str, repository: str = "") -> IngestResult:
     title = (classification.get("title") or "").strip() or "ingest"
     tags = classification.get("tags") or []
     extractables = classification.get("extractables") or []
+    semantic, extractables = _ground_repository_references(
+        message, repository, semantic, extractables
+    )
 
     vault_paths: list[str] = []
     extractables, page_refs = _split_page_refs(extractables)
