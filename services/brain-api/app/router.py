@@ -237,8 +237,8 @@ def _split_page_refs(extractables: list[dict]) -> tuple[list[dict], list[dict]]:
         value = ex.get("value") or ""
         etype = (ex.get("type") or "").lower()
         page_repo = _github_page_repo(value) if etype in ("repo", "url") else None
-        if page_repo:
-            page_refs.append({"url": value, "repository": page_repo})
+        if page_repo or etype == "repo":
+            page_refs.append({"url": value, "repository": page_repo or value})
         else:
             rest.append(ex)
     return rest, page_refs
@@ -472,9 +472,7 @@ async def ingest_message(message: str, repository: str = "") -> IngestResult:
     vault_paths: list[str] = []
     extractables, page_refs = _split_page_refs(extractables)
 
-    extract_tasks = []
-    if repository:
-        extract_tasks.append(_clone_and_read_repo(repository, "", batch_id))
+    extract_tasks = [_clone_and_read_repo(repository, "", batch_id)] if repository else []
     for ex in extractables:
         etype = (ex.get("type") or "").lower()
         value = ex.get("value") or ""
@@ -483,8 +481,6 @@ async def ingest_message(message: str, repository: str = "") -> IngestResult:
             extract_tasks.append(_fetch_youtube_transcript(value, hint, batch_id))
         elif etype == "url":
             extract_tasks.append(_fetch_url(value, hint, batch_id))
-        elif etype == "repo":
-            page_refs.append({"url": value, "repository": value})
         elif etype == "local_path":
             extract_tasks.append(_read_local_file(value, hint, batch_id))
         else:
