@@ -40,6 +40,7 @@ LOCAL_READ_ROOTS = [
 ]
 
 URL_RE = re.compile(r"https?://[^\s)\]>,]+")
+REFERENCE_RE = re.compile(r"(?:https?://|(?:www\.)?github\.com/)[^\s)\]>,]+", re.IGNORECASE)
 REPO_RE = re.compile(r"(?:https?://)?github\.com/[\w.-]+/[\w.-]+(?:\.git)?", re.IGNORECASE)
 GITHUB_LINK_RE = re.compile(
     r"^(?:https?://)?(?:www\.)?github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?([/?#].*)?$",
@@ -237,8 +238,8 @@ def _split_page_refs(extractables: list[dict]) -> tuple[list[dict], list[dict]]:
         value = ex.get("value") or ""
         etype = (ex.get("type") or "").lower()
         page_repo = _github_page_repo(value) if etype in ("repo", "url") else None
-        if page_repo:
-            page_refs.append({"url": value, "repository": page_repo})
+        if page_repo or etype == "repo":
+            page_refs.append({"url": value, "repository": page_repo or value})
         else:
             rest.append(ex)
     return rest, page_refs
@@ -434,6 +435,22 @@ async def _write_vault_note(
         return None
 
 
+def _ground_repository_references(
+    message: str, repository: str, semantic: str, extractables: list[dict]
+) -> tuple[str, list[dict]]:
+    supplied = {match.group(0).rstrip(".,;:!?") for match in REFERENCE_RE.finditer(message)}
+    supplied.add(repository)
+    grounded = [
+        ex
+        for ex in extractables
+        if (ex.get("type") or "").lower() not in ("repo", "url") or ex.get("value") in supplied
+    ]
+    for match in REFERENCE_RE.finditer(semantic):
+        if match.group(0).rstrip(".,;:!?") not in supplied:
+            return message, grounded
+    return semantic, grounded
+
+
 async def ingest_message(message: str, repository: str = "") -> IngestResult:
     """Main entry point — classify the message and fan out to vault."""
     batch_id = uuid4().hex[:12]
@@ -444,13 +461,14 @@ async def ingest_message(message: str, repository: str = "") -> IngestResult:
     title = (classification.get("title") or "").strip() or "ingest"
     tags = classification.get("tags") or []
     extractables = classification.get("extractables") or []
+    semantic, extractables = _ground_repository_references(
+        message, repository, semantic, extractables
+    )
 
     vault_paths: list[str] = []
     extractables, page_refs = _split_page_refs(extractables)
 
-    extract_tasks = []
-    if repository:
-        extract_tasks.append(_clone_and_read_repo(repository, "", batch_id))
+    extract_tasks = [_clone_and_read_repo(repository, "", batch_id)] if repository else []
     for ex in extractables:
         etype = (ex.get("type") or "").lower()
         value = ex.get("value") or ""
@@ -459,8 +477,6 @@ async def ingest_message(message: str, repository: str = "") -> IngestResult:
             extract_tasks.append(_fetch_youtube_transcript(value, hint, batch_id))
         elif etype == "url":
             extract_tasks.append(_fetch_url(value, hint, batch_id))
-        elif etype == "repo":
-            page_refs.append({"url": value, "repository": value})
         elif etype == "local_path":
             extract_tasks.append(_read_local_file(value, hint, batch_id))
         else:
