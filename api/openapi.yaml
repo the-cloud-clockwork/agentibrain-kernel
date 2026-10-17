@@ -326,6 +326,8 @@ paths:
                         target_brain: { type: string }
                         session_title: { type: string }
                         query: { type: string }
+        "401":
+          description: Missing or unknown bearer.
         "403":
           description: The bearer is not a router token.
 

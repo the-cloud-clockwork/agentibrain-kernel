@@ -103,6 +103,14 @@ def test_a_worker_token_cannot_read_denials(monkeypatch, tmp_path):
     assert client.get("/denials", headers={"Authorization": "Bearer worker-a"}).status_code == 403
 
 
+def test_a_cross_scope_probe_of_denials_is_recorded(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+
+    assert client.get("/denials", headers={"Authorization": "Bearer worker-b"}).status_code == 403
+    [row] = _denials(client)
+    assert row["query"] == "/denials"
+
+
 def test_router_tokens_stay_unscoped(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
 

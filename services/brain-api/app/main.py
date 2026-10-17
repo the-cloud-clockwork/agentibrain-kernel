@@ -128,7 +128,9 @@ def require_token(
         raise HTTPException(status_code=403, detail=f"token names brain {brain}, not this brain")
 
 
-def require_router_token(authorization: str | None = Header(None)) -> None:
+def require_router_token(
+    authorization: str | None = Header(None), _: None = Depends(require_token)
+) -> None:
     if _bearer(authorization) not in KB_ROUTER_TOKENS:
         raise HTTPException(status_code=403, detail="denials are served to router tokens only")
 
