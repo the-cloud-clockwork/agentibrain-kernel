@@ -16,19 +16,29 @@ on:
         options: [patch, minor, major]
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
     environment: release
     steps:
+      - name: Create release token
+        uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ secrets.TCC_CI_APP_ID }}
+          private-key: ${{ secrets.TCC_CI_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-actions: write
+
       - uses: actions/checkout@v4
         with:
           ref: dev
           fetch-depth: 0
-          token: ${{ secrets.ORG_GITHUB_TOKEN || github.token }}
+          token: ${{ steps.app.outputs.token }}
 
       - name: Compute next version
         id: version
@@ -66,7 +76,7 @@ jobs:
 
       - name: Create GitHub Release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           gh release create "v${{ steps.version.outputs.next }}" \
             --repo "${{ github.repository }}" \
@@ -76,7 +86,7 @@ jobs:
 
       - name: Dispatch publish-pypi at the new tag
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           TAG="v${{ steps.version.outputs.next }}"
           gh workflow run publish-pypi.yml --repo "${{ github.repository }}" --ref "$TAG"
