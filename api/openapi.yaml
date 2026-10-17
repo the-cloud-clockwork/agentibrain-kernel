@@ -295,6 +295,42 @@ paths:
                     type: array
                     items: { type: object }
 
+  /denials:
+    get:
+      summary: Cross scope query denials, served to router tokens only.
+      description: >
+        A worker token (KB_WORKER_TOKENS, brain_id=token) naming a brain other than
+        BRAIN_ID is refused with 403, and the denial is recorded here.
+      parameters:
+        - name: since_ms
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        "200":
+          description: Denials at or after since_ms.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  brain_id: { type: string }
+                  denials:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        denial_id: { type: string }
+                        at_ms: { type: integer }
+                        requester_scope: { type: string }
+                        target_brain: { type: string }
+                        session_title: { type: string }
+                        query: { type: string }
+        "401":
+          description: Missing or unknown bearer.
+        "403":
+          description: The bearer is not a router token.
+
   /signal:
     get:
       summary: SSE stream of emergency signals (Phase 7).
