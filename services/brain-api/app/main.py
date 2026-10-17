@@ -9,6 +9,7 @@ Endpoints:
   POST /index_artifact                 — embed + index an artifact (called by artifact-store)
   GET  /feed                           — hot arcs + inject blocks + intent
   GET  /signal                         — current amygdala signal (single file)
+  GET  /denials                        — cross scope query denials (router tokens only)
   POST /marker                         — emit lesson/milestone/signal/decision
   POST /tick                           — request a manual agentibrain tick
   GET  /tick/{job_id}                  — look up tick status
@@ -39,6 +40,7 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+    Request,
     UploadFile,
 )
 from fastapi import (
@@ -46,7 +48,7 @@ from fastapi import (
 )
 from starlette.concurrency import run_in_threadpool
 
-from . import pipeline, vault_reader
+from . import pipeline, scope, vault_reader
 from .feed import VAULT_ROOT, feed_payload
 from .markers import MarkerError, write_marker
 from .router import IngestResult, ingest_message
@@ -91,7 +93,11 @@ def _purge_idempotency() -> None:
         _idempotency_cache.pop(k, None)
 
 
-def require_token(authorization: str | None = Header(None)) -> None:
+def require_token(
+    request: Request,
+    authorization: str | None = Header(None),
+    x_session_title: str | None = Header(None, alias="X-Session-Title"),
+) -> None:
     # Fail closed. An unconfigured token set used to mean "serve everything to
     # anyone", which is the worst possible reading of a missing credential:
     # the vault, the feed and the marker endpoints all answered unauthenticated.
@@ -108,8 +114,21 @@ def require_token(authorization: str | None = Header(None)) -> None:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="missing bearer token")
     token = authorization.split(" ", 1)[1].strip()
-    if token not in KB_ROUTER_TOKENS:
+    if token in KB_ROUTER_TOKENS:
+        return
+    brain = scope.worker_brain(token)
+    if brain is None:
         raise HTTPException(status_code=401, detail="invalid token")
+    if brain != scope.BRAIN_ID:
+        scope.record_denial(brain, request.url.path, x_session_title or "")
+        raise HTTPException(status_code=403, detail=f"token names brain {brain}, not this brain")
+
+
+def require_router_token(
+    authorization: str | None = Header(None), _: None = Depends(require_token)
+) -> None:
+    if authorization.split(" ", 1)[1].strip() not in KB_ROUTER_TOKENS:
+        raise HTTPException(status_code=403, detail="denials are served to router tokens only")
 
 
 app = FastAPI(title="agentibrain brain-api", version="0.3.0")
@@ -500,6 +519,14 @@ def feed(_: None = Depends(require_token)) -> dict:
 def signal(_: None = Depends(require_token)) -> dict:
     """Current amygdala signal. Absent file -> active=false, severity=null."""
     return read_signal()
+
+
+@app.get("/denials")
+def denials(
+    since_ms: int = Query(0, ge=0),
+    _: None = Depends(require_router_token),
+) -> dict:
+    return {"brain_id": scope.BRAIN_ID, "denials": scope.denials_since(since_ms)}
 
 
 def _hash_marker_body(marker_type: str, content: str, attrs: dict) -> str:
