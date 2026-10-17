@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 _MODULES = [
@@ -107,3 +108,19 @@ def test_router_tokens_stay_unscoped(monkeypatch, tmp_path):
 
     assert client.get("/feed", headers={"Authorization": f"Bearer {ROUTER}"}).status_code == 200
     assert _denials(client) == []
+
+
+def test_worker_tokens_without_a_brain_id_refuse_to_start(monkeypatch):
+    monkeypatch.setenv("KB_WORKER_TOKENS", "hive-a=worker-a")
+    monkeypatch.delenv("BRAIN_ID", raising=False)
+
+    with pytest.raises(RuntimeError, match="BRAIN_ID"):
+        importlib.reload(importlib.import_module("app.scope"))
+
+
+def test_one_token_naming_two_brains_refuses_to_start(monkeypatch):
+    monkeypatch.setenv("BRAIN_ID", "hive-a")
+    monkeypatch.setenv("KB_WORKER_TOKENS", "hive-a=shared,hive-b=shared")
+
+    with pytest.raises(RuntimeError, match="two brains"):
+        importlib.reload(importlib.import_module("app.scope"))

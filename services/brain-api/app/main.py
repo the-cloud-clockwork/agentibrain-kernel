@@ -93,11 +93,7 @@ def _purge_idempotency() -> None:
         _idempotency_cache.pop(k, None)
 
 
-def require_token(
-    request: Request,
-    authorization: str | None = Header(None),
-    x_session_title: str | None = Header(None, alias="X-Session-Title"),
-) -> None:
+def _bearer(authorization: str | None) -> str:
     # Fail closed. An unconfigured token set used to mean "serve everything to
     # anyone", which is the worst possible reading of a missing credential:
     # the vault, the feed and the marker endpoints all answered unauthenticated.
@@ -113,7 +109,15 @@ def require_token(
         )
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="missing bearer token")
-    token = authorization.split(" ", 1)[1].strip()
+    return authorization.split(" ", 1)[1].strip()
+
+
+def require_token(
+    request: Request,
+    authorization: str | None = Header(None),
+    x_session_title: str | None = Header(None, alias="X-Session-Title"),
+) -> None:
+    token = _bearer(authorization)
     if token in KB_ROUTER_TOKENS:
         return
     brain = scope.worker_brain(token)
@@ -124,10 +128,8 @@ def require_token(
         raise HTTPException(status_code=403, detail=f"token names brain {brain}, not this brain")
 
 
-def require_router_token(
-    authorization: str | None = Header(None), _: None = Depends(require_token)
-) -> None:
-    if authorization.split(" ", 1)[1].strip() not in KB_ROUTER_TOKENS:
+def require_router_token(authorization: str | None = Header(None)) -> None:
+    if _bearer(authorization) not in KB_ROUTER_TOKENS:
         raise HTTPException(status_code=403, detail="denials are served to router tokens only")
 
 
