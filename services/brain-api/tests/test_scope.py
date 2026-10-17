@@ -49,7 +49,9 @@ def _denials(client: TestClient, since_ms: int = 0) -> list[dict]:
 def test_a_same_scope_query_is_allowed_and_not_recorded(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
 
-    response = client.get("/vault/search", params={"q": "x"}, headers={"Authorization": "Bearer worker-a"})
+    response = client.get(
+        "/vault/search", params={"q": "x"}, headers={"Authorization": "Bearer worker-a"}
+    )
 
     assert response.status_code == 200
     assert _denials(client) == []
@@ -67,7 +69,14 @@ def test_a_cross_scope_query_is_denied_and_recorded(monkeypatch, tmp_path):
     assert response.status_code == 403
     assert "hive-b" in response.text
     [row] = _denials(client)
-    assert set(row) == {"denial_id", "at_ms", "requester_scope", "target_brain", "session_title", "query"}
+    assert set(row) == {
+        "denial_id",
+        "at_ms",
+        "requester_scope",
+        "target_brain",
+        "session_title",
+        "query",
+    }
     assert row["requester_scope"] == "hive-b"
     assert row["target_brain"] == "hive-a"
     assert row["session_title"] == "fix the feed"
