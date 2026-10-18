@@ -46,13 +46,17 @@ services:
       start_period: 10s
 
   redis:
-    image: redis:7-alpine
+    image: redis:7
     container_name: agentibrain_redis
     restart: unless-stopped
     # Agent sessions and test runs on this host share the port; no client may wipe the swarm and inbox state.
-    command: ["redis-server", "--appendonly", "yes", "--user", "default", "on", "nopass", "~*", "&*", "+@all", "-flushall", "-flushdb"]
+    command: ["bash", "/compose/redis/start.sh"]
+    env_file:
+      - path: ${SWARM_REDIS_ENV_FILE:-${HOME}/.agentihooks/swarm-stack/.env}
+        required: false
     volumes:
       - redis-data:/data
+      - ./local/redis:/compose/redis:ro
     ports:
       - "127.0.0.1:${PORT_REDIS:-6379}:6379"
     healthcheck:
