@@ -91,6 +91,7 @@ def test_tick_drain_annotates_failed_requests():
 
 def test_redis_refuses_flush_commands_to_every_client():
     command = _services()["redis"]["command"]
-    user = command[command.index("--user") + 1 :]
-    assert user[:2] == ["default", "on"]
-    assert {"-flushall", "-flushdb"} <= set(user)
+    assert command == ["bash", "/compose/redis/start.sh"]
+    startup = (COMPOSE.parent / "local" / "redis" / "start.sh").read_text()
+    assert "user default on nopass ~* &* +@all -flushall -flushdb" in startup
+    assert "user swarm on #%s ~* &* +@all -flushall -flushdb" in startup
