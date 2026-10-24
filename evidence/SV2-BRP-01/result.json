@@ -1,0 +1,52 @@
+{
+  "package": "SV2-BRP-01",
+  "repository": "agentibrain-kernel",
+  "gate": "G5",
+  "state": "code accepted in CI; live evidence pending gate G5",
+  "evidence_kind": "mocked fixture",
+  "tested_commit": "cdb27d9a1e1f813e0926db3a60ab47bc249288ad",
+  "fixture": {
+    "path": "services/brain-ops/tests/fixtures/sv2_brp01_sessions.json",
+    "sha256": "009d37e475ef40a9009764d912f9110e5632180717457f0abdcad4155da07e30",
+    "contents": "same-project simultaneous unrelated tasks, linked attempts across worktrees and installations, legacy session with no canonical project"
+  },
+  "runs": {
+    "red": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40132102565",
+    "green": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40133075448"
+  },
+  "cases": {
+    "T-SV2-BRP-01-A": [
+      "test_unrelated_tasks_in_one_project_stay_separate_and_attempts_link (two independent fixtures)",
+      "test_task_arc_carries_canonical_project_and_provenance"
+    ],
+    "T-SV2-BRP-01-B": [
+      "test_legacy_session_stays_unattributed_beside_the_hottest_project",
+      "test_unattributed_sessions_never_merge_across_worktrees",
+      "test_a_shared_task_id_without_a_project_does_not_merge_worktrees",
+      "test_extract_leaves_canonical_project_unknown"
+    ],
+    "T-SV2-BRP-01-C": [
+      "test_replay_in_any_order_gives_identical_arcs",
+      "test_replaying_a_window_rewrites_the_same_stubs",
+      "test_task_arc_id_survives_a_later_linked_attempt"
+    ]
+  },
+  "measurement": {
+    "name": "arc_grouping_ambiguities",
+    "fixture_value": {"total": 1, "merges": 0, "unattributed": 1},
+    "reported_by": "cluster.py main, stderr line per run"
+  },
+  "interfaces": {
+    "session_fields_consumed": ["project_id", "task_id", "work_thread_id", "git_branch", "branch", "worktree", "cwd", "harness", "installation", "session_id"],
+    "arc_frontmatter_added": ["task_id", "grouping_generation", "grouping_basis", "provenance"],
+    "grouping_generation": 2
+  },
+  "rollback": {
+    "action": "BRAIN_ARC_GROUPING=legacy restores grouping generation 1; existing arc files are untouched",
+    "rehearsal": "test_legacy_generation_rollback_restores_basename_grouping (unit level, mocked)"
+  },
+  "limitations": [
+    "extract.py reads Claude transcripts only and has no canonical project, task or installation source, so its sessions stay unattributed until SV2-SES-05 and the session interface supply those fields",
+    "a backfilled attempt that starts before the earliest known attempt changes the task arc date prefix; the new arc is the superseding grouping decision"
+  ]
+}
