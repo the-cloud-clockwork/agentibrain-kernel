@@ -151,23 +151,25 @@ def attribution(sess: dict) -> str:
 
 
 def grouping_key(sess: dict) -> tuple[str, str, str]:
-    if thread := thread_of(sess):
-        return ("task", attribution(sess), thread)
-    if project := attribution(sess):
+    project = attribution(sess)
+    if project and (thread := thread_of(sess)):
+        return ("task", project, thread)
+    if project:
         return ("project", project, "")
     return (UNATTRIBUTED, "", sess.get("worktree") or sess.get("cwd") or sess["session_id"])
 
 
 def grouping_basis(group: list[dict]) -> str:
-    if thread_of(group[0]):
+    if grouping_key(group[0])[0] == "task":
         return "task"
     return "time-window" if len(group) > 1 else "single"
 
 
-def arc_grouping_ambiguities(groups: list[list[dict]]) -> int:
-    """Heuristic time-window merges plus sessions left without a canonical project."""
+def arc_grouping_ambiguities(groups: list[list[dict]]) -> dict[str, int]:
+    """Heuristic time-window merges and sessions left without a canonical project."""
     merges = sum(len(g) - 1 for g in groups if grouping_basis(g) == "time-window")
-    return merges + sum(1 for g in groups for s in g if not attribution(s))
+    unattributed = sum(1 for g in groups for s in g if not attribution(s))
+    return {"total": merges + unattributed, "merges": merges, "unattributed": unattributed}
 
 
 def classify_region(group: list[dict]) -> str:
@@ -229,9 +231,8 @@ def compute_heat(group: list[dict], now: datetime) -> int:
 def compute_cluster_id(group: list[dict], first_prompt: str) -> str:
     """Stable deterministic id: a task arc hashes (project, thread) so later attempts
     keep it; any other arc hashes its sorted session ids."""
-    thread = "" if _legacy() else thread_of(group[0])
-    if thread:
-        key = "\n".join(["task", attribution(group[0]), thread])
+    if not _legacy() and grouping_key(group[0])[0] == "task":
+        key = "\n".join(grouping_key(group[0]))
     else:
         key = "\n".join(sorted(s["session_id"] for s in group))
     h = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
@@ -530,7 +531,12 @@ def main() -> int:
     now = datetime.now(timezone.utc)
     groups = group_sessions(sessions)
     clusters = [build_cluster(g, now) for g in groups]
-    print(f"arc_grouping_ambiguities={arc_grouping_ambiguities(groups)}", file=sys.stderr)
+    ambiguities = arc_grouping_ambiguities(groups)
+    print(
+        f"arc_grouping_ambiguities={ambiguities['total']} merges={ambiguities['merges']} "
+        f"unattributed={ambiguities['unattributed']}",
+        file=sys.stderr,
+    )
 
     out_dir = Path(args.out_dir)
 

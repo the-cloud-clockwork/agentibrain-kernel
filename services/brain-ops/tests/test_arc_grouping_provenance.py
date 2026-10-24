@@ -43,6 +43,10 @@ def _sessions(suffix: str = "") -> list[dict]:
     return sessions
 
 
+def _by_id(session_id: str) -> dict:
+    return next(s for s in _sessions() if s["session_id"] == session_id)
+
+
 def _members(groups: list[list[dict]]) -> list[list[str]]:
     return sorted(sorted(s["session_id"] for s in g) for g in groups)
 
@@ -93,7 +97,10 @@ def test_legacy_session_stays_unattributed_beside_the_hottest_project(tmp_path):
     groups = cluster.group_sessions(sessions)
     legacy = next(g for g in groups if g[0]["session_id"] == "s-legacy")
     arc = cluster.build_cluster(legacy, NOW)
+    hottest = max((cluster.build_cluster(g, NOW) for g in groups), key=lambda a: a["heat"])
 
+    assert hottest["project"] == FIXTURE["project_id"]
+    assert hottest["heat"] > arc["heat"]
     assert sessions == before
     assert legacy == [s for s in sessions if s["session_id"] == "s-legacy"]
     assert arc["project"] == cluster.UNATTRIBUTED
@@ -104,15 +111,26 @@ def test_legacy_session_stays_unattributed_beside_the_hottest_project(tmp_path):
 
 
 def test_unattributed_sessions_never_merge_across_worktrees():
-    a = {**_sessions()[3], "session_id": "u-1", "cwd": "/home/a/dev/agentihooks"}
+    a = {**_by_id("s-legacy"), "session_id": "u-1", "cwd": "/home/a/dev/agentihooks"}
     b = {**a, "session_id": "u-2", "cwd": "/home/b/dev/agentihooks"}
     same = {**a, "session_id": "u-3", "start": a["end"], "end": "2026-10-20T10:40:00+00:00"}
 
     assert _members(cluster.group_sessions([a, b, same])) == [["u-1", "u-3"], ["u-2"]]
 
 
+def test_a_shared_task_id_without_a_project_does_not_merge_worktrees():
+    a = {**_by_id("s-legacy"), "session_id": "u-1", "task_id": "t-1", "cwd": "/home/a/x"}
+    b = {**a, "session_id": "u-2", "cwd": "/home/b/x"}
+
+    groups = cluster.group_sessions([a, b])
+
+    assert _members(groups) == [["u-1"], ["u-2"]]
+    assert {cluster.build_cluster(g, NOW)["project"] for g in groups} == {cluster.UNATTRIBUTED}
+    assert len({cluster.build_cluster(g, NOW)["cluster_id"] for g in groups}) == 2
+
+
 def test_attributed_sessions_without_a_task_fall_back_to_the_time_window():
-    base = {k: v for k, v in _sessions()[0].items() if k != "task_id"}
+    base = {k: v for k, v in _by_id("s-alpha-1").items() if k != "task_id"}
     near = {
         **base,
         "session_id": "p-2",
@@ -134,7 +152,7 @@ def test_attributed_sessions_without_a_task_fall_back_to_the_time_window():
 
 
 def test_arc_grouping_ambiguities_counts_heuristic_merges_and_unattributed_sessions():
-    base = {k: v for k, v in _sessions()[0].items() if k != "task_id"}
+    base = {k: v for k, v in _by_id("s-alpha-1").items() if k != "task_id"}
     near = {
         **base,
         "session_id": "p-2",
@@ -142,9 +160,19 @@ def test_arc_grouping_ambiguities_counts_heuristic_merges_and_unattributed_sessi
         "end": "2026-10-20T11:10:00+00:00",
     }
 
-    assert cluster.arc_grouping_ambiguities(cluster.group_sessions(_sessions())) == 1
-    assert cluster.arc_grouping_ambiguities(cluster.group_sessions([base, near])) == 1
-    assert cluster.arc_grouping_ambiguities(cluster.group_sessions(_sessions()[:3])) == 0
+    attributed = [s for s in _sessions() if s.get("project_id")]
+
+    assert cluster.arc_grouping_ambiguities(cluster.group_sessions(_sessions())) == {
+        "total": 1,
+        "merges": 0,
+        "unattributed": 1,
+    }
+    assert cluster.arc_grouping_ambiguities(cluster.group_sessions([base, near])) == {
+        "total": 1,
+        "merges": 1,
+        "unattributed": 0,
+    }
+    assert cluster.arc_grouping_ambiguities(cluster.group_sessions(attributed))["total"] == 0
 
 
 def test_replay_in_any_order_gives_identical_arcs():
@@ -161,10 +189,24 @@ def test_replay_in_any_order_gives_identical_arcs():
     assert view(first) == view(second)
 
 
+def test_replaying_a_window_rewrites_the_same_stubs(tmp_path):
+    def write(sessions):
+        for g in cluster.group_sessions(sessions):
+            cluster.write_stub(cluster.build_cluster(g, NOW), tmp_path)
+        return sorted(p.name for p in tmp_path.glob("*.md"))
+
+    first = write(_sessions())
+    interrupted = _sessions()[:2]
+    write(interrupted)
+    replayed = write(_sessions())
+
+    assert first == replayed
+    assert len(first) == 3
+
+
 def test_task_arc_id_survives_a_later_linked_attempt():
-    sessions = _sessions()
-    only_first = cluster.group_sessions([sessions[0]])
-    with_retry = cluster.group_sessions([sessions[0], sessions[2]])
+    only_first = cluster.group_sessions([_by_id("s-alpha-1")])
+    with_retry = cluster.group_sessions([_by_id("s-alpha-1"), _by_id("s-alpha-2")])
 
     assert (
         cluster.build_cluster(only_first[0], NOW)["cluster_id"]
@@ -200,5 +242,5 @@ def test_extract_leaves_canonical_project_unknown(tmp_path):
 
     assert summary["project_id"] is None
     assert summary["project"] == "agentihooks"
-    assert summary["worktree"] == "/home/someone/dev/agentihooks"
+    assert summary["cwd"] == "/home/someone/dev/agentihooks"
     assert summary["harness"] == "claude"

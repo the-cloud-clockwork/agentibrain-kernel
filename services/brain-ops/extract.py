@@ -177,7 +177,6 @@ def process_session(jsonl_path: Path, since: datetime, until: datetime) -> dict 
         "project": project_name(cwd),
         "project_id": None,
         "cwd": cwd,
-        "worktree": cwd,
         "harness": "claude",
         "git_branch": git_branch,
         "start": first_ts.isoformat(),
