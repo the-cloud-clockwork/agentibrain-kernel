@@ -113,8 +113,18 @@ def test_unattributed_sessions_never_merge_across_worktrees():
 
 def test_attributed_sessions_without_a_task_fall_back_to_the_time_window():
     base = {k: v for k, v in _sessions()[0].items() if k != "task_id"}
-    near = {**base, "session_id": "p-2", "start": "2026-10-20T11:00:00+00:00", "end": "2026-10-20T11:10:00+00:00"}
-    far = {**base, "session_id": "p-3", "start": "2026-10-20T20:00:00+00:00", "end": "2026-10-20T20:10:00+00:00"}
+    near = {
+        **base,
+        "session_id": "p-2",
+        "start": "2026-10-20T11:00:00+00:00",
+        "end": "2026-10-20T11:10:00+00:00",
+    }
+    far = {
+        **base,
+        "session_id": "p-3",
+        "start": "2026-10-20T20:00:00+00:00",
+        "end": "2026-10-20T20:10:00+00:00",
+    }
     base["session_id"] = "p-1"
 
     groups = cluster.group_sessions([far, near, base])
@@ -125,7 +135,12 @@ def test_attributed_sessions_without_a_task_fall_back_to_the_time_window():
 
 def test_arc_grouping_ambiguities_counts_heuristic_merges_and_unattributed_sessions():
     base = {k: v for k, v in _sessions()[0].items() if k != "task_id"}
-    near = {**base, "session_id": "p-2", "start": "2026-10-20T11:00:00+00:00", "end": "2026-10-20T11:10:00+00:00"}
+    near = {
+        **base,
+        "session_id": "p-2",
+        "start": "2026-10-20T11:00:00+00:00",
+        "end": "2026-10-20T11:10:00+00:00",
+    }
 
     assert cluster.arc_grouping_ambiguities(cluster.group_sessions(_sessions())) == 1
     assert cluster.arc_grouping_ambiguities(cluster.group_sessions([base, near])) == 1
@@ -139,7 +154,9 @@ def test_replay_in_any_order_gives_identical_arcs():
     second = [cluster.build_cluster(g, NOW) for g in cluster.group_sessions(shuffled)]
 
     def view(arcs):
-        return sorted((a["cluster_id"], tuple(s["session_id"] for s in a["sessions"])) for a in arcs)
+        return sorted(
+            (a["cluster_id"], tuple(s["session_id"] for s in a["sessions"])) for a in arcs
+        )
 
     assert view(first) == view(second)
 
@@ -149,8 +166,9 @@ def test_task_arc_id_survives_a_later_linked_attempt():
     only_first = cluster.group_sessions([sessions[0]])
     with_retry = cluster.group_sessions([sessions[0], sessions[2]])
 
-    assert cluster.build_cluster(only_first[0], NOW)["cluster_id"] == (
-        cluster.build_cluster(with_retry[0], NOW)["cluster_id"]
+    assert (
+        cluster.build_cluster(only_first[0], NOW)["cluster_id"]
+        == (cluster.build_cluster(with_retry[0], NOW)["cluster_id"])
     )
 
 
