@@ -193,15 +193,49 @@ def test_replaying_a_window_rewrites_the_same_stubs(tmp_path):
     def write(sessions):
         for g in cluster.group_sessions(sessions):
             cluster.write_stub(cluster.build_cluster(g, NOW), tmp_path)
-        return sorted(p.name for p in tmp_path.glob("*.md"))
+        return {
+            p.name: [ln for ln in p.read_text().splitlines() if not ln.startswith("created:")]
+            for p in tmp_path.glob("*.md")
+        }
 
     first = write(_sessions())
-    interrupted = _sessions()[:2]
-    write(interrupted)
+    stale = write([_by_id("s-alpha-1"), _by_id("s-beta-1")])
     replayed = write(_sessions())
 
-    assert first == replayed
+    assert stale == first
+    assert replayed == first
     assert len(first) == 3
+
+
+def test_a_stale_window_cannot_shrink_a_newer_task_arc(tmp_path):
+    full = cluster.group_sessions([_by_id("s-alpha-1"), _by_id("s-alpha-2")])[0]
+    path = cluster.write_stub(cluster.build_cluster(full, NOW), tmp_path)
+    stale = cluster.group_sessions([_by_id("s-alpha-1")])[0]
+
+    assert cluster.write_stub(cluster.build_cluster(stale, NOW), tmp_path) == path
+    assert cluster.recorded_sessions(path) == {"s-alpha-1", "s-alpha-2"}
+
+
+def test_unambiguous_attributed_sessions_group_as_generation_one_did(monkeypatch):
+    base = {k: v for k, v in _by_id("s-alpha-1").items() if k != "task_id"}
+    near = {**base, "session_id": "p-2", "start": "2026-10-20T11:00:00+00:00"}
+    near["end"] = "2026-10-20T11:10:00+00:00"
+    far = {**base, "session_id": "p-3", "start": "2026-10-20T20:00:00+00:00"}
+    far["end"] = "2026-10-20T20:10:00+00:00"
+    sessions = [far, near, {**base, "session_id": "p-1"}]
+
+    current = _members(cluster.group_sessions(sessions))
+    monkeypatch.setenv("BRAIN_ARC_GROUPING", "legacy")
+
+    assert _members(cluster.group_sessions(sessions)) == current
+
+
+def test_missing_harness_and_installation_are_written_as_unknown(tmp_path):
+    arc = cluster.build_cluster([_by_id("s-legacy")], NOW)
+
+    text = cluster.write_stub(arc, tmp_path).read_text()
+
+    assert '"harness": "unknown", "installation": "unknown"' in text
 
 
 def test_task_arc_id_survives_a_later_linked_attempt():

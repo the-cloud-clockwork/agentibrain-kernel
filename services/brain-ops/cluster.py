@@ -281,9 +281,26 @@ def find_sibling_arcs(
     return siblings
 
 
+def recorded_sessions(path: Path) -> set[str]:
+    """Source sessions an existing stub already records, so a stale replay cannot shrink it."""
+    if not path.exists():
+        return set()
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    if "source_sessions:" not in lines:
+        return set()
+    recorded: set[str] = set()
+    for line in lines[lines.index("source_sessions:") + 1 :]:
+        if not line.startswith("  - "):
+            break
+        recorded.add(line[4:].strip())
+    return recorded
+
+
 def write_stub(cluster: dict, out_dir: Path, clusters_root: Path | None = None) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True, mode=0o777)
     path = out_dir / f"{cluster['cluster_id']}.md"
+    if {s["session_id"] for s in cluster["sessions"]} < recorded_sessions(path):
+        return path
     siblings = find_sibling_arcs(cluster["sessions"], clusters_root, cluster["cluster_id"])
 
     group = cluster["sessions"]
@@ -470,8 +487,8 @@ def _provenance(sess: dict) -> str:
             "session": sess["session_id"],
             "branch": sess.get("git_branch") or sess.get("branch") or "",
             "worktree": sess.get("worktree") or sess.get("cwd") or "",
-            "harness": sess.get("harness") or "",
-            "installation": sess.get("installation") or "",
+            "harness": sess.get("harness") or "unknown",
+            "installation": sess.get("installation") or "unknown",
         }
     )
 
