@@ -282,7 +282,7 @@ def find_sibling_arcs(
 
 
 def recorded_sessions(path: Path) -> set[str]:
-    """Source sessions an existing stub already records, so a stale replay cannot shrink it."""
+    """Session ids already recorded in an existing stub's source_sessions."""
     if not path.exists():
         return set()
     lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()

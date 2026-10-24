@@ -1,0 +1,16 @@
+{
+  "case": "T-SV2-BRP-01-A",
+  "evidence_kind": "mocked fixture",
+  "tested_commit": "dff42d933862aed84e8457d595558889b5b77f48",
+  "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40133590018",
+  "fixture": {
+    "path": "services/brain-ops/tests/fixtures/sv2_brp01_sessions.json",
+    "sha256": "009d37e475ef40a9009764d912f9110e5632180717457f0abdcad4155da07e30",
+    "contents": "same-project simultaneous unrelated tasks, linked attempts across worktrees and installations, legacy session with no canonical project"
+  },
+  "tests": [
+    "test_unrelated_tasks_in_one_project_stay_separate_and_attempts_link (two independent fixtures)",
+    "test_task_arc_carries_canonical_project_and_provenance"
+  ],
+  "outcome": "passed"
+}

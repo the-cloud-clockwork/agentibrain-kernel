@@ -12,7 +12,10 @@
   },
   "runs": {
     "red": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40132102565",
-    "green": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40133590018"
+    "green": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40133590018",
+    "red_commit": "cfb90701953f1603a1e380e57784aa6c7055f501",
+    "red_note": "tests-only head (test commit plus its format commit) on dev code",
+    "green_commit": "dff42d933862aed84e8457d595558889b5b77f48"
   },
   "cases": {
     "T-SV2-BRP-01-A": [
@@ -71,5 +74,10 @@
     "extract.py reads Claude transcripts only and has no canonical project, task or installation source, so its sessions stay unattributed until SV2-SES-05 and the session interface supply those fields",
     "a backfilled attempt that starts before the earliest known attempt changes the task arc date prefix; the new arc is the superseding grouping decision"
   ],
-  "compatibility": "test_unambiguous_attributed_sessions_group_as_generation_one_did; stub project field now holds the canonical id or unattributed"
+  "compatibility": "test_unambiguous_attributed_sessions_group_as_generation_one_did; stub project field now holds the canonical id or unattributed",
+  "case_files": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ]
 }
