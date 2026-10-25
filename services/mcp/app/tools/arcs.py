@@ -32,6 +32,7 @@ def register(mcp: FastMCP):
         top_k: int = 5,
         min_heat: int = 0,
         min_score: float = 0.0,
+        project: str = "",
     ) -> str:
         """Semantic search over brain arcs using pgvector.
 
@@ -51,6 +52,9 @@ def register(mcp: FastMCP):
                       sitting in frontal-lobe/conscious can read 0 here. Raise it
                       only when you deliberately want the stale-heat cut.
             min_score: Minimum cosine similarity (0.0-1.0). Default 0.0.
+            project: Canonical project id, e.g. "github.com/owner/repo". Only
+                     arcs grouped under exactly that project are returned; a
+                     text mention of the repo is not a match. Empty searches all.
         """
         if not EMBED_KEY:
             return json.dumps({"error": "EMBEDDINGS_API_KEY not set"})
@@ -61,6 +65,8 @@ def register(mcp: FastMCP):
             "limit": max(top_k * 3, 15),
             "min_score": min_score,
         }
+        if project:
+            body["project_id"] = project
         raw = await http_request(
             "POST",
             f"{EMBED_URL.rstrip('/')}/search",
@@ -94,6 +100,7 @@ def register(mcp: FastMCP):
                     "heat": heat,
                     "status": meta.get("status", ""),
                     "path": meta.get("path", ""),
+                    "projects": meta.get("projects", []),
                     "score": r.get("score", 0.0),
                     "preview": (r.get("text_preview") or "")[:200],
                 }

@@ -553,7 +553,7 @@ def write_knowledge_feeds(
     project_feed.write_snapshots(
         brain_feed_dir,
         project_feed.build_snapshots(arcs, vault_root, now),
-        project_feed.fleet_warnings(arcs, now),
+        project_feed.fleet_warnings(arcs, now, vault_root),
     )
     return lesson_stats
 

@@ -189,6 +189,7 @@ services:
           python3 /app/extract.py --since "$${ex_since}" \
             --min-turns "$${EXTRACT_MIN_TURNS:-5}" \
             --projects-dir "$${PROJECTS_DIR}" \
+            --codex-dir "$${EXTRACT_CODEX_DIR:-/shared/.codex/sessions}" \
             | python3 /app/cluster.py --out-dir "$${ex_outdir}" \
             || echo "[tick-cron] extraction failed (continuing)"
         }
@@ -283,6 +284,7 @@ services:
       EXTRACT_SINCE: ${EXTRACT_SINCE:-26h}
       EXTRACT_MIN_TURNS: "${EXTRACT_MIN_TURNS:-5}"
       EXTRACT_PROJECTS_DIR: /shared/.claude/projects
+      EXTRACT_CODEX_DIR: /shared/.codex/sessions
       EXTRACT_ON_BOOT: "${EXTRACT_ON_BOOT:-0}"
       EXTRACT_BOOT_SINCE: ${EXTRACT_BOOT_SINCE:-90d}
       BRAIN_API_URL: http://brain-api:8080
@@ -296,6 +298,7 @@ services:
     volumes:
       - ${VAULT_ROOT_HOST:-~/agentibrain-vault}:/vault
       - ${CLAUDE_PROJECTS_HOST:-~/.claude/projects}:/shared/.claude/projects:ro
+      - ${CODEX_SESSIONS_HOST:-~/.codex/sessions}:/shared/.codex/sessions:ro
       # Marker buffers written by agentihooks sessions on this host; tick-cron
       # drains them into brain-api so no host cron is ever needed.
       - ${AGENTIHOOKS_HOME_HOST:-~/.agentihooks}:/agentihooks

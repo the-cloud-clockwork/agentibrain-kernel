@@ -83,6 +83,7 @@ PROGRAM_ENV_DEFAULTS = {
     "EVENT_BUS_DB": "11",
     "EVENT_BUS_STREAM": "events:brain",
     "EVENT_BUS_TOPIC": "agentibrain-system",
+    "EXTRACT_CODEX_DIR": "",
     "EXTRACT_HOUR": "04",
     "EXTRACT_MIN_TURNS": "5",
     "EXTRACT_PROJECTS_DIR": "",

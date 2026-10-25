@@ -42,6 +42,7 @@ REQ_TIMEOUT = 30
 LESSON_STATE_FILENAME = ".brain-lesson-embed.state.json"
 LESSON_PRODUCER = "brain-lesson"
 LESSON_MAX_TEXT_CHARS = 4000
+UNATTRIBUTED_PROJECTS = frozenset({"", "unknown", "unattributed"})
 
 
 def parse_frontmatter(text: str) -> tuple[dict, str]:
@@ -239,6 +240,12 @@ def arc_id(md: Path, fm: dict | None = None) -> str:
     return md.stem.replace(".merged", "")
 
 
+def arc_projects(fm: dict) -> list[str]:
+    """The canonical project an arc is grouped under, for the exact project filter."""
+    project = str(fm.get("project") or "").strip()
+    return [] if project.lower() in UNATTRIBUTED_PROJECTS else [project]
+
+
 def scan_arcs(vault: Path):
     seen_ids: set[str] = set()
 
@@ -380,6 +387,7 @@ def main() -> int:
                 # is often meaningless.
                 "summary": fm.get("summary", ""),
                 "path": rel,
+                "projects": arc_projects(fm),
             },
         }
 

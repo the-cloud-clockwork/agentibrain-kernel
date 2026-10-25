@@ -218,9 +218,9 @@ def test_two_projects_get_their_own_memory_from_checkout_and_worktree_sessions(
             assert project.project_id in hit["metadata"]["projects"], hit
             assert other.word not in (hit["text_preview"] or ""), hit
         arcs = _run(tools["brain_search_arcs"](query=project.word, project=project.project_id))
-        assert arcs["results"] and all(
-            project.project_id in r["metadata"]["projects"] for r in arcs["results"]
-        ), arcs
+        assert arcs["arcs"] and all(r["projects"] == [project.project_id] for r in arcs["arcs"]), (
+            arcs
+        )
         kb = _run(
             tools["kb_search"](query=f"{project.word} {other.word}", project=project.project_id)
         )

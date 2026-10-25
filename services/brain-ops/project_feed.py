@@ -185,13 +185,17 @@ def build_snapshots(
     return snapshots
 
 
-def fleet_warnings(arcs: list[markers.DocumentMeta], now: datetime) -> dict:
+def fleet_warnings(
+    arcs: list[markers.DocumentMeta], now: datetime, vault: Path | None = None
+) -> dict:
     rows: dict[str, dict] = {}
     for arc in arcs:
         for sig in arc.signals:
             if _fleet_shared(sig) and _live_alarm(sig):
                 item = _signal_item(sig, [], "fleet")
                 rows.setdefault(item["ref"], item)
+    for item in _posted_fleet_signals(vault) if vault else []:
+        rows.setdefault(item["ref"], item)
     warnings = list(rows.values())
     return {
         "schema": SCHEMA,
@@ -199,6 +203,31 @@ def fleet_warnings(arcs: list[markers.DocumentMeta], now: datetime) -> dict:
         "revision": _revision(warnings),
         "warnings": warnings,
     }
+
+
+def _posted_fleet_signals(vault: Path) -> list[dict]:
+    """Signal files brain-api wrote for markers posted with scope=fleet."""
+    found = []
+    for path in sorted((vault / "amygdala").glob("*.md")):
+        try:
+            fm, body = markers.parse_frontmatter(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            continue
+        severity = str(fm.get("severity", "")).strip().lower()
+        if str(fm.get("scope", "")).strip().lower() != "fleet" or severity not in ALARM_SEVERITIES:
+            continue
+        content = body.strip()
+        found.append(
+            {
+                "ref": f"signal:{hashlib.sha256(content.encode('utf-8')).hexdigest()[:16]}",
+                "projects": [],
+                "scope": "fleet",
+                "severity": severity,
+                "source": str(fm.get("source", "")),
+                "content": content,
+            }
+        )
+    return found
 
 
 def _write_json(path: Path, data: dict) -> None:
