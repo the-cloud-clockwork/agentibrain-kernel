@@ -276,6 +276,78 @@ def test_the_deterministic_tick_writes_project_snapshots(tmp_path, fx):
     assert (feed / "fleet-warnings.json").is_file()
 
 
+def test_a_lesson_shared_by_two_projects_names_only_the_serving_project(tmp_path, fx):
+    vault = tmp_path / "vault"
+    _write_vault(vault, fx)
+    dom, quiet = fx["dominant"]["project"], fx["quiet"]["project"]
+    prov = _provenance(marker_id="mk-" + "b" * 32, brain=fx["brain"], projects=f"{dom},{quiet}")
+    body = (
+        f"Both projects share one release checklist.\n"
+        f"<!-- @edge type=arc target={fx['quiet']['arc']} -->\n"
+        f"<!-- @edge type=arc target=dominant-{fx['brain']}-00 -->"
+    )
+    log = vault / "left" / "reference" / f"lessons-{fx['date']}.md"
+    log.write_text(
+        log.read_text(encoding="utf-8") + f"\n## {fx['date']}T20:00:00+00:00 {prov}\n\n{body}\n",
+        encoding="utf-8",
+    )
+
+    snapshots = project_feed.build_snapshots(_arcs(vault), vault, NOW)
+
+    for project, arc in ((quiet, fx["quiet"]["arc"]), (dom, f"dominant-{fx['brain']}-00")):
+        shared = [i for i in snapshots[project]["lessons"] if i["ref"] == "lesson:mk-" + "b" * 32]
+        assert shared and shared[0]["projects"] == [project]
+        assert shared[0]["arcs"] == [arc]
+
+
+def test_a_fleet_warning_on_a_project_arc_stays_out_of_the_project_signals(tmp_path, fx):
+    vault = tmp_path / "vault"
+    _write_vault(vault, fx)
+    quiet_arc = vault / "clusters" / fx["date"] / f"{fx['quiet']['arc']}.md"
+    shared = f"{fx['brain']} shared from a project arc."
+    quiet_arc.write_text(
+        quiet_arc.read_text(encoding="utf-8")
+        + _signal(shared, severity="warning", source="fleet", scope="fleet")
+        + "\n",
+        encoding="utf-8",
+    )
+    arcs = _arcs(vault)
+
+    snapshots = project_feed.build_snapshots(arcs, vault, NOW)
+    fleet = project_feed.fleet_warnings(arcs, NOW)
+
+    assert [i["content"] for i in snapshots[fx["quiet"]["project"]]["signals"]] == [
+        fx["quiet"]["signal"]
+    ]
+    assert sorted(w["content"] for w in fleet["warnings"]) == sorted([fx["fleet_warning"], shared])
+
+
+def test_an_older_run_never_overwrites_or_removes_a_newer_snapshot(tmp_path, fx):
+    vault = tmp_path / "vault"
+    feed = vault / "brain-feed"
+    _write_vault(vault, fx)
+    arcs = _arcs(vault)
+    later = NOW + timedelta(hours=2)
+    project_feed.write_snapshots(
+        feed,
+        project_feed.build_snapshots(arcs, vault, later),
+        project_feed.fleet_warnings(arcs, later),
+    )
+    quiet_path = feed / "projects" / f"{project_feed.project_key(fx['quiet']['project'])}.json"
+    remaining = [a for a in arcs if a.frontmatter.get("project") != fx["quiet"]["project"]]
+
+    stats = project_feed.write_snapshots(
+        feed,
+        project_feed.build_snapshots(remaining, vault, NOW),
+        project_feed.fleet_warnings(remaining, NOW),
+    )
+
+    assert stats == {"projects_written": 0, "projects_removed": 0, "projects_kept_newer": 2}
+    assert json.loads(quiet_path.read_text())["generated_at"] == later.isoformat(timespec="seconds")
+    fleet = json.loads((feed / "fleet-warnings.json").read_text())
+    assert fleet["generated_at"] == later.isoformat(timespec="seconds")
+
+
 def _ai_output(intents: dict[str, str]) -> str:
     lines = "\n".join(f"PROJECT_INTENT: {p} | {text}" for p, text in intents.items())
     return (

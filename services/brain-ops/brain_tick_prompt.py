@@ -109,6 +109,18 @@ Respond ONLY with the 7 sections above."""
     return f"{prompt}\n\n{task}\n"
 
 
+def _fit_budget(prompt: str, edge_map: str, arc_table: str) -> str:
+    if len(prompt) > MAX_PROMPT_CHARS:
+        prompt = prompt.replace(
+            edge_map, "  [edge map omitted — exceeded context budget; run vault cleanup]"
+        )
+    if len(prompt) > MAX_PROMPT_CHARS:
+        prompt = prompt.replace(arc_table, "  [arc table omitted — exceeded context budget]\n")
+    if len(prompt) > MAX_PROMPT_CHARS:
+        prompt = prompt[:MAX_PROMPT_CHARS] + "\n\n[prompt hard-truncated to fit context]\n"
+    return prompt
+
+
 def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
     """Run deterministic tick, then build the AI reasoning prompt.
 
@@ -464,16 +476,7 @@ Respond ONLY with the 6 sections above. No preamble. No explanation of what you'
     # under budget; this guarantees the prompt fits the context window on ANY
     # vault state (e.g. before a cleanup has run). Drop the largest variable
     # sections first — edge map, then arc table — before a blunt truncation.
-    if len(prompt) > MAX_PROMPT_CHARS:
-        prompt = prompt.replace(
-            edge_map, "  [edge map omitted — exceeded context budget; run vault cleanup]"
-        )
-    if len(prompt) > MAX_PROMPT_CHARS:
-        prompt = prompt.replace(arc_table, "  [arc table omitted — exceeded context budget]\n")
-    if len(prompt) > MAX_PROMPT_CHARS:
-        prompt = prompt[:MAX_PROMPT_CHARS] + "\n\n[prompt hard-truncated to fit context]\n"
-
-    return with_project_intent(prompt, brain_feed_dir), stats
+    return _fit_budget(with_project_intent(prompt, brain_feed_dir), edge_map, arc_table), stats
 
 
 def main() -> int:

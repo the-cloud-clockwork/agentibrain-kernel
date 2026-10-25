@@ -280,6 +280,26 @@ def test_items_from_another_project_are_dropped_and_counted(monkeypatch, tmp_pat
     assert data["metrics"] == {"project_feed_cross_scope_failures": 2}
 
 
+def test_an_item_naming_a_second_project_is_not_served(monkeypatch, tmp_path, fx):
+    vault = tmp_path / "vault"
+    client = _client(monkeypatch, vault)
+    _seed(vault, fx)
+    shared = {"ref": "lesson:shared", "projects": [fx["quiet"], fx["dominant"]], "content": "x"}
+    _snapshot(
+        vault,
+        fx["quiet"],
+        [_arc(fx["quiet"], fx["quiet_arc"], 0)],
+        _now(),
+        lessons=[shared, {"ref": "lesson:odd", "projects": fx["quiet"], "content": "y"}],
+    )
+
+    data = _get(client, fx["quiet"]).json()
+
+    assert data["lessons"] == []
+    assert fx["dominant"] not in json.dumps(data)
+    assert data["metrics"] == {"project_feed_cross_scope_failures": 2}
+
+
 def test_a_snapshot_naming_another_project_is_served_as_missing(monkeypatch, tmp_path, fx):
     vault = tmp_path / "vault"
     client = _client(monkeypatch, vault)

@@ -223,7 +223,7 @@ def project_feed_payload(
     for kind in PROJECT_ITEM_KINDS:
         rows = (snapshot or {}).get(kind)
         rows = rows if isinstance(rows, list) else []
-        kept = [r for r in rows if isinstance(r, dict) and project_id in (r.get("projects") or [])]
+        kept = [r for r in rows if isinstance(r, dict) and r.get("projects") == [project_id]]
         failures += len(rows) - len(kept)
         items[kind] = kept
     intent = _intent(intent_record, now)

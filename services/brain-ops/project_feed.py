@@ -30,7 +30,8 @@ ITEM_KINDS = ("arcs", "lessons", "decisions", "signals")
 ARCS_PER_PROJECT = int(os.getenv("BRAIN_PROJECT_FEED_ARCS", "10"))
 KNOWLEDGE_PER_PROJECT = int(os.getenv("BRAIN_PROJECT_FEED_KNOWLEDGE", "10"))
 UNATTRIBUTED = frozenset({"", "unknown", "unattributed"})
-ALARM_SEVERITIES = frozenset({"warning", "critical", "nuclear"})
+SEVERITY_RANK = {"warning": 1, "critical": 2, "nuclear": 3}
+ALARM_SEVERITIES = frozenset(SEVERITY_RANK)
 
 
 def project_key(project_id: str) -> str:
@@ -66,6 +67,10 @@ def _live_alarm(sig: markers.Marker) -> bool:
     )
 
 
+def _fleet_shared(sig: markers.Marker) -> bool:
+    return sig.attr("scope", "").strip().lower() == "fleet"
+
+
 def _signal_item(sig: markers.Marker, projects: list[str], scope: str) -> dict:
     content = sig.content.strip()
     return {
@@ -90,18 +95,22 @@ def _arc_item(arc: markers.DocumentMeta, project: str) -> dict:
     }
 
 
-def _knowledge_item(item: knowledge_index.KnowledgeItem) -> dict:
+def _knowledge_item(
+    item: knowledge_index.KnowledgeItem, project: str, project_arcs: set[str]
+) -> dict:
     meta = item.metadata
     return {
         "ref": item.key,
-        "projects": list(meta["projects"]),
+        "projects": [project],
         "content": item.content,
         "entry_ts": meta["source"]["entry_ts"],
-        "arcs": list(meta["arcs"]),
+        "arcs": [a for a in meta["arcs"] if a in project_arcs],
     }
 
 
-def _knowledge_by_project(vault: Path) -> dict[str, dict[str, list[dict]]]:
+def _knowledge_by_project(
+    vault: Path, arc_ids: dict[str, set[str]]
+) -> dict[str, dict[str, list[dict]]]:
     items, _, _ = knowledge_index.scan_items(vault)
     found: dict[str, dict[str, list[dict]]] = {}
     for item in items:
@@ -109,7 +118,8 @@ def _knowledge_by_project(vault: Path) -> dict[str, dict[str, list[dict]]]:
             continue
         kind = f"{item.kind}s"
         for project in item.metadata["projects"]:
-            found.setdefault(project, {}).setdefault(kind, []).append(_knowledge_item(item))
+            row = _knowledge_item(item, project, arc_ids.get(project, set()))
+            found.setdefault(project, {}).setdefault(kind, []).append(row)
     for kinds in found.values():
         for kind, rows in kinds.items():
             rows.sort(key=lambda r: (r["entry_ts"], r["ref"]), reverse=True)
@@ -130,10 +140,11 @@ def _signals(project_arcs: list[markers.DocumentMeta], project: str) -> list[dic
     rows: dict[str, dict] = {}
     for arc in project_arcs:
         for sig in arc.signals:
-            if _live_alarm(sig):
+            if _live_alarm(sig) and not _fleet_shared(sig):
                 item = _signal_item(sig, [project], "project")
                 rows.setdefault(item["ref"], item)
-    return list(rows.values())
+    ranked = sorted(rows.values(), key=lambda r: (-SEVERITY_RANK[r["severity"]], r["ref"]))
+    return ranked[:KNOWLEDGE_PER_PROJECT]
 
 
 def build_snapshots(
@@ -141,7 +152,10 @@ def build_snapshots(
 ) -> dict[str, dict]:
     """One snapshot per canonical project, each ranked within its own project."""
     by_project = _arcs_by_project(arcs)
-    knowledge = _knowledge_by_project(vault)
+    arc_ids = {
+        p: {str(a.frontmatter["cluster_id"]) for a in found} for p, found in by_project.items()
+    }
+    knowledge = _knowledge_by_project(vault, arc_ids)
     snapshots = {}
     for project in sorted(set(by_project) | set(knowledge)):
         project_arcs = by_project.get(project, [])
@@ -175,7 +189,7 @@ def fleet_warnings(arcs: list[markers.DocumentMeta], now: datetime) -> dict:
     rows: dict[str, dict] = {}
     for arc in arcs:
         for sig in arc.signals:
-            if sig.attr("scope", "").strip().lower() == "fleet" and _live_alarm(sig):
+            if _fleet_shared(sig) and _live_alarm(sig):
                 item = _signal_item(sig, [], "fleet")
                 rows.setdefault(item["ref"], item)
     warnings = list(rows.values())
@@ -195,20 +209,29 @@ def _write_json(path: Path, data: dict) -> None:
 
 
 def write_snapshots(brain_feed_dir: Path, snapshots: dict[str, dict], fleet: dict) -> dict:
-    """Write every snapshot, then remove snapshots of projects no longer present."""
+    """Write every snapshot, then remove snapshots of projects no longer present.
+
+    A stored snapshot generated after this run is newer and is never replaced
+    or removed by it.
+    """
     out_dir = brain_feed_dir / SNAPSHOT_DIR
-    keep = set()
+    stamp = fleet["generated_at"]
+    keep, stats = set(), {"projects_written": 0, "projects_removed": 0, "projects_kept_newer": 0}
     for project, snapshot in snapshots.items():
         name = f"{project_key(project)}.json"
-        _write_json(out_dir / name, snapshot)
         keep.add(name)
-    removed = 0
+        if _newer(out_dir / name, stamp):
+            stats["projects_kept_newer"] += 1
+            continue
+        _write_json(out_dir / name, snapshot)
+        stats["projects_written"] += 1
     for path in out_dir.glob("*.json") if out_dir.is_dir() else []:
-        if path.name not in keep:
+        if path.name not in keep and not _newer(path, stamp):
             path.unlink()
-            removed += 1
-    _write_json(brain_feed_dir / FLEET_FILE, fleet)
-    return {"projects_written": len(keep), "projects_removed": removed}
+            stats["projects_removed"] += 1
+    if not _newer(brain_feed_dir / FLEET_FILE, stamp):
+        _write_json(brain_feed_dir / FLEET_FILE, fleet)
+    return stats
 
 
 def _read_json(path: Path) -> dict | None:
@@ -217,6 +240,11 @@ def _read_json(path: Path) -> dict | None:
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None
+
+
+def _newer(path: Path, stamp: str) -> bool:
+    stored = _read_json(path)
+    return bool(stored) and str(stored.get("generated_at", "")) > stamp
 
 
 def active_projects(brain_feed_dir: Path) -> list[str]:
