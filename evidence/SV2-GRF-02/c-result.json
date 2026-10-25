@@ -1,0 +1,32 @@
+{
+  "package": "SV2-GRF-02",
+  "case": "T-SV2-GRF-02-C",
+  "tests": "services/brain-ops/tests/test_graph_migrate.py::TestRecovery",
+  "tested_commit": "9300405c10d5b3f624a09058e388c8dfebfa2bd9",
+  "state": "committed and verified in CI on the pull request head; mocked: a fixture vault in a temporary directory, no deployed brain-ops; not yet observed on a deployed vault",
+  "assertions": [
+    "a reviewed quarantine decision is applied and stays intact across reruns, including after its inputs disappear",
+    "a rerun over the same inputs is byte identical",
+    "a run torn before its manifest recovers on rerun to the same outputs as a clean run",
+    "rollback restores the last intact projection byte for byte without touching the vault",
+    "rollback refuses a previous projection that fails its manifest, and refuses when none exists"
+  ],
+  "fixture": {
+    "path": "services/brain-ops/tests/fixtures/sv2_grf02_edges.json",
+    "sha256": "028286c9054c209c00fbf64d785268f95b1aa4cf3e6d32723d46cfcdd90a374b",
+    "inputs": {
+      "clusters/2026-10-01/arc-old.md": "1fd834fe53ddaa80f33826daad7f958c6d1f09f7eef67be8de4bae57ef83554d",
+      "left/arc-a.md": "0a108e1c255f17db47f00336ba20c65a8398d368f686d92fd96b767ca28db388",
+      "left/arc-p.md": "7a8e95883dfb89bffa432ae084b4ddc09ee66d42334269a05fc6bbdc5fd32af4",
+      "right/arc-s.md": "09fe8c40befff8ad9998eefe8bcb339ffb5b5aeecf975717e65a11fba3f2ee49",
+      "right/arc-x.md": "dfeeb992ac501580dc738b284f9acf8e257d4a18ebdf33d6ed0bcec63519e43e",
+      "right/arc-y.md": "ca76ad469704f63031747636e8fb03cfd1c7babb1e4b4e64b6b6b3b6360ea08a"
+    },
+    "contents": "duplicate markers (arc-a parent arc-p twice plus arc-p child arc-a; related both ways), contradictory directions (arc-x parent arc-y, arc-y parent arc-x), valid multirelation pair (arc-a parent and related arc-p), self loop (arc-a related arc-a), plus an unsupported type, a malformed marker and a parent versus sibling conflict"
+  },
+  "runs": {
+    "red": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40175016341",
+    "green": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40175774579"
+  },
+  "graph_migration_quarantined_edges": 7
+}
