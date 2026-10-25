@@ -43,7 +43,7 @@ def _failures(client):
 
 
 @pytest.mark.parametrize("instance", [1, 2])
-def test_engineer_and_ci_requests_keep_their_distinct_purposes(
+def test_engineer_and_ci_requests_keep_their_distinct_purposes_on_two_independent_fixtures(
     monkeypatch, vault, tmp_path, instance
 ):
     client = _client(monkeypatch, vault, tmp_path / f"ctx{instance}.db", TOKENS)

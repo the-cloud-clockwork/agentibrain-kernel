@@ -1,0 +1,24 @@
+{
+  "package": "SV2-CTX-01",
+  "tested_commit": "6b3d3f2fc56ad45fb38ab209819533c7cf38f32b",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40202068412",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40202068412/job/121195145356",
+  "verification": "CI fixture HTTP through the FastAPI test client; tokens, grants and requests are fixture-local, not production.",
+  "case": "T-SV2-CTX-01-A",
+  "outcome": "passed",
+  "tests": [
+    "test_engineer_and_ci_requests_keep_their_distinct_purposes[1]",
+    "test_engineer_and_ci_requests_keep_their_distinct_purposes[2]",
+    "test_the_schema_file_describes_the_request_model"
+  ],
+  "assertions": [
+    "An engineer token and a CI token on project alpha both receive 200 with brain_id hive-a and scope derived from the credential.",
+    "Lane eng with purpose task_start and lane ci with purpose error_recovery are returned unchanged with distinct operation ids.",
+    "Responses are labelled authority recalled_evidence.",
+    "The same assertions pass on a second independent fixture database.",
+    "schemas/context-v2.json equals the request model schema."
+  ],
+  "measurement": {
+    "context_request_validation_failures": {}
+  }
+}

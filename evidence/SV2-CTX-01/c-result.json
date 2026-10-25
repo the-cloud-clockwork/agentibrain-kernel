@@ -1,0 +1,30 @@
+{
+  "package": "SV2-CTX-01",
+  "tested_commit": "6b3d3f2fc56ad45fb38ab209819533c7cf38f32b",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40202068412",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40202068412/job/121195145356",
+  "verification": "CI fixture HTTP through the FastAPI test client; tokens, grants and requests are fixture-local, not production.",
+  "case": "T-SV2-CTX-01-C",
+  "outcome": "passed",
+  "tests": [
+    "test_an_identical_retry_reuses_its_operation_identity_after_a_restart",
+    "test_an_older_task_revision_cannot_replace_a_newer_accepted_request",
+    "test_the_rollback_switch_disables_context_and_keeps_the_feed"
+  ],
+  "assertions": [
+    "An identical retry returns the same operation id with replayed true.",
+    "After a process restart the same request derives the same operation id and accepted request; nothing authoritative is written.",
+    "After revision 4 is accepted, revision 3 for the same task is refused 409 stale_task_revision and revision 4 replays.",
+    "BRAIN_TASK_CONTEXT=false returns 503 while the project feed answers 200; re-enabling restores the same operation id."
+  ],
+  "durability": "Replay cache and revision guard are process memory; a restart keeps operation identity (derived) and loses replay flags and the stale guard.",
+  "rollback": {
+    "switch": "BRAIN_TASK_CONTEXT=false",
+    "rehearsal": "test_the_rollback_switch_disables_context_and_keeps_the_feed"
+  },
+  "measurement": {
+    "context_request_validation_failures": {
+      "stale_task_revision": 1
+    }
+  }
+}
