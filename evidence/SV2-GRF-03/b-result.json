@@ -1,0 +1,19 @@
+{
+  "test": "T-SV2-GRF-03-B",
+  "status": "passed",
+  "tested_commit": "0154668b1e20a9e53cdbd438de0411c2d05a3649",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40181367125",
+  "verification": "CI HTTP fixture with real SQLite, not deployed",
+  "assertions": [
+    "An eighty neighbor hub stops at five visible nodes and at most six examined edges",
+    "A separate two edge budget is exact",
+    "Cycles return each authorized entity once",
+    "Unknown and forbidden seeds both return seed not found without foreign titles or ids",
+    "Hidden intermediates and proposed relations cannot expand relevance",
+    "Invalid budgets and unsupported relation types are refused"
+  ],
+  "graph_nodes_expanded_per_request": {
+    "bounded_by": 5,
+    "dimensions": {"fixture": "high_degree_hub", "neighbors": 80}
+  }
+}

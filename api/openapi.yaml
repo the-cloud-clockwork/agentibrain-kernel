@@ -498,6 +498,9 @@ paths:
         bounds lock acquisition. Node and edge budgets apply across all resumes.
         A timeout returns collected nodes and an opaque single use continuation,
         bound to actor, current grant, project, graph revision and process.
+        A timeout before snapshot validation returns no cached nodes. Disabling
+        expansion suppresses expanded neighbors on every response, including
+        timed out resumptions, and preserves the timeout status when applicable.
         Continue with continuation and the same project. At most three resumes
         are permitted within the original 60 seconds. The cache holds at most
         128 requests; eviction, restart, expiry or graph changes require a new

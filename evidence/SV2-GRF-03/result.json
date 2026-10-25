@@ -1,0 +1,41 @@
+{
+  "package": "SV2-GRF-03",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/150",
+  "tested_commit": "0154668b1e20a9e53cdbd438de0411c2d05a3649",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40181367125",
+  "verification": "CI HTTP fixtures with real SQLite; deterministic timeout clock injection; MCP transport mocked",
+  "live_deployment_verified": false,
+  "interfaces": ["POST /graph/expand", "brain_search_arcs(expand_graph=True)"],
+  "supported_python_versions": ["3.10", "3.11", "3.12"],
+  "state": {
+    "observed": "All pull request checks and four image builds passed",
+    "accepted": "HTTP fixture assertions validate authorized output, rejection and recovery",
+    "committed": "0154668b1e20a9e53cdbd438de0411c2d05a3649",
+    "externally_verified": "Not deployed; G6 rollout validation remains applicable"
+  },
+  "commands": [
+    {"invocation": "python -m pytest -q services/brain-api/tests", "output": "250 passed, 2 warnings in 26.34s"},
+    {"invocation": "python -m pytest -q services/mcp/tests", "output": "28 passed, 1 warning in 0.55s"}
+  ],
+  "job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40181367125/job/121132950798",
+  "acceptance": ["a-result.json", "b-result.json", "c-result.json"],
+  "rollback": "Disable BRAIN_GRAPH_EXPANSION; retain the graph projection and scoped seed retrieval",
+  "limitations": [
+    "Expansion defaults to disabled until explicitly enabled for rollout",
+    "Continuation is process local, single use, valid up to sixty seconds and at most three resumes",
+    "Node and edge caps apply across continuations; depth, node and edge caps require a new request",
+    "Current guidance and supersession semantics belong to SV2-GRF-04"
+  ],
+  "red_proof": {
+    "status": "expected red observed with a valid scoped grant",
+    "commit": "6d18410ad85a6d03fee0b7f239ad3dbed002b31e",
+    "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40181573610",
+    "job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40181573610/job/121133570158",
+    "observed": "Both independent fixtures verify allowed and forbidden seed reads, then fail on the absent expansion route with 404 Not Found; 225 other API tests passed"
+  },
+  "mcp_red_proof": {
+    "commit": "57a5ca0f00bdd4ab9005721b41834509f06fbad4",
+    "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40180637124",
+    "observed": "Unexpected expand_graph keyword; 27 other MCP tests passed"
+  }
+}
