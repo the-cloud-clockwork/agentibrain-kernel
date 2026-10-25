@@ -1,0 +1,5 @@
+brain_id: swarm
+policy_revision: 3
+mode: local
+vault_path: VAULT
+brain_url: https://brain.swarm.example
