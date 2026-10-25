@@ -353,4 +353,6 @@ def test_conflicting_items_are_packed_together_or_omitted_together():
 
 def test_an_identical_revision_basis_sorts_with_missing_revisions():
     items = [_item("lesson:a", "lesson", "A", revision=None), _item("lesson:a", "lesson", "A")]
-    assert _packing().knowledge_revision(items).startswith("kr-")
+    revision = _packing().knowledge_revision
+    assert revision(items) == revision(list(reversed(items)))
+    assert revision(items).startswith("kr-")

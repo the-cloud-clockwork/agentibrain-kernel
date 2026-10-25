@@ -11,10 +11,25 @@ import json
 import math
 import re
 import string
+from typing import NamedTuple
 
 SHARES = {"decision": 0.4, "lesson": 0.4, "arc": 0.2}
 REFERENCE_FIELDS = ("id", "type", "knowledge_status", "revision", "authority")
 _CLAIM = re.compile(r"[\s" + re.escape(string.punctuation) + r"]+")
+
+
+class Member(NamedTuple):
+    item: dict
+    entry: dict
+    cost: int
+
+
+class Selection(NamedTuple):
+    caps: dict[str, int]
+    spent: dict[str, int]
+    used: int
+    packed: list[dict]
+    omitted: list[dict]
 
 
 def tokens(value: object) -> int:
@@ -85,35 +100,38 @@ def _entry(item: dict, conservative: bool) -> dict:
     }
 
 
-def _units(unique: list[dict], conservative: bool) -> list[list[tuple]]:
-    units: list[list[tuple]] = []
-    conflicted: list[tuple] = []
+def _units(unique: list[dict], conservative: bool) -> list[list[Member]]:
+    units: list[list[Member]] = []
+    conflicted: list[Member] = []
+    position = None
     for item in unique:
         entry = _entry(item, conservative)
-        member = (item, entry, tokens(entry))
+        member = Member(item, entry, tokens(entry))
         if item["knowledge_status"] != "conflicted":
             units.append([member])
             continue
-        if not conflicted:
-            units.append(conflicted)
+        if position is None:
+            position = len(units)
         conflicted.append(member)
+    if conflicted:
+        units.insert(position, conflicted)
     return units
 
 
-def _select(unique: list[dict], max_tokens: int, conservative: bool) -> tuple:
+def _select(unique: list[dict], max_tokens: int, conservative: bool) -> Selection:
     caps = category_budgets(max_tokens)
     spent = dict.fromkeys(caps, 0)
     used, packed, deferred = 0, [], []
     for unit in _units(unique, conservative):
         need = dict.fromkeys(caps, 0)
-        for item, _, cost in unit:
-            need[item["type"]] += cost
+        for member in unit:
+            need[member.item["type"]] += member.cost
         total = sum(need.values())
         if used + total <= max_tokens and all(spent[k] + need[k] <= caps[k] for k in caps):
             for kind in caps:
                 spent[kind] += need[kind]
             used += total
-            packed.extend(entry for _item, entry, _cost in unit)
+            packed.extend(member.entry for member in unit)
         else:
             deferred.append((unit, need, total))
     omitted = []
@@ -122,10 +140,10 @@ def _select(unique: list[dict], max_tokens: int, conservative: bool) -> tuple:
             for kind in caps:
                 spent[kind] += need[kind]
             used += total
-            packed.extend(entry for _item, entry, _cost in unit)
+            packed.extend(member.entry for member in unit)
         else:
-            omitted.extend(_omission(item, "over_budget", cost) for item, _, cost in unit)
-    return caps, spent, used, packed, omitted
+            omitted.extend(_omission(m.item, "over_budget", m.cost) for m in unit)
+    return Selection(caps, spent, used, packed, omitted)
 
 
 def pack(context: dict, max_tokens: int, conservative: bool = False) -> dict:
