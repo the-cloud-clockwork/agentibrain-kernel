@@ -63,7 +63,11 @@ def test_authorized_two_hop_lesson_has_a_directional_path(
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["partial"] is False
-    assert [node["id"] for node in result["nodes"]] == ["session:seed", "arc:bridge", "lesson:answer"]
+    assert [node["id"] for node in result["nodes"]] == [
+        "session:seed",
+        "arc:bridge",
+        "lesson:answer",
+    ]
     lesson = result["nodes"][-1]
     assert [(edge["source"], edge["type"], edge["target"]) for edge in lesson["path"]] == [
         ("arc:bridge", "derived_from", "session:seed"),
