@@ -371,6 +371,16 @@ def codex_sessions(
     return [s for s in found if s and (not project or project.lower() in s["cwd"].lower())]
 
 
+def granted_sessions(parsed: list, min_turns: int, projects: str) -> list[dict]:
+    """Sessions with enough turns, limited to the EXTRACT_PROJECTS grant when one is set."""
+    granted = {p.strip() for p in projects.split(",")} - {""}
+    return [
+        s
+        for s in parsed
+        if s and s["num_user_turns"] >= min_turns and (not granted or s["project_id"] in granted)
+    ]
+
+
 def feed_main(args: argparse.Namespace) -> int:
     """Extract from the session change feed, or commit the batch the cluster step accepted."""
     import session_source
@@ -486,16 +496,7 @@ def main() -> int:
     parsed += codex_sessions(codex, since, until, args.project)
     candidates += codex
 
-    granted = {p.strip() for p in os.environ.get("EXTRACT_PROJECTS", "").split(",")} - {""}
-    sessions: list[dict] = []
-    for s in parsed:
-        if s is None:
-            continue
-        if s["num_user_turns"] < args.min_turns:
-            continue
-        if granted and s["project_id"] not in granted:
-            continue
-        sessions.append(s)
+    sessions = granted_sessions(parsed, args.min_turns, os.environ.get("EXTRACT_PROJECTS", ""))
 
     # Sort by start time ascending
     sessions.sort(key=lambda x: x["start"])
