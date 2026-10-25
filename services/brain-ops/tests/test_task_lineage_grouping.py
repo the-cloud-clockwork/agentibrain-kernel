@@ -315,3 +315,22 @@ def test_malformed_lineage_refuses_the_batch_without_mutation(tmp_path, lineage)
     with pytest.raises(session_source.Refused):
         session_source.extract_batch(_Feed(records), grant, store, min_turns=1)
     assert not store.committed_path.exists()
+
+
+def test_lineage_survives_an_interrupted_batch_and_commits_once(tmp_path):
+    lineage = {"task_id": "t-03", "phase_id": "p36", "attempt": 2, "replaces": "claude:hive:s0"}
+    records = [_record(1, "user", text="resume the task", lineage=lineage)]
+    grant = session_source.Grant("brain-extractor@hive", frozenset({PROJECT}))
+    store = session_source.Store(tmp_path / "state")
+
+    interrupted = session_source.extract_batch(_Feed(records), grant, store, min_turns=1)
+    assert not store.committed_path.exists()
+    rebuilt = session_source.extract_batch(_Feed(records), grant, store, min_turns=1)
+    store.commit(rebuilt["source"]["stage_id"])
+    after = session_source.extract_batch(_Feed(records), grant, store, min_turns=1)
+
+    assert interrupted["sessions"] == rebuilt["sessions"]
+    assert rebuilt["sessions"][0]["task_id"] == "t-03"
+    assert after["sessions"] == []
+    stored = json.loads(store.committed_path.read_text())
+    assert stored["sessions"]["claude:hive:s1"]["lineage"] == lineage
