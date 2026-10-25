@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from extract import COMPACT_MARKERS, ERROR_MARKERS, JOY_MARKERS, parse_ts
+from extract import COMPACT_MARKERS, ERROR_MARKERS, JOY_MARKERS, admitted, parse_ts
 
 SCHEMA_VERSION = 1
 LAG_METRIC = "brain_source_cursor_lag"
@@ -39,8 +39,10 @@ CHANGE_FIELDS = {
     "deleted": frozenset({"change_id", "kind", "session_uid"}),
 }
 RECORD_FIELDS = frozenset(
-    {"sequence", "kind", "timestamp", "text", "tool", "project_id", "cwd", "git_branch"}
+    {"sequence", "kind", "timestamp", "text", "tool", "project_id", "cwd", "git_branch", "lineage"}
 )
+LINEAGE_TEXT = ("task_id", "work_thread_id", "phase_id", "replaces")
+LINEAGE_FIELDS = frozenset({*LINEAGE_TEXT, "attempt"})
 OUT_OF_SCOPE = "the feed returned evidence outside this principal's project grant; nothing changed"
 NO_GRANT = "the extraction principal has no project grant"
 NOTHING_STAGED = "no staged extraction batch to commit"
@@ -146,7 +148,20 @@ def check_records(body: object, change: dict, first: int) -> list[dict]:
         raise _invalid("records do not cover the requested range exactly")
     if any(record.get("kind") not in RECORD_KINDS for record in records):
         raise _invalid("record kind is not supported")
+    for record in records:
+        if "lineage" in record:
+            check_lineage(record["lineage"])
     return records
+
+
+def check_lineage(lineage: object) -> dict:
+    _fields(lineage, LINEAGE_FIELDS, "lineage")
+    if any(not isinstance(lineage.get(name, ""), str) for name in LINEAGE_TEXT):
+        raise _invalid("lineage ids are not strings")
+    attempt = lineage.get("attempt", 1)
+    if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 1:
+        raise _invalid("lineage attempt is not a positive integer")
+    return lineage
 
 
 class FeedSource:
@@ -237,6 +252,8 @@ def _fold(session: dict, record: dict) -> None:
             session["first_ts"] = timestamp.isoformat()
         if last is None or timestamp > last:
             session["last_ts"] = timestamp.isoformat()
+    if "lineage" in record:
+        session["lineage"] = {**session.get("lineage", {}), **record["lineage"]}
     session["cwd"] = record.get("cwd") or session["cwd"]
     session["git_branch"] = record.get("git_branch") or session["git_branch"]
     text, kind = _text(record), record["kind"]
@@ -339,6 +356,7 @@ def summary(uid: str, session: dict) -> dict:
     spans = session["spans"]
     project_id = spans[-1][2] if spans else None
     tools = Counter(session["tools"])
+    lineage = session.get("lineage", {})
     start, end = session["first_ts"], session["last_ts"]
     return {
         "session_id": uid,
@@ -362,6 +380,8 @@ def summary(uid: str, session: dict) -> dict:
         "joy_markers": session["joy"],
         "error_markers": session["errors"],
         "source": "session-feed",
+        **{name: lineage.get(name, "") for name in LINEAGE_TEXT},
+        "attempt": lineage.get("attempt", 1),
     }
 
 
@@ -442,7 +462,7 @@ def extract_batch(
     state, touched, head = Extraction(source, grant).build(committed, limit, max_pages)
     stage_id = store.stage(state, committed["revision"], stage_id or uuid.uuid4().hex)
     sessions = [summary(uid, state["sessions"][uid]) for uid in sorted(touched)]
-    returned = [s for s in sessions if s["num_user_turns"] >= min_turns]
+    returned = [s for s in sessions if admitted(s, min_turns)]
     returned.sort(key=lambda s: (s["start"] or "", s["session_id"]))
     return {
         "source": {

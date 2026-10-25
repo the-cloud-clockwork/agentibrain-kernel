@@ -133,7 +133,7 @@ def test_replacement_into_another_project_is_a_conflict_not_a_link():
     groups = cluster.group_sessions([other, handoff])
 
     assert _members(groups) == [["s-t-05-a"], ["s-t-05-handoff"]]
-    assert cluster.thread_of(groups[1][0]) == ""
+    assert cluster.thread_of(next(g[0] for g in groups if g[0] is not other)) == ""
     assert cluster.arc_task_lineage_conflicts([other, handoff]) == {
         "total": 1,
         "cross_thread": 0,
