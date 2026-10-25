@@ -18,7 +18,8 @@ from typing import Annotated, Literal
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import scope
+from . import graph, scope
+from .retrieval import rank
 
 SCHEMA_VERSION = "2.0"
 MAX_BODY_BYTES = int(os.getenv("BRAIN_CONTEXT_MAX_BODY_BYTES", "65536"))
@@ -64,10 +65,21 @@ _failures: Counter[str] = Counter()
 _accepted: OrderedDict[str, dict] = OrderedDict()
 _latest: OrderedDict[tuple[str, str, str], int] = OrderedDict()
 _lock = threading.Lock()
+semantic_source: rank.Source | None = None
+heat_source: rank.Source | None = None
 
 
 def enabled() -> bool:
     return os.getenv("BRAIN_TASK_CONTEXT", "true").lower() != "false"
+
+
+def ranking_policy() -> dict | None:
+    if os.getenv("BRAIN_CONTEXT_RANKING", "true").lower() == "false":
+        return None
+    revision = os.getenv("BRAIN_RANKING_POLICY", rank.CURRENT)
+    if revision not in rank.POLICIES:
+        raise HTTPException(status_code=503, detail="BRAIN_RANKING_POLICY names no known revision")
+    return rank.policy(revision)
 
 
 def failures() -> dict[str, int]:
@@ -122,7 +134,12 @@ def operation_id(request: ContextRequest, trusted: dict) -> str:
     return "ctxop-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
-def _admit(request: ContextRequest, trusted: dict, operation: str) -> dict:
+def _admit(
+    request: ContextRequest,
+    trusted: dict,
+    operation: str,
+    ranked: Callable[[], dict | None] = lambda: None,
+) -> dict:
     task = (trusted["brain_id"], request.project_id, request.task_id)
     with _lock:
         if request.task_revision < _latest.get(task, 0):
@@ -148,6 +165,9 @@ def _admit(request: ContextRequest, trusted: dict, operation: str) -> dict:
         "authority": "recalled_evidence",
         "replayed": False,
     }
+    selected = ranked()
+    if selected is not None:
+        response["context"] = selected
     with _lock:
         _accepted[operation] = response
         while len(_accepted) > ACCEPTED_KEPT:
@@ -171,4 +191,22 @@ def accept(
         deny()
         raise _reject(403, "role_grant", "lane is outside this token's grant")
     trusted = {"brain_id": scope.BRAIN_ID, "project_ids": [request.project_id]}
-    return _admit(request, trusted, operation_id(request, trusted))
+    active = ranking_policy()
+    if active is None:
+        return _admit(request, trusted, operation_id(request, trusted))
+    identity = {**trusted, "ranking_policy": active["revision"]}
+    return _admit(
+        request,
+        trusted,
+        operation_id(request, identity),
+        lambda: rank.retrieve(
+            graph.active_store(),
+            request.project_id,
+            f"{request.intent} {request.query}",
+            [*request.subsystems, *request.errors],
+            active,
+            semantic=semantic_source,
+            heat=heat_source,
+            limit=request.budget.max_items,
+        ),
+    )

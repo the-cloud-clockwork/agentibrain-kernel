@@ -560,6 +560,14 @@ class GraphReadView:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def entities(self, limit: int) -> list[dict]:
+        rows = self._execute(
+            "SELECT id, type, revision, projects, vault_ref, title FROM graph_entities"
+            " ORDER BY id LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [{**dict(row), "projects": json.loads(row["projects"])} for row in rows]
+
 
 _stores: dict[str, GraphStore] = {}
 _stores_lock = threading.Lock()

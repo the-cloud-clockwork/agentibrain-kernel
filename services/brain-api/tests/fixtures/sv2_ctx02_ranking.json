@@ -1,0 +1,318 @@
+{
+  "first": {
+    "request": {
+      "intent": "Implement incremental transcript ingestion with durable acknowledgements.",
+      "query": "transcript ingestion acknowledgement",
+      "subsystems": [
+        "session-catalog"
+      ]
+    },
+    "entities": [
+      {
+        "id": "lesson:lost-ack-incident",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "alpha"
+        ],
+        "vault_ref": null,
+        "title": "Lost acknowledgement during transcript ingestion replay",
+        "provenance": {
+          "source": "fixture:lost-ack-incident",
+          "revision": "f1"
+        }
+      },
+      {
+        "id": "arc:dashboard-colours",
+        "type": "arc",
+        "revision": 1,
+        "projects": [
+          "alpha"
+        ],
+        "vault_ref": null,
+        "title": "Ledger dashboard colour refresh",
+        "provenance": {
+          "source": "fixture:dashboard-colours",
+          "revision": "f1"
+        }
+      },
+      {
+        "id": "decision:ack-after-commit",
+        "type": "decision",
+        "revision": 1,
+        "projects": [
+          "alpha"
+        ],
+        "vault_ref": null,
+        "title": "Acknowledge transcript batches only after commit",
+        "provenance": {
+          "source": "fixture:ack-after-commit",
+          "revision": "f1"
+        }
+      },
+      {
+        "id": "decision:ack-before-commit",
+        "type": "decision",
+        "revision": 1,
+        "projects": [
+          "alpha"
+        ],
+        "vault_ref": null,
+        "title": "Acknowledge transcript batches before commit",
+        "provenance": {
+          "source": "fixture:ack-before-commit",
+          "revision": "f1"
+        }
+      },
+      {
+        "id": "arc:ingestion-outage",
+        "type": "arc",
+        "revision": 1,
+        "projects": [
+          "alpha"
+        ],
+        "vault_ref": null,
+        "title": "Ingestion outage review",
+        "provenance": {
+          "source": "fixture:ingestion-outage",
+          "revision": "f1"
+        }
+      },
+      {
+        "id": "lesson:cache-warmup",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "alpha"
+        ],
+        "vault_ref": null,
+        "title": "Warm the cache before serving",
+        "provenance": {
+          "source": "fixture:cache-warmup",
+          "revision": "f1"
+        }
+      },
+      {
+        "id": "lesson:beta-lost-ack",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "beta"
+        ],
+        "vault_ref": null,
+        "title": "Lost acknowledgement during transcript ingestion replay",
+        "provenance": {
+          "source": "fixture:beta-lost-ack",
+          "revision": "f1"
+        }
+      }
+    ],
+    "relations": [
+      {
+        "source": "decision:ack-after-commit",
+        "type": "supersedes",
+        "target": "decision:ack-before-commit",
+        "status": "accepted",
+        "confidence": "observed",
+        "evidence": []
+      },
+      {
+        "source": "arc:ingestion-outage",
+        "type": "has_lesson",
+        "target": "lesson:cache-warmup",
+        "status": "accepted",
+        "confidence": "inferred",
+        "evidence": []
+      },
+      {
+        "source": "arc:dashboard-colours",
+        "type": "has_lesson",
+        "target": "lesson:lost-ack-incident",
+        "status": "proposed",
+        "confidence": "inferred",
+        "evidence": []
+      }
+    ],
+    "heat": {
+      "arc:dashboard-colours": 0.95,
+      "lesson:lost-ack-incident": 0.0,
+      "decision:ack-after-commit": 0.2,
+      "arc:ingestion-outage": 0.1,
+      "lesson:beta-lost-ack": 0.9
+    },
+    "semantic": {
+      "lesson:lost-ack-incident": 0.9,
+      "decision:ack-after-commit": 0.7,
+      "arc:ingestion-outage": 0.6
+    },
+    "cold_incident": "lesson:lost-ack-incident",
+    "hot_arc": "arc:dashboard-colours",
+    "current_decision": "decision:ack-after-commit",
+    "superseded_decision": "decision:ack-before-commit",
+    "inferred_neighbor": "lesson:cache-warmup",
+    "out_of_scope": "lesson:beta-lost-ack",
+    "relevant": [
+      "lesson:lost-ack-incident",
+      "decision:ack-after-commit",
+      "arc:ingestion-outage"
+    ]
+  },
+  "second": {
+    "request": {
+      "intent": "Repair flaky merge queue shard timeouts.",
+      "query": "shard timeout",
+      "subsystems": [
+        "merge-queue"
+      ]
+    },
+    "entities": [
+      {
+        "id": "lesson:shard-timeout-incident",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "alpha"
+        ],
+        "vault_ref": null,
+        "title": "Shard timeout incident from runner disk contention",
+        "provenance": {
+          "source": "fixture:shard-timeout-incident",
+          "revision": "f1"
+        }
+      },
+      {
+        "id": "arc:logo-artwork",
+        "type": "arc",
+        "revision": 1,
+        "projects": [
+          "alpha"
+        ],
+        "vault_ref": null,
+        "title": "Logo artwork review",
+        "provenance": {
+          "source": "fixture:logo-artwork",
+          "revision": "f1"
+        }
+      },
+      {
+        "id": "decision:shard-ten-minutes",
+        "type": "decision",
+        "revision": 1,
+        "projects": [
+          "alpha"
+        ],
+        "vault_ref": null,
+        "title": "Shard timeouts fail the job after ten minutes",
+        "provenance": {
+          "source": "fixture:shard-ten-minutes",
+          "revision": "f1"
+        }
+      },
+      {
+        "id": "decision:shard-five-minutes",
+        "type": "decision",
+        "revision": 1,
+        "projects": [
+          "alpha"
+        ],
+        "vault_ref": null,
+        "title": "Shard timeouts fail the job after five minutes",
+        "provenance": {
+          "source": "fixture:shard-five-minutes",
+          "revision": "f1"
+        }
+      },
+      {
+        "id": "arc:queue-capacity",
+        "type": "arc",
+        "revision": 1,
+        "projects": [
+          "alpha"
+        ],
+        "vault_ref": null,
+        "title": "Merge queue capacity review",
+        "provenance": {
+          "source": "fixture:queue-capacity",
+          "revision": "f1"
+        }
+      },
+      {
+        "id": "lesson:pin-node-image",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "alpha"
+        ],
+        "vault_ref": null,
+        "title": "Pin the node image version",
+        "provenance": {
+          "source": "fixture:pin-node-image",
+          "revision": "f1"
+        }
+      },
+      {
+        "id": "lesson:beta-shard",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "beta"
+        ],
+        "vault_ref": null,
+        "title": "Shard timeout incident from runner disk contention",
+        "provenance": {
+          "source": "fixture:beta-shard",
+          "revision": "f1"
+        }
+      }
+    ],
+    "relations": [
+      {
+        "source": "decision:shard-ten-minutes",
+        "type": "supersedes",
+        "target": "decision:shard-five-minutes",
+        "status": "accepted",
+        "confidence": "observed",
+        "evidence": []
+      },
+      {
+        "source": "arc:queue-capacity",
+        "type": "has_lesson",
+        "target": "lesson:pin-node-image",
+        "status": "accepted",
+        "confidence": "inferred",
+        "evidence": []
+      },
+      {
+        "source": "arc:logo-artwork",
+        "type": "has_lesson",
+        "target": "lesson:shard-timeout-incident",
+        "status": "proposed",
+        "confidence": "inferred",
+        "evidence": []
+      }
+    ],
+    "heat": {
+      "arc:logo-artwork": 0.95,
+      "lesson:shard-timeout-incident": 0.0,
+      "decision:shard-ten-minutes": 0.2,
+      "arc:queue-capacity": 0.1,
+      "lesson:beta-shard": 0.9
+    },
+    "semantic": {
+      "lesson:shard-timeout-incident": 0.85,
+      "decision:shard-ten-minutes": 0.65,
+      "arc:queue-capacity": 0.5
+    },
+    "cold_incident": "lesson:shard-timeout-incident",
+    "hot_arc": "arc:logo-artwork",
+    "current_decision": "decision:shard-ten-minutes",
+    "superseded_decision": "decision:shard-five-minutes",
+    "inferred_neighbor": "lesson:pin-node-image",
+    "out_of_scope": "lesson:beta-shard",
+    "relevant": [
+      "lesson:shard-timeout-incident",
+      "decision:shard-ten-minutes",
+      "arc:queue-capacity"
+    ]
+  }
+}
