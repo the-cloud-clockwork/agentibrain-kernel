@@ -42,7 +42,10 @@ REQ_TIMEOUT = 30
 LESSON_STATE_FILENAME = ".brain-lesson-embed.state.json"
 LESSON_PRODUCER = "brain-lesson"
 LESSON_MAX_TEXT_CHARS = 4000
-UNATTRIBUTED_PROJECTS = frozenset({"", "unknown", "unattributed"})
+# Legacy grouping wrote a folder basename as the project; only canonical ids are indexed.
+CANONICAL_PROJECT_RE = re.compile(
+    r"local:[A-Za-z0-9][A-Za-z0-9._-]*|[^/\s]+\.[^/\s]+/[^/\s]+/[^/\s]+"
+)
 
 
 def parse_frontmatter(text: str) -> tuple[dict, str]:
@@ -243,7 +246,7 @@ def arc_id(md: Path, fm: dict | None = None) -> str:
 
 def arc_projects(fm: dict) -> list[str]:
     project = str(fm.get("project") or "").strip()
-    return [] if project.lower() in UNATTRIBUTED_PROJECTS else [project]
+    return [project] if CANONICAL_PROJECT_RE.fullmatch(project) else []
 
 
 def scan_arcs(vault: Path):

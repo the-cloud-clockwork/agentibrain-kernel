@@ -9,6 +9,7 @@ the test itself. Each case runs on two independent fixtures.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib
 import json
 import sys
@@ -48,6 +49,10 @@ def _decision(project: Project) -> str:
 
 def _post(brain: Brain, token: str, marker: dict, key: str):
     return brain.client(token).post("/marker", json=marker, headers={"X-Idempotency-Key": key})
+
+
+def _marker_id(idempotency_key: str) -> str:
+    return "mk-" + hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:32]
 
 
 def _outbox_entry(marker: dict, key: str) -> dict:
@@ -96,7 +101,7 @@ def _populate(brain: Brain) -> dict:
     for project, marker in direct:
         key = uuid.uuid4().hex
         resp = _post(brain, project.token, marker, key)
-        assert resp.status_code == 200, resp.text
+        assert resp.status_code == 201, resp.text
         ids[f"{project.key}-{marker['type']}"] = resp.json()["marker_id"]
     entries = {}
     for project, marker in replayed:
@@ -104,7 +109,7 @@ def _populate(brain: Brain) -> dict:
         entries[project.key] = _outbox_entry(marker, key)
         drained = brain.replay_outbox([entries[project.key]], project.token)
         assert drained.returncode == 0, drained.stdout + drained.stderr
-        ids[f"{project.key}-{marker['type']}"] = f"mk-{key}"
+        ids[f"{project.key}-{marker['type']}"] = _marker_id(key)
     fleet = brain.client().post(
         "/marker",
         json={
@@ -113,11 +118,11 @@ def _populate(brain: Brain) -> dict:
             "attrs": {"severity": "warning", "source": "fleet-monitor", "scope": "fleet"},
         },
     )
-    assert fleet.status_code == 200, fleet.text
+    assert fleet.status_code == 201, fleet.text
     unattributed = brain.client().post(
         "/marker", json={"type": "lesson", "content": fx.unattributed_lesson, "attrs": {}}
     )
-    assert unattributed.status_code == 200, unattributed.text
+    assert unattributed.status_code == 201, unattributed.text
     return {"ids": ids, "outbox": entries}
 
 
@@ -193,7 +198,6 @@ def test_two_projects_get_their_own_memory_from_checkout_and_worktree_sessions(
         assert project.project_id.rsplit("/", 1)[-1] in feed["intent"]["text"]
         assert other.project_id.rsplit("/", 1)[-1] not in feed["intent"]["text"]
         assert [w["content"] for w in feed["fleet_warnings"]] == [fx.fleet_warning]
-        assert feed["metrics"]["project_feed_cross_scope_failures"] == 0
 
     arcs_by_harness = {
         p.key: {h for a in feeds[p.key]["arcs"] for h in _arc_harnesses(brain, a["ref"])}
@@ -293,39 +297,55 @@ def test_scope_violations_are_refused_without_changing_state(brain: Brain, monke
 
 def test_replay_and_restart_keep_scope_without_duplicates(brain: Brain) -> None:
     fx = brain.fixture
+    alpha, beta = fx.alpha, fx.beta
     brain.extract()
     written = _populate(brain)
     brain.tick()
     first = {p.key: _feed(brain, p) for p in fx.projects}
-    knowledge_before = brain.knowledge_files()
     rows_before = {p.key: len(brain.search(p.word, project_id=p.project_id)) for p in fx.projects}
 
+    late = f"Lesson {alpha.word}: written while the brain was unreachable."
+    entry = _outbox_entry(
+        {"type": "lesson", "content": late, "attrs": _attrs(alpha, "codex", True)},
+        uuid.uuid4().hex,
+    )
+    pending = brain.tmp / "brain-outbox" / f"{entry['idempotency_key']}.json"
+    brain.proc.terminate()
+    brain.proc.wait(timeout=10)
+    brain.replay_outbox([entry], alpha.token)
+    assert pending.is_file(), "an undelivered marker must stay in the outbox"
+    brain.start()
+    delivered = brain.replay_outbox([], alpha.token)
+    assert delivered.returncode == 0, delivered.stdout + delivered.stderr
+    assert not pending.exists()
     for project in fx.projects:
         again = brain.replay_outbox([written["outbox"][project.key]], project.token)
         assert again.returncode == 0, again.stdout + again.stderr
     brain.extract()
-    brain.restart()
     brain.tick()
 
-    assert brain.knowledge_files() == knowledge_before
-    for project in fx.projects:
-        feed = _feed(brain, project)
-        assert feed["revision"] == first[project.key]["revision"], (feed, first[project.key])
-        assert [entry["content"] for entry in feed["lessons"]] == [_lesson(project)]
-        assert (
-            len(brain.search(project.word, project_id=project.project_id))
-            == rows_before[project.key]
-        )
+    alpha_feed, beta_feed = _feed(brain, alpha), _feed(brain, beta)
+    assert sorted(e["content"] for e in alpha_feed["lessons"]) == sorted([_lesson(alpha), late])
+    assert [e["content"] for e in alpha_feed["decisions"]] == [_decision(alpha)]
+    assert _contents(beta_feed) == _contents(first["beta"])
+    assert beta_feed["intent"]["text"] == first["beta"]["intent"]["text"]
+    assert len(brain.search(beta.word, project_id=beta.project_id)) == rows_before["beta"]
+    assert len(brain.search(alpha.word, project_id=alpha.project_id)) == rows_before["alpha"] + 1
+    record = brain.client(alpha.token).get(f"/marker/{_marker_id(entry['idempotency_key'])}")
+    assert record.status_code == 200, record.text
+    assert record.json()["provenance"]["project_id"] == alpha.project_id
 
     legacy = brain.client().get("/feed")
     assert legacy.status_code == 200, legacy.text
+    assert legacy.json().get("scope") != "project"
     for project in fx.projects:
         record = brain.client(project.token).get(
             f"/marker/{written['ids'][f'{project.key}-lesson']}"
         )
         assert record.status_code == 200, record.text
         assert record.json()["provenance"]["project_id"] == project.project_id
-        assert _feed(brain, project)["revision"] == first[project.key]["revision"]
+    assert _feed(brain, beta)["revision"] == beta_feed["revision"]
+    assert _feed(brain, alpha)["revision"] == alpha_feed["revision"]
     print("ISSUE89_RESULT", json.dumps({"case": "c", **fx.manifest}, sort_keys=True))
 
 

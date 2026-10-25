@@ -12,6 +12,7 @@ databases); CI provides it.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import math
@@ -304,7 +305,7 @@ def _build_fixture(tmp_path: Path, name: str) -> Fixture:
             f"codex-{beta.word}",
             beta.checkout,
             "dev",
-            beta.remote,
+            "",
             [f"Tune the {beta.word} queue consumer from codex", "Measure it again"],
         ),
         write_claude_session(
@@ -322,6 +323,8 @@ def _build_fixture(tmp_path: Path, name: str) -> Fixture:
             for p in sessions
         },
         "projects": {p.key: p.project_id for p in (alpha, beta)},
+        "tested_commit": git(ROOT, "rev-parse", "HEAD"),
+        "model": "mocked: word hash embeddings; intent echoes the tick's active project list",
     }
     return Fixture(
         name,
@@ -333,13 +336,14 @@ def _build_fixture(tmp_path: Path, name: str) -> Fixture:
     )
 
 
-def _database_url() -> str:
+def _database_url(name: str) -> str:
     import psycopg
 
+    database = f"{DATABASE}_{name}"
     with psycopg.connect(POSTGRES_URL, autocommit=True) as conn:
-        conn.execute(f"DROP DATABASE IF EXISTS {DATABASE} WITH (FORCE)")
-        conn.execute(f"CREATE DATABASE {DATABASE}")
-    return POSTGRES_URL.rsplit("/", 1)[0] + f"/{DATABASE}"
+        conn.execute(f"DROP DATABASE IF EXISTS {database} WITH (FORCE)")
+        conn.execute(f"CREATE DATABASE {database}")
+    return POSTGRES_URL.rsplit("/", 1)[0] + f"/{database}"
 
 
 @pytest.fixture(scope="session")
@@ -350,9 +354,9 @@ def model():
     server.shutdown()
 
 
-@pytest.fixture(scope="session")
-def embeddings(model: str):
-    db_url = _database_url()
+@contextlib.contextmanager
+def embeddings_service(model: str, name: str):
+    db_url = _database_url(name)
     proc, url = serve(
         ROOT / "services" / "embeddings" / "src",
         "main:app",
@@ -366,8 +370,10 @@ def embeddings(model: str):
             "API_KEYS": EMBED_BEARER,
         },
     )
-    yield {"url": url, "db": db_url}
-    stop(proc)
+    try:
+        yield {"url": url, "db": db_url}
+    finally:
+        stop(proc)
 
 
 class Brain:
@@ -512,14 +518,16 @@ class Brain:
 
 
 @pytest.fixture(params=sorted(FIXTURE_SETS))
-def brain(request, tmp_path: Path, embeddings: dict, model: str):
+def brain(request, tmp_path: Path, model: str):
     import psycopg
 
     if shutil.which("git") is None:
         pytest.skip("needs git")
-    with psycopg.connect(embeddings["db"], autocommit=True) as conn:
-        conn.execute("TRUNCATE content_embeddings")
+    run = f"{request.param}_{uuid.uuid4().hex[:8]}"
     fixture = _build_fixture(tmp_path, request.param)
-    instance = Brain(tmp_path, fixture, embeddings, model)
-    yield instance
-    instance.close()
+    with embeddings_service(model, run) as embeddings:
+        instance = Brain(tmp_path, fixture, embeddings, model)
+        yield instance
+        instance.close()
+    with psycopg.connect(POSTGRES_URL, autocommit=True) as conn:
+        conn.execute(f"DROP DATABASE IF EXISTS {DATABASE}_{run} WITH (FORCE)")

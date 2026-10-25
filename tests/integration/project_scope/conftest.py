@@ -1,3 +1,3 @@
-from .harness import brain, embeddings, model
+from .harness import brain, model
 
-__all__ = ["brain", "embeddings", "model"]
+__all__ = ["brain", "model"]

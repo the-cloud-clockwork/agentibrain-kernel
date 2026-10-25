@@ -45,6 +45,8 @@ project from a folder name.
 
 - Deploy the kernel, then let one tick run. New arcs and markers carry scope
   from then on.
+- Only arcs whose `project` is a canonical id are indexed with `projects`;
+  legacy arcs grouped by folder basename stay unattributed in the index.
 - Arcs embedded before this release have no `projects` in their index rows.
   Raise `EMBEDDING_STATE_GENERATION` once to re-embed every arc; until then
   project scoped arc searches return only arcs indexed after the release.
