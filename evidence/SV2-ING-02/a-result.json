@@ -1,0 +1,30 @@
+{
+  "package": "SV2-ING-02",
+  "tested_commit": "074d217bc0edfc62bac709ff3c1c66468c405bb8",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244918406",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244918406/job/121324351000",
+  "verification": "Mocked: fixture-local sessions and in-memory session feed in CI; no live swarm transcripts.",
+  "case": "T-SV2-ING-02-A",
+  "outcome": "passed",
+  "tests": [
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_twenty_agents_on_ten_tasks_give_task_arcs_not_one_bucket",
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_handoff_and_planner_replacement_join_their_thread",
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_replacement_listed_before_its_predecessor_still_links",
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_meaningful_autonomous_work_is_admitted_with_few_prompts",
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_feed_carries_task_lineage_into_normalized_sessions"
+  ],
+  "assertions": [
+    "Twenty agent sessions on ten tasks, a resumed attempt, a planner thread and a tool heavy single prompt session give thirteen arc candidates: ten task arcs, one planner arc and two single sessions.",
+    "Each arc holds one task thread; the run repeats on an independent suffixed fixture with the same result.",
+    "A handoff without its own task id and a planner replacement join the thread of their replacement chain within one canonical project, in any start order.",
+    "A session with one prompt is admitted when it carries a task thread or at least AUTONOMOUS_TOOL_CALLS tool calls.",
+    "Feed records carry task, thread, phase, attempt and replaces lineage into normalized sessions."
+  ],
+  "measurement": {
+    "arc_task_lineage_conflicts": {
+      "total": 1,
+      "cross_thread": 1,
+      "cross_project": 0
+    }
+  }
+}
