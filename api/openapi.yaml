@@ -420,6 +420,63 @@ paths:
         "202":
           description: Marker accepted.
 
+  /graph/entity:
+    post:
+      summary: Create or revise a typed graph entity (arc, session, lesson, decision, evidence).
+      description: >
+        Active only when BRAIN_GRAPH_DB is set; otherwise 404. The id is
+        `<type>:<key>`. A revision older than, or different at the same number
+        from, the stored one is refused with 409. A worker token may only write
+        entities inside its project grant (403).
+      responses:
+        "201":
+          description: Entity stored; action is created, updated or replayed.
+        "403":
+          description: Entity project is outside the caller grant.
+        "409":
+          description: A newer or different revision is stored.
+        "422":
+          description: Invalid entity; detail.reason names the rule.
+
+  /graph/entity/{entity_id}:
+    get:
+      summary: An entity with its typed relations, limited to entities the caller may read.
+      description: >
+        Outgoing edges carry the relation type as name; incoming edges carry
+        its inverse name (has_lesson / lesson_of, derived_from / source_of,
+        applies_decision / decision_applied_by, supported_by / supports).
+      parameters:
+        - { name: entity_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: entity and relations.
+        "404":
+          description: Unknown, outside the caller scope, or graph inactive.
+
+  /graph/relation:
+    post:
+      summary: Store a directed typed relation with status, confidence class and evidence.
+      description: >
+        An inverse name is stored as its canonical edge, so an inverse pair is
+        one edge. An unknown endpoint, unknown type or incompatible endpoint
+        type is rejected and counted in graph_invalid_relations_total.
+      parameters:
+        - { name: quarantine, in: query, required: false, schema: { type: boolean, default: false } }
+      responses:
+        "201":
+          description: Relation stored; action is created, updated or replayed.
+        "202":
+          description: Invalid relation held in quarantine (quarantine=true).
+        "422":
+          description: Invalid relation; detail.reason and graph_invalid_relations_total.
+
+  /graph/stats:
+    get:
+      summary: graph_invalid_relations_total by reason and quarantine size (router tokens only).
+      responses:
+        "200":
+          description: Counts.
+
   /tick:
     post:
       summary: Trigger a manual cognitive tick (operator / cron).
