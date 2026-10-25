@@ -33,7 +33,7 @@ import logging
 import os
 import threading
 import time
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import (
     Body,
@@ -802,7 +802,7 @@ def publish_knowledge_detail(
 
 @app.get("/knowledge/detail")
 def read_knowledge_detail(
-    query: arcs.ReadRequest = Depends(arcs.ReadRequest),
+    query: Annotated[arcs.ReadRequest, Depends(arcs.ReadRequest)],
     authorization: str | None = Header(None),
     _: None = Depends(require_token),
 ) -> dict:
