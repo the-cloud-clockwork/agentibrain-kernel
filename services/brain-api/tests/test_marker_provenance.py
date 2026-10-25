@@ -426,3 +426,28 @@ def test_a_lesson_log_written_before_provenance_still_dedups_and_reads_back(vaul
     record = _readback(client, data["marker_id"]).json()
     assert record["vault_path"] == str(log.relative_to(vault))
     assert record["provenance"] == {}
+
+
+def test_a_marker_without_an_idempotency_key_is_written_again_after_the_cache_window(
+    vault: Path, client
+):
+    import app.main as main
+
+    body = {"type": "milestone", "content": "Nightly build green.", "attrs": {"source": "cron"}}
+    first = client.post("/marker", json=body).json()
+    main._idempotency_cache.clear()
+
+    again = client.post("/marker", json=body).json()
+
+    assert again["action"] == "appended"
+    assert again["marker_id"] != first["marker_id"]
+
+
+def test_a_blank_provenance_value_is_not_counted_as_lost(vault: Path, client):
+    body = {
+        "type": "lesson",
+        "content": "A lesson whose worktree arrives blank.",
+        "attrs": {"project_id": "github.com/acme/alpha", "worktree": "  "},
+    }
+
+    assert client.post("/marker", json=body).json()["marker_provenance_loss_total"] == 0

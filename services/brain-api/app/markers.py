@@ -80,8 +80,9 @@ PROVENANCE_FIELDS = (
 )
 _STORED_KEYS = ("marker_id", "brain", "source_ts", *PROVENANCE_FIELDS)
 # Values ride inside an HTML comment or a frontmatter line, so anything that
-# could close either is unrepresentable and counted as lost instead of written.
-_UNSAFE_VALUE_RE = re.compile(r'["<>\r\n]|--')
+# could close either, or that the frontmatter reader strips, is unrepresentable
+# and counted as lost instead of written.
+_UNSAFE_VALUE_RE = re.compile(r"[\"'<>\r\n]|--")
 _PROVENANCE_RE = re.compile(r'<!--\s*@provenance((?:\s+\w+="[^"]*")*)\s*-->')
 _PROVENANCE_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 MARKER_REGISTRY_DIR = "brain-feed/markers"
@@ -237,7 +238,7 @@ def marker_provenance(
     lost = 0
     for name in PROVENANCE_FIELDS:
         raw = attrs.get(name)
-        if raw is None or raw == "" or raw == []:
+        if raw is None or raw == [] or (isinstance(raw, str) and not raw.strip()):
             continue
         value = _provenance_value(raw)
         if value:

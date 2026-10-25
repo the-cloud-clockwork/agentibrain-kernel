@@ -571,8 +571,10 @@ def post_marker(
       original response without re-writing. Falls back to a content-hash key
       if absent.
 
-    A worker token with a project grant may only write markers whose
-    project_id and projects lie inside that grant.
+    A worker token with a project grant is refused a marker that claims a
+    project outside it; a marker claiming no project stays unattributed.
+    Only an explicit X-Idempotency-Key makes a marker id that outlives the
+    cache window.
     """
     marker_type = (payload.get("type") or "").strip().lower()
     content = payload.get("content") or ""
@@ -607,7 +609,7 @@ def post_marker(
                 marker_type,
                 content,
                 attrs,
-                marker_id=marker_id_for(idem_key),
+                marker_id=marker_id_for(x_idempotency_key.strip()) if x_idempotency_key else None,
                 brain=scope.BRAIN_ID,
                 grant=grant,
             )
