@@ -10,6 +10,7 @@ through /metadata without re-embedding the content.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import sys
@@ -22,7 +23,8 @@ from pathlib import Path
 import markers
 
 PRODUCER = "brain-knowledge"
-REPORT_FILENAME = ".brain-knowledge-scope-report.json"
+REPORT_PATH = "brain-feed/knowledge-scope-report.json"
+LOCK_FILENAME = ".brain-knowledge-embed.lock"
 STATE_FILENAME = ".brain-knowledge-embed.state.json"
 UNKNOWN = "unknown"
 REQ_TIMEOUT = 30
@@ -139,7 +141,7 @@ def _read_sources(vault: Path, paths: list[Path], parse, items: list, errors: li
         items.extend(parse(rel, text))
 
 
-def scan_items(vault: Path) -> tuple[list[KnowledgeItem], list[str]]:
+def scan_items(vault: Path) -> tuple[list[KnowledgeItem], list[str], int]:
     items: list[KnowledgeItem] = []
     errors: list[str] = []
     logs = [
@@ -153,7 +155,7 @@ def scan_items(vault: Path) -> tuple[list[KnowledgeItem], list[str]]:
     unique = {}
     for item in items:
         unique.setdefault(item.key, item)
-    return list(unique.values()), errors
+    return list(unique.values()), errors, len(items) - len(unique)
 
 
 def _post(api_url: str, api_key: str, path: str, payload: dict) -> dict:
@@ -204,37 +206,79 @@ class IndexRun:
     vault: Path
     api_url: str
     api_key: str
-    state: dict
+    load: Callable[[], dict]
     save: Callable[[dict], None]
+    lock_path: Path
     report_path: Path | None = None
     dry_run: bool = False
     prune: bool = False
 
 
 def index_knowledge(run: IndexRun) -> dict:
-    """Write changed items, one state save per write, so a failed run resumes where it stopped."""
-    items, read_errors = scan_items(run.vault)
+    """One run at a time: an overlapping run skips, so an older scan cannot overwrite a newer one."""
+    run.lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(run.lock_path, "a+") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("SKIP[knowledge]: another index run holds the lock")
+            return {"knowledge_skipped_locked": 1, "errors": 0}
+        try:
+            return _index_locked(run)
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _index_locked(run: IndexRun) -> dict:
+    items, read_errors, duplicates = scan_items(run.vault)
+    state = run.load()
     stats = {
         "knowledge_scanned": len(items),
         "knowledge_embedded": 0,
         "knowledge_metadata_updated": 0,
         "knowledge_skipped_unchanged": 0,
+        "knowledge_duplicate_keys": duplicates,
         "knowledge_unattributed": sum(i.metadata["project_id"] == UNKNOWN for i in items),
         "knowledge_read_errors": len(read_errors),
         "errors": len(read_errors),
     }
+    pending = _pending(items, state, stats)
+    if run.dry_run:
+        for item, _ in pending:
+            print(f"DRY[knowledge]: {item.key} project={item.metadata['project_id']}")
+        stats["knowledge_items_unindexed"] = 0
+        return stats
+    written = _apply(run, pending, state, stats)
+    stats["knowledge_items_unindexed"] = len(pending) - written
+    if items and not read_errors:
+        keys = {item.key for item in items}
+        for key in [k for k in state if k not in keys]:
+            del state[key]
+        run.save(state)
+    if stats["knowledge_items_unindexed"]:
+        print("PRUNE[knowledge]: skipped — the run left items unindexed")
+    else:
+        _prune(run, items, read_errors, stats)
+    if run.report_path is not None:
+        _report(run.report_path, items, stats)
+    return stats
+
+
+def _pending(items: list[KnowledgeItem], state: dict, stats: dict) -> list:
     pending = []
     for item in items:
-        prior = run.state.get(item.key) or {}
+        prior = state.get(item.key) or {}
         if prior.get("metadata") == _metadata_hash(item.metadata):
             stats["knowledge_skipped_unchanged"] += 1
         else:
             pending.append((item, prior.get("revision") == item.metadata["revision"]))
+    return pending
+
+
+def _apply(run: IndexRun, pending: list, state: dict, stats: dict) -> int:
+    """Stop at the first failure and save after each write, so a retry resumes where this stopped."""
     written = 0
     for item, content_known in pending:
-        if run.dry_run:
-            print(f"DRY[knowledge]: {item.key} project={item.metadata['project_id']}")
-            continue
         try:
             action = _write(run.api_url, run.api_key, item, content_known)
         except Exception as exc:
@@ -243,23 +287,12 @@ def index_knowledge(run: IndexRun) -> dict:
             break
         written += 1
         stats["knowledge_embedded" if action == "embed" else "knowledge_metadata_updated"] += 1
-        run.state[item.key] = {
+        state[item.key] = {
             "revision": item.metadata["revision"],
             "metadata": _metadata_hash(item.metadata),
         }
-        run.save(run.state)
-    stats["knowledge_items_unindexed"] = 0 if run.dry_run else len(pending) - written
-    if run.dry_run:
-        return stats
-    if not read_errors:
-        keys = {item.key for item in items}
-        for key in [k for k in run.state if k not in keys]:
-            del run.state[key]
-        run.save(run.state)
-    _prune(run, items, read_errors, stats)
-    if run.report_path is not None:
-        _report(run.report_path, items, stats)
-    return stats
+        run.save(state)
+    return written
 
 
 def _prune(run: IndexRun, items: list[KnowledgeItem], read_errors: list[str], stats: dict) -> None:
@@ -291,6 +324,7 @@ def _report(path: Path, items: list[KnowledgeItem], stats: dict) -> None:
         "knowledge_scanned": stats["knowledge_scanned"],
         "knowledge_items_unindexed": stats["knowledge_items_unindexed"],
         "knowledge_read_errors": stats["knowledge_read_errors"],
+        "knowledge_duplicate_keys": stats["knowledge_duplicate_keys"],
         "unattributed": [
             {
                 "key": i.key,
@@ -302,6 +336,7 @@ def _report(path: Path, items: list[KnowledgeItem], stats: dict) -> None:
             if i.metadata["project_id"] == UNKNOWN
         ],
     }
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     tmp.replace(path)

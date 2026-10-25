@@ -263,14 +263,16 @@ def scan_arcs(vault: Path):
 
 def _index_knowledge_stage(args: argparse.Namespace, vault: Path, state_path: Path) -> dict:
     knowledge_state_path = state_path.with_name(knowledge_index.STATE_FILENAME)
+    report_root = vault if state_path.parent == vault else state_path.parent
     return knowledge_index.index_knowledge(
         knowledge_index.IndexRun(
             vault=vault,
             api_url=args.api_url,
             api_key=args.api_key,
-            state={} if args.force_all else load_state(knowledge_state_path),
+            load=lambda: {} if args.force_all else load_state(knowledge_state_path),
             save=lambda s: save_state(knowledge_state_path, s),
-            report_path=state_path.with_name(knowledge_index.REPORT_FILENAME),
+            lock_path=state_path.with_name(knowledge_index.LOCK_FILENAME),
+            report_path=report_root / knowledge_index.REPORT_PATH,
             dry_run=args.dry_run,
             prune=args.prune,
         )

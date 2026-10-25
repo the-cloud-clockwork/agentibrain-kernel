@@ -8,6 +8,7 @@ a live stack.
 import importlib
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -211,3 +212,77 @@ def test_a_metadata_update_leaves_the_embedding_and_text_alone(fresh_db):
     assert after[2]["status"] == "superseded"
     assert [row for row in _snapshot(db) if row[0] == "other"] == untouched
     assert db.update_metadata("missing", "brain-knowledge", {"status": "current"}) == 0
+
+
+def test_the_brain_filter_keeps_another_brain_out(fresh_db):
+    db, dim = fresh_db
+    for key, brain in (("swarm-item", "swarm"), ("personal-item", "personal")):
+        db.upsert_chunks(
+            key=key,
+            producer="brain-knowledge",
+            content_type="lesson",
+            chunks=[
+                {
+                    "chunk_idx": 0,
+                    "text_preview": key,
+                    "embedding": _vector(dim),
+                    "metadata": {
+                        "project_id": "org/repo",
+                        "projects": ["org/repo"],
+                        "brain": brain,
+                    },
+                }
+            ],
+        )
+
+    hits = db.search(_vector(dim), project_id="org/repo", brain="swarm", limit=10)
+
+    assert [r["key"] for r in hits] == ["swarm-item"]
+
+
+def _brain_ops_indexer():
+    path = str(Path(__file__).resolve().parents[2] / "brain-ops")
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    return importlib.import_module("knowledge_index")
+
+
+@pytest.mark.parametrize("fx", SETS, ids=[s["name"] for s in SETS])
+def test_a_late_lesson_from_the_indexer_is_found_under_its_project(fresh_db, fx):
+    db, dim = fresh_db
+    knowledge_index = _brain_ops_indexer()
+    late = fx["late_lesson"]
+    projects = fx["filler"]["projects"]
+    entries = [
+        f"## {fx['log_date']}T00:00:{n % 60:02d}+00:00 — filler <!-- @provenance "
+        f'marker_id="mk-{n:032d}" project_id="{projects[n % len(projects)]}" -->\n\n'
+        f"{fx['filler']['text'].format(n=n)}\n"
+        for n in range(fx["filler"]["count"])
+    ]
+    entries.append(
+        f'## {late["ts"]} — {late["source"]} <!-- @provenance marker_id="{late["marker_id"]}" '
+        f'project_id="{late["project_id"]}" brain="{fx["brain"]}" -->\n\n{late["content"]}\n'
+    )
+    rel = f"left/reference/lessons-{fx['log_date']}.md"
+    items = knowledge_index.lesson_items(rel, "\n".join(entries))
+    for item in items:
+        db.upsert_chunks(
+            key=item.key,
+            producer=knowledge_index.PRODUCER,
+            content_type=item.kind,
+            chunks=[
+                {
+                    "chunk_idx": 0,
+                    "text_preview": item.content[:1000],
+                    "embedding": _vector(dim),
+                    "metadata": item.metadata,
+                }
+            ],
+        )
+
+    hits = db.search(_vector(dim), project_id=late["project_id"], brain=fx["brain"], limit=100)
+
+    assert [h["key"] for h in hits] == [f"lesson:{late['marker_id']}"]
+    assert hits[0]["metadata"]["source"]["path"] == rel
+    assert hits[0]["metadata"]["source"]["entry_ts"] == late["ts"]
+    assert late["content"] in hits[0]["text_preview"]

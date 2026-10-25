@@ -29,6 +29,7 @@ class SearchRequest(BaseModel):
     limit: int = 10
     min_score: float = 0.0
     project_id: str | None = None
+    brain: str | None = None
 
 
 class MetadataRequest(BaseModel):
@@ -205,6 +206,7 @@ async def search_content(
         limit=req.limit,
         min_score=req.min_score,
         project_id=req.project_id,
+        brain=req.brain,
     )
 
     return {"query": req.query, "results": results, "count": len(results)}

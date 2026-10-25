@@ -12,6 +12,7 @@ Run from repo root:
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import hashlib
 import importlib
 import io
@@ -332,7 +333,7 @@ def test_an_unattributed_historical_entry_stays_unknown_and_is_reported(
     assert item["metadata"]["scope"] == "unattributed"
     assert item["metadata"]["source"]["path"] == path
     assert stats["knowledge_unattributed"] == 1
-    report = json.loads((vault / ".brain-knowledge-scope-report.json").read_text())
+    report = json.loads((vault / "brain-feed" / "knowledge-scope-report.json").read_text())
     assert report["knowledge_items_unindexed"] == 0
     assert report["unattributed"] == [
         {"key": key, "kind": "lesson", "path": path, "entry_ts": hist["ts"]}
@@ -475,3 +476,70 @@ def test_a_removed_entry_is_pruned_only_after_a_clean_scan(monkeypatch, vault: P
 
     assert rc == 0
     assert all(r["metadata"]["project_id"] != "unknown" for r in store.knowledge().values())
+
+
+def test_a_failed_write_never_prunes_the_knowledge_producer(monkeypatch, vault: Path, fx: dict):
+    store = FakeEmbeddings()
+    assert _run(monkeypatch, vault, store, "--prune")[0] == 0
+    hist = fx["historical"]
+    (vault / "left" / "reference" / f"lessons-{hist['log_date']}.md").unlink()
+    _write_vault(vault, fx, {0: 1})
+    (vault / "left" / "reference" / f"lessons-{hist['log_date']}.md").unlink()
+    store.reset_calls()
+    store.fail_embed_at = 1
+
+    rc, stats = _run(monkeypatch, vault, store, "--prune")
+
+    assert rc == 1
+    assert stats["knowledge_items_unindexed"] == 1
+    assert store.calls("prune") == []
+    assert any(r["metadata"]["project_id"] == "unknown" for r in store.knowledge().values())
+
+
+def test_an_empty_scan_keeps_the_index_state(monkeypatch, vault: Path):
+    store = FakeEmbeddings()
+    assert _run(monkeypatch, vault, store, "--prune")[0] == 0
+    parked = vault.parent / "parked-left"
+    (vault / "left").rename(parked)
+
+    _run(monkeypatch, vault, store, "--prune")
+    parked.rename(vault / "left")
+    store.reset_calls()
+    rc, stats = _run(monkeypatch, vault, store, "--prune")
+
+    assert rc == 0
+    assert store.calls("embed") == []
+    assert stats["knowledge_skipped_unchanged"] == stats["knowledge_scanned"]
+
+
+def test_an_overlapping_run_writes_nothing(monkeypatch, vault: Path):
+    store = FakeEmbeddings()
+    lock = vault / ".brain-knowledge-embed.lock"
+    with open(lock, "a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        rc, stats = _run(monkeypatch, vault, store, "--prune")
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    assert rc == 0
+    assert stats["knowledge_skipped_locked"] == 1
+    assert store.knowledge() == {}
+    assert store.calls("prune") == []
+
+    rc, stats = _run(monkeypatch, vault, store, "--prune")
+    assert rc == 0
+    assert stats["knowledge_items_unindexed"] == 0
+    assert store.knowledge()
+
+
+def test_duplicate_item_keys_are_counted_in_the_report(monkeypatch, vault: Path, fx: dict):
+    store = FakeEmbeddings()
+    log = vault / "left" / "reference" / f"lessons-{fx['log_date']}.md"
+    copy = vault / "left" / "reference" / "lessons-2026-10-30.md"
+    copy.write_text(log.read_text(encoding="utf-8"), encoding="utf-8")
+
+    rc, stats = _run(monkeypatch, vault, store)
+
+    assert rc == 0
+    assert stats["knowledge_duplicate_keys"] == fx["filler"]["count"] + 1
+    report = json.loads((vault / "brain-feed" / "knowledge-scope-report.json").read_text())
+    assert report["knowledge_duplicate_keys"] == fx["filler"]["count"] + 1

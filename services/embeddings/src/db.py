@@ -189,6 +189,7 @@ def search(
     limit: int = 10,
     min_score: float = 0.0,
     project_id: str | None = None,
+    brain: str | None = None,
 ) -> list[dict]:
     pool = get_pool()
     with pool.connection() as conn:
@@ -203,6 +204,10 @@ def search(
             # Containment on the exact project set, served by idx_ce_projects.
             conditions.append("(metadata->'projects') @> %s")
             params.append(Jsonb([project_id]))
+
+        if brain:
+            conditions.append("metadata->>'brain' = %s")
+            params.append(brain)
 
         where = " AND ".join(conditions)
         vec_str = str(query_embedding)
