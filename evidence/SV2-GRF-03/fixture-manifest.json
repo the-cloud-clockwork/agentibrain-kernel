@@ -1,0 +1,15 @@
+{
+  "package": "SV2-GRF-03",
+  "tested_commit": "0154668b1e20a9e53cdbd438de0411c2d05a3649",
+  "fixtures": ["Cycle", "Eighty neighbor hub", "Authorized two hop lesson", "Cross project forbidden neighbor"],
+  "input_hashes": {
+    "services/brain-api/tests/test_graph_expansion.py": "72ad317fbe0a2001bcb3974f62f3e5a9ffe95e3e683ba5614baf669b113ecfeb",
+    "services/brain-api/tests/test_graph_expansion_limits.py": "b103768f676ee033a961dd77fc2f8fe2a403adbba441b34e63c535bffbeaf92b",
+    "services/brain-api/tests/test_graph_lock_budget.py": "d101ba6344af57f39a30cb85066030b7684635de3ab538c310442b340c125ca8",
+    "services/brain-api/tests/test_graph_resume_rollback.py": "ab84f5dd145f18abf080d5eb0ac58ca1b93062efb7f413d261653d1968ea20a7",
+    "services/mcp/tests/test_arc_expansion.py": "f6eb28e370fb806a61ec0ff5647bd21aff0070a4ef5cc5f3fb8dd0f236b25e1b"
+  },
+  "authority": "Worker token explicitly grants brain hive-a and project alpha; router grant seeds canonical records",
+  "preconditions": "Fixture verifies allowed seed read is 200 and forbidden entity read is 404 before expansion",
+  "clock": "Injected monotonic clock for traversal interruption; separate real exclusive lock wall clock bound"
+}

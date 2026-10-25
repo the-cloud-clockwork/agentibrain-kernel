@@ -63,6 +63,7 @@ from .markers import (
     read_marker,
     write_marker,
 )
+from .retrieval.graph import ExpansionRequest, expand
 from .router import IngestResult, ingest_message
 from .signal import read_signal
 from .tick_trigger import enqueue_tick, get_tick_status
@@ -773,6 +774,15 @@ def get_graph_entity(
     if entity is None or not visible(entity):
         raise HTTPException(status_code=404, detail="entity not found")
     return {"entity": entity, "relations": store.relations(entity_id, visible)}
+
+
+@app.post("/graph/expand")
+def post_graph_expand(
+    body: ExpansionRequest,
+    authorization: str | None = Header(None),
+    _: None = Depends(require_token),
+) -> dict:
+    return expand(_graph_store(), body, _caller_grant(authorization), _bearer(authorization))
 
 
 @app.get("/graph/stats")

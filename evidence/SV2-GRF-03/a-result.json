@@ -1,0 +1,16 @@
+{
+  "test": "T-SV2-GRF-03-A",
+  "status": "passed",
+  "tested_commit": "0154668b1e20a9e53cdbd438de0411c2d05a3649",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40181367125",
+  "verification": "CI HTTP fixture with real SQLite, not deployed",
+  "assertions": [
+    "Two independent authorized fixtures return seed, bridge and two hop lesson in order",
+    "The lesson includes two canonical directional relation steps and an inclusion explanation",
+    "The canonical graph snapshot is unchanged by retrieval"
+  ],
+  "graph_nodes_expanded_per_request": {
+    "asserted": 3,
+    "dimensions": {"fixture": "authorized_two_hop", "independent_runs": 2}
+  }
+}

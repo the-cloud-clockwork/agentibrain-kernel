@@ -1,0 +1,24 @@
+{
+  "test": "T-SV2-GRF-03-C",
+  "status": "passed",
+  "tested_commit": "0154668b1e20a9e53cdbd438de0411c2d05a3649",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40181367125",
+  "verification": "CI HTTP fixture with real SQLite; deterministic timeout clock injection; not deployed",
+  "assertions": [
+    "Injected timeout retains a valid two node partial result and an opaque continuation",
+    "Resumption returns the authorized lesson with its original two hop path and no duplicate nodes",
+    "Replayed, forged, expired and changed actor, project, grant or graph revision continuations are refused",
+    "A real exclusive SQLite lock is bounded and returns a labelled timeout",
+    "A timed out resumption cannot disclose cached nodes before snapshot validation",
+    "Disabling expansion suppresses expanded neighbors on every response, including timed out resumptions"
+  ],
+  "graph_nodes_expanded_per_request": {
+    "asserted_on_resumption": 1,
+    "dimensions": {"fixture": "timeout_recovery"}
+  },
+  "rollback_rehearsal": {
+    "switch": "BRAIN_GRAPH_EXPANSION=false",
+    "result": "Scoped seed only; zero examined edges",
+    "protected_data": "Canonical entities and relations are retained"
+  }
+}

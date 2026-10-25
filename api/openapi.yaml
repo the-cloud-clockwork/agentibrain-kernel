@@ -481,6 +481,75 @@ paths:
         "200":
           description: Counts.
 
+  /graph/expand:
+    post:
+      summary: Expand authenticated scoped semantic seeds through accepted graph relations.
+      description: |
+        SV2-GRF-03. Seed ids come from semantic or lexical retrieval and are
+        reauthorized here from the bearer grant. Project further narrows that
+        grant. Unknown and forbidden seeds both return 404. Canonical relation
+        types are derived_from, has_lesson, applies_decision and supported_by;
+        incoming edges preserve their canonical direction in each evidence path.
+        BRAIN_GRAPH_EXPANSION defaults to false; disabled expansion returns only
+        authorized seeds. No canonical entity or relation is modified.
+
+        Each read uses indexed pages of at most 16 neighbors, a consistent
+        SQLite read transaction and a deadline that also interrupts SQL and
+        bounds lock acquisition. Node and edge budgets apply across all resumes.
+        A timeout returns collected nodes and an opaque single use continuation,
+        bound to actor, current grant, project, graph revision and process.
+        A timeout before snapshot validation returns no cached nodes. Disabling
+        expansion suppresses expanded neighbors on every response, including
+        timed out resumptions, and preserves the timeout status when applicable.
+        Continue with continuation and the same project. At most three resumes
+        are permitted within the original 60 seconds. The cache holds at most
+        128 requests; eviction, restart, expiry or graph changes require a new
+        scoped request. No continuation is issued for depth, node or edge caps.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                seed_ids: { type: array, maxItems: 16, items: { type: string } }
+                project: { type: string, maxLength: 256, default: "" }
+                relation_types:
+                  type: array
+                  maxItems: 16
+                  items: { type: string, enum: [derived_from, has_lesson, applies_decision, supported_by] }
+                max_depth: { type: integer, minimum: 0, maximum: 4, default: 2 }
+                max_nodes: { type: integer, minimum: 1, maximum: 100, default: 50 }
+                max_edges: { type: integer, minimum: 1, maximum: 1000, default: 500 }
+                time_budget_ms: { type: integer, minimum: 1, maximum: 500, default: 100 }
+                continuation: { type: [string, "null"], maxLength: 128 }
+      responses:
+        "200":
+          description: |
+            nodes contains authorized entity id, type, revision, projects,
+            vault_ref, title, inclusion explanation and path. Each path entry
+            names relation_id, source, type, target, traversal direction, from,
+            to, revision and confidence. partial identifies omissions; reason is
+            null, disabled, timeout, depth_cap, node_cap or edge_cap.
+            continuation is null or the opaque resume token;
+            continuation_expires_in_seconds reports its maximum lifetime;
+            remaining_continuations bounds further resumes.
+            graph_nodes_expanded_per_request counts newly included nodes in
+            this response; edges_examined counts cumulative inspected edges.
+        "401":
+          description: Invalid authentication.
+        "403":
+          description: Caller belongs to another brain.
+        "404":
+          description: Seed not found in the caller scope.
+        "409":
+          description: Continuation unavailable or graph changed; restart scoped seeds.
+        "422":
+          description: Invalid request, relation type or budget.
+        "503":
+          description: Graph projection is not configured.
+
   /tick:
     post:
       summary: Trigger a manual cognitive tick (operator / cron).
