@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..graph import RELATION_TYPES, GraphReadView, GraphStore
 from ..scope import admits
+from .current_knowledge import classify, select_current
 
 
 class ExpansionRequest(BaseModel):
@@ -193,6 +194,7 @@ def expand(store: GraphStore, request: ExpansionRequest, grant: frozenset[str], 
     initial_count = len(state.nodes)
     reason = None
     validated = False
+    selection = None
     try:
         with store.read_view(state.deadline) as view:
             if state.revision is None:
@@ -210,6 +212,15 @@ def expand(store: GraphStore, request: ExpansionRequest, grant: frozenset[str], 
                     reason = "edge_cap"
                     break
                 _step(view, state, grant)
+            nodes = state.nodes if enabled else [node for node in state.nodes if not node["path"]]
+            selection = select_current(
+                view,
+                nodes,
+                lambda entity: _visible(entity, grant, state.request.project),
+                state.request.max_edges - state.edges,
+            )
     except TimeoutError:
         reason = "timeout"
-    return _response(state, reason, initial_count, enabled, validated)
+    result = _response(state, reason, initial_count, enabled, validated)
+    result.update(selection if selection is not None else classify(result["nodes"], [], False))
+    return result
