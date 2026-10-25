@@ -133,12 +133,64 @@ def test_replacement_into_another_project_is_a_conflict_not_a_link():
     groups = cluster.group_sessions([other, handoff])
 
     assert _members(groups) == [["s-t-05-a"], ["s-t-05-handoff"]]
-    assert cluster.thread_of(next(g[0] for g in groups if g[0] is not other)) == ""
     assert cluster.arc_task_lineage_conflicts([other, handoff]) == {
         "total": 1,
         "cross_thread": 0,
         "cross_project": 1,
     }
+
+
+def test_replacement_listed_before_its_predecessor_still_links():
+    early = {**_by_id("s-t-05-handoff"), "start": "2026-10-20T09:00:00+00:00"}
+    groups = cluster.group_sessions([early, _by_id("s-t-05-a")])
+
+    assert _members(groups) == [["s-t-05-a", "s-t-05-handoff"]]
+
+
+def test_replacement_cycle_never_invents_a_thread():
+    a = {**_by_id("s-tool-heavy"), "replaces": "s-unrelated"}
+    b = {**_by_id("s-unrelated"), "replaces": "s-tool-heavy"}
+
+    assert [cluster.thread_of(s) for s in cluster.link_lineage([a, b])] == ["", ""]
+
+
+def test_quarantined_merge_writes_no_sibling_edges(tmp_path):
+    root = tmp_path / "clusters"
+    heavy = _by_id("s-tool-heavy")
+    shared = {**_by_id("s-unrelated"), "worktree": heavy["worktree"], "cwd": heavy["cwd"]}
+    cluster.write_stub(cluster.build_cluster([heavy], NOW), root / "2026-10-20")
+    [merged] = cluster.group_sessions([heavy, shared])
+
+    path = cluster.write_stub(cluster.build_cluster(merged, NOW), root / "2026-10-21", root)
+
+    assert "edges: []\n" in path.read_text()
+
+
+def test_generation_two_stub_stays_readable_and_keeps_its_references(tmp_path):
+    first = cluster.group_sessions([_by_id("s-t-03-a")])[0]
+    path = cluster.write_stub(cluster.build_cluster(first, NOW), tmp_path)
+    old = json.dumps(
+        {
+            "session": "s-t-03-a",
+            "branch": "t-03-a",
+            "worktree": "/srv/worktrees/agentihooks/t-03-a",
+            "harness": "claude",
+            "installation": "swarm-anton",
+        }
+    )
+    lines = [
+        f"  - {old}" if ln.startswith('  - {"session"') else ln
+        for ln in path.read_text().splitlines()
+    ]
+    path.write_text(
+        "\n".join(ln.replace("grouping_generation: 3", "grouping_generation: 2") for ln in lines)
+    )
+    resumed = cluster.group_sessions([_by_id("s-t-03-resumed")])[0]
+
+    cluster.write_stub(cluster.build_cluster(resumed, NOW), tmp_path)
+
+    assert cluster.recorded_sessions(path) == {"s-t-03-a", "s-t-03-resumed"}
+    assert f"  - {old}\n" in path.read_text()
 
 
 def test_another_attempt_keeps_earlier_source_references(tmp_path):

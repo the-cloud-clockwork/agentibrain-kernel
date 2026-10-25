@@ -154,14 +154,13 @@ def check_records(body: object, change: dict, first: int) -> list[dict]:
     return records
 
 
-def check_lineage(lineage: object) -> dict:
+def check_lineage(lineage: object) -> None:
     _fields(lineage, LINEAGE_FIELDS, "lineage")
     if any(not isinstance(lineage.get(name, ""), str) for name in LINEAGE_TEXT):
         raise _invalid("lineage ids are not strings")
     attempt = lineage.get("attempt", 1)
     if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 1:
         raise _invalid("lineage attempt is not a positive integer")
-    return lineage
 
 
 class FeedSource:

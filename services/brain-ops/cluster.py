@@ -34,6 +34,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import glob
 import hashlib
 import json
 import os
@@ -174,17 +175,25 @@ def arc_grouping_ambiguities(groups: list[list[dict]]) -> dict[str, int]:
 
 
 def link_lineage(sessions: list[dict]) -> list[dict]:
-    """Sessions in start order, a replacement without its own thread taking its predecessor's
-    thread when both share a canonical project. Inputs are never mutated."""
-    by_id: dict[str, dict] = {}
+    """Sessions in start order, a replacement without its own thread taking the thread of its
+    replacement chain within one canonical project. Inputs are never mutated."""
+    by_id = {s["session_id"]: s for s in sessions}
     linked: list[dict] = []
     for sess in sorted(sessions, key=lambda s: (parse_ts(s["start"]), s["session_id"])):
-        prior = by_id.get(sess.get("replaces") or "")
-        if prior and not thread_of(sess) and thread_of(prior) and _same_project(prior, sess):
-            sess = {**sess, "work_thread_id": thread_of(prior)}
-        by_id[sess["session_id"]] = sess
+        thread = _inherited_thread(sess, by_id, set())
+        if thread != thread_of(sess):
+            sess = {**sess, "work_thread_id": thread}
         linked.append(sess)
     return linked
+
+
+def _inherited_thread(sess: dict, by_id: dict[str, dict], seen: set[str]) -> str:
+    prior = by_id.get(sess.get("replaces") or "")
+    if thread_of(sess) or not prior or prior["session_id"] in seen:
+        return thread_of(sess)
+    if not _same_project(prior, sess):
+        return ""
+    return _inherited_thread(prior, by_id, seen | {sess["session_id"]})
 
 
 def _same_project(prior: dict, sess: dict) -> bool:
@@ -351,11 +360,11 @@ def recorded_provenance(path: Path) -> dict[str, str]:
 
 
 def stub_path(cluster: dict, out_dir: Path) -> Path:
-    """A task arc reuses the stub its thread already has in out_dir, whatever its title."""
     path = out_dir / f"{cluster['cluster_id']}.md"
     if path.exists() or cluster.get("grouping_basis") != "task":
         return path
-    return next(iter(sorted(out_dir.glob(f"*-{cluster['cluster_id'][-12:]}.md"))), path)
+    suffix = glob.escape(cluster["cluster_id"][-12:])
+    return next(iter(sorted(out_dir.glob(f"*-{suffix}.md"))), path)
 
 
 def write_stub(cluster: dict, out_dir: Path, clusters_root: Path | None = None) -> Path:
@@ -368,7 +377,11 @@ def write_stub(cluster: dict, out_dir: Path, clusters_root: Path | None = None) 
         return path
     kept = {sid: line for sid, line in recorded_provenance(path).items() if sid not in current}
     earlier = [*kept, *sorted(recorded - current - set(kept))]
-    siblings = find_sibling_arcs(cluster["sessions"], clusters_root, cluster["cluster_id"])
+    siblings = (
+        []
+        if cluster["confidence"] == "quarantined"
+        else find_sibling_arcs(cluster["sessions"], clusters_root, cluster["cluster_id"])
+    )
 
     group = cluster["sessions"]
     total_user = sum(s.get("num_user_turns", 0) for s in group)
