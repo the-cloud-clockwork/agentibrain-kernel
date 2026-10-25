@@ -1,0 +1,176 @@
+{
+  "first": {
+    "grant": "github.com/acme/alpha",
+    "markers": [
+      {
+        "type": "lesson",
+        "content": "Alpha lesson: pin the worker image by release tag.",
+        "idempotency_key": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "ts": "2026-10-20T08:15:00+00:00",
+        "attrs": {
+          "source": "engineer@111-1",
+          "session_id": "sess-alpha-1",
+          "project_id": "github.com/acme/alpha",
+          "project": "alpha",
+          "repo": "alpha",
+          "worktree": "engineer-111-1",
+          "cwd": "/home/dev/worktrees/alpha/engineer-111-1",
+          "remote": "acme/alpha",
+          "branch": "engineer-111-1",
+          "swarm": "rig-a",
+          "task": "t-alpha-1",
+          "task_revision": "3",
+          "lane": "eng",
+          "execution": "ex-alpha-1",
+          "attribution": "explicit"
+        }
+      },
+      {
+        "type": "decision",
+        "content": "Alpha decision: keep one claim authority per task.",
+        "idempotency_key": "a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+        "ts": "2026-10-20T08:16:00+00:00",
+        "attrs": {
+          "source": "engineer@111-1",
+          "session_id": "sess-alpha-1",
+          "title": "One claim authority",
+          "project_id": "github.com/acme/alpha",
+          "project": "alpha",
+          "repo": "alpha",
+          "worktree": "engineer-111-1",
+          "branch": "engineer-111-1",
+          "swarm": "rig-a",
+          "task": "t-alpha-1",
+          "execution": "ex-alpha-1",
+          "attribution": "explicit"
+        }
+      },
+      {
+        "type": "milestone",
+        "content": "Alpha milestone: worker image published.",
+        "idempotency_key": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3",
+        "ts": "2026-10-20T08:17:00+00:00",
+        "attrs": {
+          "source": "engineer@111-1",
+          "session_id": "sess-alpha-1",
+          "status": "done",
+          "project_id": "github.com/acme/alpha",
+          "project": "alpha",
+          "repo": "alpha",
+          "worktree": "engineer-111-1",
+          "branch": "engineer-111-1",
+          "swarm": "rig-a",
+          "task": "t-alpha-1",
+          "execution": "ex-alpha-1",
+          "attribution": "explicit"
+        }
+      },
+      {
+        "type": "signal",
+        "content": "Alpha signal: worker pool saturated.",
+        "idempotency_key": "a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4",
+        "ts": "2026-10-20T08:18:00+00:00",
+        "attrs": {
+          "source": "engineer@111-1",
+          "session_id": "sess-alpha-1",
+          "severity": "warning",
+          "project_id": "github.com/acme/alpha",
+          "project": "alpha",
+          "repo": "alpha",
+          "worktree": "engineer-111-1",
+          "branch": "engineer-111-1",
+          "swarm": "rig-a",
+          "task": "t-alpha-1",
+          "execution": "ex-alpha-1",
+          "attribution": "explicit"
+        }
+      }
+    ]
+  },
+  "second": {
+    "grant": "github.com/acme/beta",
+    "markers": [
+      {
+        "type": "lesson",
+        "content": "Beta lesson: drain the outbox before the tick.",
+        "idempotency_key": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+        "ts": "2026-10-21T19:40:00+00:00",
+        "attrs": {
+          "source": "engineer@222-2",
+          "session_id": "sess-beta-2",
+          "project_id": "github.com/acme/beta",
+          "project": "beta",
+          "repo": "beta",
+          "worktree": "engineer-222-2",
+          "cwd": "/home/dev/worktrees/beta/engineer-222-2",
+          "branch": "engineer-222-2",
+          "swarm": "rig-b",
+          "task": "t-beta-2",
+          "lane": "ci",
+          "execution": "ex-beta-2",
+          "attribution": "scoped"
+        }
+      },
+      {
+        "type": "decision",
+        "content": "Beta decision: replay keeps the source timestamp.",
+        "idempotency_key": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+        "ts": "2026-10-21T19:41:00+00:00",
+        "attrs": {
+          "source": "engineer@222-2",
+          "session_id": "sess-beta-2",
+          "title": "Replay keeps source time",
+          "project_id": "github.com/acme/beta",
+          "project": "beta",
+          "repo": "beta",
+          "worktree": "engineer-222-2",
+          "branch": "engineer-222-2",
+          "swarm": "rig-b",
+          "task": "t-beta-2",
+          "execution": "ex-beta-2",
+          "attribution": "scoped"
+        }
+      },
+      {
+        "type": "milestone",
+        "content": "Beta milestone: replay proof recorded.",
+        "idempotency_key": "b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3",
+        "ts": "2026-10-21T19:42:00+00:00",
+        "attrs": {
+          "source": "engineer@222-2",
+          "session_id": "sess-beta-2",
+          "status": "done",
+          "project_id": "github.com/acme/beta",
+          "project": "beta",
+          "repo": "beta",
+          "worktree": "engineer-222-2",
+          "branch": "engineer-222-2",
+          "swarm": "rig-b",
+          "task": "t-beta-2",
+          "execution": "ex-beta-2",
+          "attribution": "scoped"
+        }
+      },
+      {
+        "type": "signal",
+        "content": "Beta signal: replay backlog above threshold.",
+        "idempotency_key": "b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4",
+        "ts": "2026-10-21T19:43:00+00:00",
+        "attrs": {
+          "source": "engineer@222-2",
+          "session_id": "sess-beta-2",
+          "severity": "critical",
+          "project_id": "github.com/acme/beta",
+          "project": "beta",
+          "repo": "beta",
+          "worktree": "engineer-222-2",
+          "branch": "engineer-222-2",
+          "swarm": "rig-b",
+          "task": "t-beta-2",
+          "execution": "ex-beta-2",
+          "attribution": "scoped"
+        }
+      }
+    ]
+  }
+}

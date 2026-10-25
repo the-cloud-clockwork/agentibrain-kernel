@@ -2,22 +2,29 @@
 
 Four marker types, four destinations:
   lesson    → left/reference/lessons-YYYY-MM-DD.md              (append)
-  milestone → left/projects/<source>/BLOCKS.md if source matches (append)
+  milestone → left/projects/<project>/BLOCKS.md if project matches (append)
               else daily/YYYY-MM-DD.md                           (append)
   signal    → amygdala/YYYYMMDDTHHMMSS-<severity>-<slug>.md     (new file)
   decision  → left/decisions/ADR-<next-number>-<slug>.md        (new file)
 
 This is the HTTP replacement for the SSH+rsync outbox path used by
 `agentihooks/hooks/context/brain_writer_hook.py::_write_to_outbox`.
-Idempotency is enforced at the HTTP layer via `X-Idempotency-Key`; this
-module focuses on file routing + writing.
+Every marker carries its scope and evidence (`marker_provenance`): frontmatter
+for signal and decision files, a `@provenance` comment on the entry header for
+lesson and milestone logs. A registry under `brain-feed/markers/`, keyed by the
+marker id the HTTP layer derives from `X-Idempotency-Key`, makes a write
+happen at most once across processes.
 """
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import hashlib
+import json
 import os
 import re
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -52,6 +59,34 @@ SIGNAL_DEDUP_SCAN_MAX = int(os.getenv("SIGNAL_DEDUP_SCAN_MAX", "300"))
 # is known, and off the synthesized incident arcs that also live in amygdala/ —
 # those carry `severity: nuclear` meaning a synthesis score, not an alarm level.
 _SIGNAL_FILENAME_RE = re.compile(r"^\d{8}T\d{6}Z-")
+PROVENANCE_FIELDS = (
+    "project_id",
+    "projects",
+    "project",
+    "repo",
+    "worktree",
+    "cwd",
+    "remote",
+    "branch",
+    "session_id",
+    "execution",
+    "installation",
+    "harness",
+    "swarm",
+    "task",
+    "task_revision",
+    "lane",
+    "attribution",
+)
+_STORED_KEYS = ("marker_id", "brain", "source_ts", *PROVENANCE_FIELDS)
+# Values ride inside an HTML comment or a frontmatter line, so anything that
+# could close either, or that the frontmatter reader strips, is unrepresentable
+# and counted as lost instead of written.
+_UNSAFE_VALUE_RE = re.compile(r"[\"'<>\r\n]|--")
+_PROVENANCE_RE = re.compile(r'<!--\s*@provenance((?:\s+\w+="[^"]*")*)\s*-->')
+_PROVENANCE_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
+MARKER_REGISTRY_DIR = "brain-feed/markers"
+_MARKER_ID_RE = re.compile(r"^mk-[0-9a-f]{32}$")
 
 
 class MarkerError(ValueError):
@@ -115,6 +150,18 @@ def _write_new(path: Path, body: str) -> None:
     path.write_text(body + ("\n" if not body.endswith("\n") else ""), encoding="utf-8")
 
 
+def _parse_ts(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _format_timestamp_utc(override_ts: str | None = None) -> tuple[str, str, str]:
     """Return (date_part, stamp, ts_iso), backdated when the marker carries one.
 
@@ -122,15 +169,7 @@ def _format_timestamp_utc(override_ts: str | None = None) -> tuple[str, str, str
     `attrs.ts`; honouring it keeps lessons/milestones in their original dated
     files and arc dating truthful. Anything unparseable falls back to now.
     """
-    moment = datetime.now(tz=timezone.utc)
-    if override_ts:
-        try:
-            parsed = datetime.fromisoformat(str(override_ts).replace("Z", "+00:00"))
-            if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=timezone.utc)
-            moment = parsed.astimezone(timezone.utc)
-        except ValueError:
-            pass
+    moment = _parse_ts(override_ts) or datetime.now(tz=timezone.utc)
     return (
         moment.strftime("%Y-%m-%d"),
         moment.strftime("%Y%m%dT%H%M%SZ"),
@@ -150,6 +189,141 @@ def _content_hash(text: str) -> str:
     """
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     return hashlib.sha256(normalized.strip().encode("utf-8")).hexdigest()[:16]
+
+
+def marker_id_for(idempotency_key: str) -> str:
+    return "mk-" + hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:32]
+
+
+def _listed(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    if isinstance(value, (list, tuple)):
+        return [str(part).strip() for part in value if str(part).strip()]
+    return []
+
+
+def claimed_projects(attrs: dict[str, Any]) -> set[str]:
+    claimed = set(_listed(attrs.get("projects")))
+    project_id = str(attrs.get("project_id") or "").strip()
+    if project_id:
+        claimed.add(project_id)
+    return claimed - {"unknown"}
+
+
+def _provenance_value(value: Any) -> str | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (str, int, float)):
+        text = str(value).strip()
+    elif isinstance(value, (list, tuple)) and all(isinstance(v, str) for v in value):
+        text = ",".join(v.strip() for v in value if v.strip())
+    else:
+        return None
+    if _UNSAFE_VALUE_RE.search(text):
+        return None
+    return text
+
+
+def marker_provenance(
+    attrs: dict[str, Any], marker_id: str, brain: str
+) -> tuple[dict[str, str], int]:
+    """The scope and evidence fields to persist, and how many supplied ones could not be."""
+    stored = {"marker_id": marker_id}
+    if brain:
+        stored["brain"] = brain
+    source = _parse_ts(attrs.get("ts"))
+    if source is not None:
+        stored["source_ts"] = source.isoformat(timespec="seconds")
+    lost = 0
+    for name in PROVENANCE_FIELDS:
+        raw = attrs.get(name)
+        if raw is None or (isinstance(raw, (str, list, tuple)) and not _listed(raw)):
+            continue
+        value = _provenance_value(raw)
+        if value:
+            stored[name] = value
+        else:
+            lost += 1
+    return stored, lost
+
+
+def _provenance_comment(provenance: dict[str, str]) -> str:
+    pairs = " ".join(f'{key}="{value}"' for key, value in provenance.items())
+    return f"<!-- @provenance {pairs} -->"
+
+
+def _provenance_frontmatter(provenance: dict[str, str]) -> str:
+    return "".join(f"{key}: {value}\n" for key, value in provenance.items())
+
+
+def _provenance_in(text: str, marker_id: str) -> dict[str, str] | None:
+    fm, _ = _parse_frontmatter(text)
+    if fm.get("marker_id") == marker_id:
+        return {key: fm[key] for key in _STORED_KEYS if fm.get(key)}
+    for match in _PROVENANCE_RE.finditer(text):
+        found = dict(_PROVENANCE_ATTR_RE.findall(match.group(1)))
+        if found.get("marker_id") == marker_id:
+            return found
+    return None
+
+
+def _first_marker_id(text: str) -> str:
+    fm, _ = _parse_frontmatter(text)
+    if fm.get("marker_id"):
+        return fm["marker_id"]
+    match = _PROVENANCE_RE.search(text)
+    return dict(_PROVENANCE_ATTR_RE.findall(match.group(1))).get("marker_id", "") if match else ""
+
+
+@contextlib.contextmanager
+def _registry_lock(root: Path) -> Iterator[Path]:
+    """Exclusive across threads and processes; across hosts only where the mount honours flock."""
+    registry = root / MARKER_REGISTRY_DIR
+    registry.mkdir(parents=True, exist_ok=True)
+    with open(registry / ".lock", "a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield registry
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _registry_entry(registry: Path, marker_id: str) -> dict | None:
+    if not _MARKER_ID_RE.match(marker_id):
+        return None
+    try:
+        return json.loads((registry / f"{marker_id}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _record(registry: Path, entry: dict) -> None:
+    target = registry / f"{entry['marker_id']}.json"
+    tmp = registry / f".{entry['marker_id']}.{uuid4().hex}.tmp"
+    tmp.write_text(json.dumps(entry, sort_keys=True), encoding="utf-8")
+    os.replace(tmp, target)
+
+
+def read_marker(marker_id: str, vault_root: Path | None = None) -> dict | None:
+    """A recorded marker with the provenance read back from its vault file."""
+    root = Path(vault_root) if vault_root else VAULT_ROOT
+    entry = _registry_entry(root / MARKER_REGISTRY_DIR, marker_id)
+    if entry is None or entry.get("state") == "pending":
+        return None
+    canonical = entry.get("canonical_marker_id") or marker_id
+    try:
+        target = _resolve_inside_vault(entry["vault_path"], root)
+        text = target.read_text(encoding="utf-8")
+    except (OSError, MarkerError, KeyError):
+        text = ""
+    return {
+        "marker_id": marker_id,
+        "canonical_marker_id": canonical,
+        "marker_type": entry.get("marker_type", ""),
+        "vault_path": entry.get("vault_path", ""),
+        "provenance": _provenance_in(text, canonical) or {},
+    }
 
 
 def _lesson_frontmatter(date_part: str) -> str:
@@ -173,10 +347,10 @@ def _lesson_frontmatter(date_part: str) -> str:
     )
 
 
-def _append_lesson(path: Path, entry: str, content: str, date_part: str) -> str:
+def _append_lesson(path: Path, entry: str, content: str, date_part: str) -> tuple[str, str]:
     """Append a lesson entry, seeding frontmatter and skipping duplicates.
 
-    Returns "appended" or "duplicate".
+    Returns ("appended", "") or ("duplicate", marker id of the entry kept).
 
     Dedup hashes the lesson *content* only, never the rendered entry: the
     header carries a fresh timestamp and session id every time, so a
@@ -205,7 +379,7 @@ def _append_lesson(path: Path, entry: str, content: str, date_part: str) -> str:
             continue
         block_body = "\n".join(lines[1:]).strip()
         if block_body and _content_hash(block_body) == incoming:
-            return "duplicate"
+            return "duplicate", _first_marker_id(lines[0])
 
     # Seed frontmatter only when the file is new. Written here rather than via
     # _append, which re-reads from disk and so would drop the seeded header.
@@ -217,19 +391,25 @@ def _append_lesson(path: Path, entry: str, content: str, date_part: str) -> str:
         existing + sep + entry + ("\n" if not entry.endswith("\n") else ""),
         encoding="utf-8",
     )
-    return "appended"
+    return "appended", ""
 
 
-def _build_lesson_entry(content: str, attrs: dict[str, Any], ts_iso: str) -> str:
+def _build_lesson_entry(
+    content: str, attrs: dict[str, Any], ts_iso: str, provenance: dict[str, str]
+) -> str:
     source = attrs.get("source") or "unknown"
     session_id = attrs.get("session_id") or ""
     header = f"## {ts_iso} — {source}"
     if session_id:
         header += f" — `{session_id}`"
+    # On the header line, because the entry body is what dedup and reconcile hash.
+    header += f" {_provenance_comment(provenance)}"
     return f"{header}\n\n{content.strip()}\n"
 
 
-def _build_milestone_entry(content: str, attrs: dict[str, Any], ts_iso: str) -> str:
+def _build_milestone_entry(
+    content: str, attrs: dict[str, Any], ts_iso: str, provenance: dict[str, str]
+) -> str:
     source = attrs.get("source") or "unknown"
     scope = attrs.get("scope") or ""
     status = attrs.get("status") or "done"
@@ -238,11 +418,13 @@ def _build_milestone_entry(content: str, attrs: dict[str, Any], ts_iso: str) -> 
         parts.append(f"scope={scope}")
     if status:
         parts.append(f"status={status}")
-    header = " — ".join(parts)
+    header = " — ".join(parts) + f" {_provenance_comment(provenance)}"
     return f"{header}\n  {content.strip()}\n"
 
 
-def _build_signal_file(content: str, attrs: dict[str, Any], ts_iso: str, slug: str) -> str:
+def _build_signal_file(
+    content: str, attrs: dict[str, Any], ts_iso: str, slug: str, provenance: dict[str, str]
+) -> str:
     severity = (attrs.get("severity") or "warning").lower()
     if severity not in _VALID_SEVERITIES:
         severity = "warning"
@@ -254,6 +436,7 @@ def _build_signal_file(content: str, attrs: dict[str, Any], ts_iso: str, slug: s
         f"severity: {severity}\n"
         f"source: {source}\n"
         f"created: {ts_iso}\n"
+        f"{_provenance_frontmatter(provenance)}"
         "---\n\n"
         f"{content.strip()}\n"
     )
@@ -320,7 +503,9 @@ def _existing_signal_with_same_body(
     return None
 
 
-def _build_decision_file(content: str, attrs: dict[str, Any], ts_iso: str, adr_number: int) -> str:
+def _build_decision_file(
+    content: str, attrs: dict[str, Any], ts_iso: str, adr_number: int, provenance: dict[str, str]
+) -> str:
     title = (attrs.get("title") or content[:80].strip()) or f"ADR {adr_number}"
     source = attrs.get("source") or "unknown"
     return (
@@ -330,10 +515,147 @@ def _build_decision_file(content: str, attrs: dict[str, Any], ts_iso: str, adr_n
         f"created: {ts_iso}\n"
         f"source: {source}\n"
         "status: proposed\n"
+        f"{_provenance_frontmatter(provenance)}"
         "---\n\n"
         f"# ADR-{adr_number:04d} — {title}\n\n"
         f"{content.strip()}\n"
     )
+
+
+def _write_lesson(root, content, attrs, stamps, provenance) -> tuple[Path, str, str]:
+    date_part, _, ts_iso = stamps
+    target = _resolve_inside_vault(f"left/reference/lessons-{date_part}.md", root)
+    body = _build_lesson_entry(content, attrs, ts_iso, provenance)
+    action, kept = _append_lesson(target, body, content, date_part)
+    return target, action, kept
+
+
+def milestone_project(attrs: dict[str, Any]) -> str:
+    project = str(attrs.get("project") or "").strip()
+    if project:
+        return project
+    project_id = str(attrs.get("project_id") or "").strip()
+    if project_id and project_id != "unknown":
+        return project_id.rsplit("/", 1)[-1]
+    # A client older than project attribution only ever named the project in source.
+    return str(attrs.get("source") or "").strip()
+
+
+def granted_names(grant: frozenset[str]) -> set[str]:
+    return {project_id.rsplit("/", 1)[-1] for project_id in grant}
+
+
+def _milestone_target(root, attrs, stamps, grant: frozenset[str]) -> Path:
+    rel = f"daily/{stamps[0]}.md"
+    project = milestone_project(attrs)
+    if project and (not grant or project in granted_names(grant)):
+        project_slug = _slugify(project, max_len=80)
+        if (root / "left" / "projects" / project_slug).is_dir():
+            rel = f"left/projects/{project_slug}/BLOCKS.md"
+    return _resolve_inside_vault(rel, root)
+
+
+def _write_milestone(
+    root, content, attrs, stamps, provenance, grant: frozenset[str] = frozenset()
+) -> tuple[Path, str, str]:
+    target = _milestone_target(root, attrs, stamps, grant)
+    _append(target, _build_milestone_entry(content, attrs, stamps[2], provenance))
+    return target, "appended", ""
+
+
+def _write_signal(root, content, attrs, stamps, provenance) -> tuple[Path, str, str]:
+    _, stamp, ts_iso = stamps
+    severity = (attrs.get("severity") or "warning").lower()
+    if severity not in _VALID_SEVERITIES:
+        severity = "warning"
+    slug = _slugify(attrs.get("title") or content, max_len=60)
+    # An open signal already carrying this exact claim absorbs the write.
+    # Returning the existing path rather than 409-ing keeps the caller's
+    # contract unchanged — a re-emission is a no-op, not an error.
+    duplicate = _existing_signal_with_same_body(
+        root / "amygdala", content, severity, attrs.get("source") or "unknown"
+    )
+    if duplicate is not None:
+        return duplicate, "duplicate", _first_marker_id(duplicate.read_text(encoding="utf-8"))
+    target = _resolve_inside_vault(f"amygdala/{stamp}-{severity}-{slug}.md", root)
+    # Second-resolution stamps collide under alert bursts (crash loop
+    # firing same-title signals within one second). A DIFFERENT signal
+    # must never be refused for a filename clash — true duplicates are
+    # already caught by the HTTP idempotency layer before reaching here.
+    if target.exists():
+        rel = f"amygdala/{stamp}-{severity}-{slug}-{uuid4().hex[:6]}.md"
+        target = _resolve_inside_vault(rel, root)
+    _write_new(target, _build_signal_file(content, attrs, ts_iso, slug, provenance))
+    return target, "created", ""
+
+
+def _write_decision(root, content, attrs, stamps, provenance) -> tuple[Path, str, str]:
+    ts_iso = stamps[2]
+    adr_number = _next_adr_number(root / "left" / "decisions")
+    slug = _slugify(attrs.get("title") or content, max_len=60)
+    target = _resolve_inside_vault(f"left/decisions/ADR-{adr_number:04d}-{slug}.md", root)
+    if target.exists():
+        adr_number += 1
+        target = _resolve_inside_vault(f"left/decisions/ADR-{adr_number:04d}-{slug}.md", root)
+    _write_new(target, _build_decision_file(content, attrs, ts_iso, adr_number, provenance))
+    return target, "created", ""
+
+
+def _written_candidates(root, marker_type, attrs, stamps, grant) -> list[Path]:
+    if marker_type == "lesson":
+        return [root / "left" / "reference" / f"lessons-{stamps[0]}.md"]
+    if marker_type == "milestone":
+        return [_milestone_target(root, attrs, stamps, grant)]
+    if marker_type == "signal":
+        folder = root / "amygdala"
+        names = sorted(
+            (p for p in folder.glob("*.md") if _SIGNAL_FILENAME_RE.match(p.name)),
+            key=lambda p: p.name,
+            reverse=True,
+        )
+        return names[:SIGNAL_DEDUP_SCAN_MAX]
+    return sorted((root / "left" / "decisions").glob("ADR-*.md"), reverse=True)
+
+
+def _already_written(root, marker_type, marker_id, attrs, stamps, grant, pending) -> Path | None:
+    """A file holding this marker id from an attempt that died between pending and recorded."""
+    # The pending entry names the dated log the dead attempt chose, which a retry
+    # after midnight would no longer compute.
+    noted = [root / rel for rel in pending.get("candidates", [])]
+    for path in noted + _written_candidates(root, marker_type, attrs, stamps, grant):
+        try:
+            if marker_id in path.read_text(encoding="utf-8"):
+                return path
+        except OSError:
+            continue
+    return None
+
+
+def _committed_entry(registry, root, marker_type, marker_id, attrs, stamps, grant) -> dict | None:
+    """The recorded write of this marker id, completing one a crash left pending."""
+    recorded = _registry_entry(registry, marker_id)
+    if recorded is None or recorded.get("state") != "pending":
+        return recorded
+    orphan = _already_written(root, marker_type, marker_id, attrs, stamps, grant, recorded)
+    if orphan is None:
+        return None
+    recorded = {
+        "marker_id": marker_id,
+        "canonical_marker_id": marker_id,
+        "marker_type": marker_type,
+        "vault_path": str(orphan.relative_to(root)),
+        "action": "recovered",
+    }
+    _record(registry, recorded)
+    return recorded
+
+
+_WRITERS = {
+    "lesson": _write_lesson,
+    "milestone": _write_milestone,
+    "signal": _write_signal,
+    "decision": _write_decision,
+}
 
 
 def write_marker(
@@ -341,10 +663,17 @@ def write_marker(
     content: str,
     attrs: dict[str, Any] | None = None,
     vault_root: Path | None = None,
+    marker_id: str | None = None,
+    brain: str = "",
+    grant: frozenset[str] = frozenset(),
 ) -> dict:
-    """Route a single marker to its vault destination.
+    """Route a single marker to its vault destination, at most once per marker id.
 
-    Returns {vault_path, action, marker_type, written_bytes}.
+    Returns {vault_path, action, marker_type, written_bytes, marker_id,
+    marker_provenance_loss_total}; a marker id already recorded, or already
+    in the vault from an attempt that died before recording it, returns
+    action "replayed" with the original vault path and writes nothing. A
+    non-empty grant limits milestone routing to the granted projects.
     """
     if marker_type not in _VALID_TYPES:
         raise MarkerError(f"invalid marker type: {marker_type!r}")
@@ -354,85 +683,58 @@ def write_marker(
     if len(content) > 4096:
         raise MarkerError("content exceeds 4KB limit")
     attrs = attrs or {}
+    marker_id = marker_id or marker_id_for(uuid4().hex)
+    if not _MARKER_ID_RE.match(marker_id):
+        raise MarkerError("invalid marker id")
     root = Path(vault_root) if vault_root else VAULT_ROOT
     root.mkdir(parents=True, exist_ok=True)
-    date_part, stamp, ts_iso = _format_timestamp_utc(attrs.get("ts"))
+    stamps = _format_timestamp_utc(attrs.get("ts"))
+    provenance, lost = marker_provenance(attrs, marker_id, brain)
 
-    if marker_type == "lesson":
-        rel = f"left/reference/lessons-{date_part}.md"
-        target = _resolve_inside_vault(rel, root)
-        body = _build_lesson_entry(content, attrs, ts_iso)
-        action = _append_lesson(target, body, content, date_part)
-    elif marker_type == "milestone":
-        source = attrs.get("source") or ""
-        project_rel = ""
-        if source:
-            project_slug = _slugify(source, max_len=80)
-            candidate = root / "left" / "projects" / project_slug / "BLOCKS.md"
-            if candidate.parent.is_dir():
-                project_rel = f"left/projects/{project_slug}/BLOCKS.md"
-        if project_rel:
-            rel = project_rel
-        else:
-            rel = f"daily/{date_part}.md"
-        target = _resolve_inside_vault(rel, root)
-        body = _build_milestone_entry(content, attrs, ts_iso)
-        _append(target, body)
-        action = "appended"
-    elif marker_type == "signal":
-        severity = (attrs.get("severity") or "warning").lower()
-        if severity not in _VALID_SEVERITIES:
-            severity = "warning"
-        slug = _slugify(attrs.get("title") or content, max_len=60)
-        # An open signal already carrying this exact claim absorbs the write.
-        # Returning the existing path rather than 409-ing keeps the caller's
-        # contract unchanged — a re-emission is a no-op, not an error.
-        duplicate = _existing_signal_with_same_body(
-            root / "amygdala", content, severity, attrs.get("source") or "unknown"
-        )
-        if duplicate is not None:
+    with _registry_lock(root) as registry:
+        recorded = _committed_entry(registry, root, marker_type, marker_id, attrs, stamps, grant)
+        if recorded is not None:
             return {
-                "vault_path": str(duplicate.relative_to(root)),
-                "action": "duplicate",
-                "marker_type": marker_type,
+                "vault_path": recorded["vault_path"],
+                "action": "replayed",
+                "marker_type": recorded["marker_type"],
                 "written_bytes": 0,
+                "marker_id": marker_id,
+                "marker_provenance_loss_total": 0,
             }
-        rel = f"amygdala/{stamp}-{severity}-{slug}.md"
-        target = _resolve_inside_vault(rel, root)
-        # Second-resolution stamps collide under alert bursts (crash loop
-        # firing same-title signals within one second). A DIFFERENT signal
-        # must never be refused for a filename clash — true duplicates are
-        # already caught by the HTTP idempotency layer before reaching here.
-        if target.exists():
-            rel = f"amygdala/{stamp}-{severity}-{slug}-{uuid4().hex[:6]}.md"
-            target = _resolve_inside_vault(rel, root)
-        body = _build_signal_file(content, attrs, ts_iso, slug)
-        _write_new(target, body)
-        action = "created"
-    elif marker_type == "decision":
-        decisions_dir = root / "left" / "decisions"
-        adr_number = _next_adr_number(decisions_dir)
-        slug = _slugify(attrs.get("title") or content, max_len=60)
-        rel = f"left/decisions/ADR-{adr_number:04d}-{slug}.md"
-        target = _resolve_inside_vault(rel, root)
-        if target.exists():
-            adr_number += 1
-            rel = f"left/decisions/ADR-{adr_number:04d}-{slug}.md"
-            target = _resolve_inside_vault(rel, root)
-        body = _build_decision_file(content, attrs, ts_iso, adr_number)
-        _write_new(target, body)
-        action = "created"
-    else:  # pragma: no cover — guarded above
-        raise MarkerError(f"unsupported marker type: {marker_type!r}")
+        pending = {"marker_id": marker_id, "marker_type": marker_type, "state": "pending"}
+        if marker_type in ("lesson", "milestone"):
+            dated = _written_candidates(root, marker_type, attrs, stamps, grant)
+            pending["candidates"] = [str(path.relative_to(root)) for path in dated]
+        _record(registry, pending)
+        extra = {"grant": grant} if marker_type == "milestone" else {}
+        target, action, kept = _WRITERS[marker_type](
+            root, content, attrs, stamps, provenance, **extra
+        )
+        vault_path = str(target.relative_to(root))
+        _record(
+            registry,
+            {
+                "marker_id": marker_id,
+                "canonical_marker_id": kept or marker_id,
+                "marker_type": marker_type,
+                "vault_path": vault_path,
+                "action": action,
+            },
+        )
 
     try:
-        written_bytes = target.stat().st_size
+        written_bytes = (
+            0 if marker_type == "signal" and action == "duplicate" else target.stat().st_size
+        )
     except OSError:
         written_bytes = 0
 
     return {
-        "vault_path": str(target.relative_to(root)),
+        "vault_path": vault_path,
         "action": action,
         "marker_type": marker_type,
         "written_bytes": written_bytes,
+        "marker_id": marker_id,
+        "marker_provenance_loss_total": lost,
     }

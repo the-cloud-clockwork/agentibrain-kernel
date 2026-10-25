@@ -1,0 +1,24 @@
+{
+  "case": "T-SV2-BRP-02-C",
+  "evidence_kind": "mocked fixture",
+  "tested_commit": "8b9eca964afef8645a4e1c95e25ca4705346d4a3",
+  "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40155372020",
+  "fixture": {
+    "path": "services/brain-api/tests/fixtures/sv2_brp02_markers.json",
+    "sha256": "02a98529e568d6a8a473154e4ee540d5d5fd1ae3a286c5caa89c833054a787a5",
+    "contents": "two independent sets (projects alpha and beta) of lesson, decision, milestone and signal markers with explicit project, worktree, branch, swarm, task, execution and source timestamp, delivered directly and through outbox replay"
+  },
+  "tests": [
+    "test_a_replay_after_restart_acknowledges_the_canonical_marker (all four types; stale replay cannot overwrite)",
+    "test_concurrent_duplicate_writes_from_separate_processes_leave_one_marker (all four types; 8 writes over 4 processes give 1 write and 7 replays)",
+    "test_a_write_interrupted_before_it_is_recorded_lands_once_on_retry (all four types)",
+    "test_a_retry_after_midnight_finds_the_log_the_dead_attempt_wrote",
+    "test_a_marker_without_an_idempotency_key_is_written_again_after_the_cache_window",
+    "test_a_blank_idempotency_key_does_not_share_one_marker_id",
+    "test_a_lesson_log_written_before_provenance_still_dedups_and_reads_back"
+  ],
+  "measurement": {
+    "duplicate_authoritative_effects": 0
+  },
+  "outcome": "passed"
+}

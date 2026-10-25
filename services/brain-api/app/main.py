@@ -50,7 +50,14 @@ from starlette.concurrency import run_in_threadpool
 
 from . import pipeline, scope, vault_reader
 from .feed import VAULT_ROOT, feed_payload
-from .markers import MarkerError, write_marker
+from .markers import (
+    MarkerError,
+    claimed_projects,
+    granted_names,
+    marker_id_for,
+    read_marker,
+    write_marker,
+)
 from .router import IngestResult, ingest_message
 from .signal import read_signal
 from .tick_trigger import enqueue_tick, get_tick_status
@@ -77,12 +84,9 @@ _idempotency_cache: dict[str, tuple[float, dict]] = {}
 _idempotency_lock = threading.Lock()
 # This lock also serializes `write_marker` itself, not just the cache — the
 # signal dedup inside it is a scan-then-write, which is only race-free because
-# the whole thing happens under here. That guarantee is PROCESS-LOCAL, and it
-# holds because brain-api runs one replica (helm/brain-api/values.yaml) with a
-# single uvicorn worker (its Dockerfile passes no --workers). Raising either
-# breaks the invariant silently; nothing else enforces it. The blast radius if
-# it ever does is a duplicate signal file, not a lost one — `_write_new`'s
-# uuid-suffix path still disambiguates — but the note belongs here.
+# the whole thing happens under here. Across processes on one host it also
+# holds, because write_marker takes the marker registry's flock in the vault;
+# across hosts only as far as the vault mount honours flock.
 _feed_cache: dict[str, Any] = {"ts": 0.0, "payload": None}
 
 
@@ -541,10 +545,17 @@ def _hash_marker_body(marker_type: str, content: str, attrs: dict) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
+def _caller_grant(authorization: str | None) -> frozenset[str]:
+    token = _bearer(authorization)
+    return frozenset() if token in KB_ROUTER_TOKENS else scope.project_grant(token)
+
+
 @app.post("/marker", status_code=201)
 def post_marker(
     payload: dict = Body(...),
     x_idempotency_key: str | None = Header(default=None, alias="X-Idempotency-Key"),
+    authorization: str | None = Header(None),
+    x_session_title: str | None = Header(None, alias="X-Session-Title"),
     _: None = Depends(require_token),
 ) -> dict:
     """Emit a brain marker.
@@ -559,15 +570,29 @@ def post_marker(
       X-Idempotency-Key: optional -- repeat calls with the same key return the
       original response without re-writing. Falls back to a content-hash key
       if absent.
+
+    A worker token with a project grant is refused a marker that claims a
+    project outside it; a marker claiming no project stays unattributed.
+    Only an explicit X-Idempotency-Key makes a marker id that outlives the
+    cache window.
     """
     marker_type = (payload.get("type") or "").strip().lower()
     content = payload.get("content") or ""
     attrs = payload.get("attrs") or {}
     if not isinstance(attrs, dict):
         raise HTTPException(status_code=400, detail="attrs must be an object")
+    grant = _caller_grant(authorization)
+    named = str(attrs.get("project") or "").strip()
+    foreign_name = bool(grant and named and named not in granted_names(grant))
+    if foreign_name or not scope.admits(grant, claimed_projects(attrs), unattributed=True):
+        scope.record_denial(
+            scope.worker_brain(_bearer(authorization)) or "", "POST /marker", x_session_title or ""
+        )
+        raise HTTPException(status_code=403, detail="marker project is outside this token's grant")
 
     body_hash = _hash_marker_body(marker_type, content, attrs)
-    idem_key = (x_idempotency_key or body_hash).strip()
+    explicit_key = (x_idempotency_key or "").strip()
+    idem_key = explicit_key or body_hash
 
     # The lock spans check-write-record so two threads carrying the same key
     # cannot both miss the cache and double-apply; it also serialises the
@@ -581,21 +606,54 @@ def post_marker(
             return cached_payload
 
         try:
-            result = write_marker(marker_type, content, attrs)
+            result = write_marker(
+                marker_type,
+                content,
+                attrs,
+                marker_id=marker_id_for(explicit_key) if explicit_key else None,
+                brain=scope.BRAIN_ID,
+                grant=grant,
+            )
         except MarkerError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         except OSError as exc:
             log.error("marker write failed: %s", exc)
             raise HTTPException(status_code=503, detail=f"vault write failed: {exc}")
 
+        if result["marker_provenance_loss_total"]:
+            log.warning(
+                "marker_provenance_loss_total=%d marker_type=%s marker_id=%s",
+                result["marker_provenance_loss_total"],
+                result["marker_type"],
+                result["marker_id"],
+            )
         response = {
             "ok": True,
             "idempotency_key": idem_key,
             "body_hash": body_hash,
             **result,
         }
+        if result["action"] == "replayed":
+            response["idempotent_replay"] = True
         _idempotency_cache[idem_key] = (time.time(), response)
         return response
+
+
+@app.get("/marker/{marker_id}")
+def get_marker(
+    marker_id: str = PathParam(..., min_length=1, max_length=64),
+    authorization: str | None = Header(None),
+    _: None = Depends(require_token),
+) -> dict:
+    """A recorded marker with its provenance read back from the vault."""
+    record = read_marker(marker_id)
+    if record is None or not scope.admits(
+        _caller_grant(authorization),
+        claimed_projects(record["provenance"]),
+        unattributed=False,
+    ):
+        raise HTTPException(status_code=404, detail="marker not found")
+    return record
 
 
 @app.post("/tick", status_code=202)
