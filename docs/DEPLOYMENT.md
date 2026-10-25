@@ -112,6 +112,30 @@ env:
         optional: true
 ```
 
+## Brain instance identity
+
+Every brain names itself with `BRAIN_ID` (lowercase letters, digits and dashes,
+starting with a letter; schema `schemas/brain-instance-v2.json`). A project id
+such as `github.com/org/repo` is a namespace inside a brain and is never a brain
+id. An installation without `BRAIN_ID` is the brain named `default`, so existing
+installs keep their vault and credentials with no migration step.
+`BRAIN_POLICY_REVISION` (default `1`) is served beside it.
+
+- brain-api answers `GET /instance` without auth: `{schema, brain_id, policy_revision}`.
+  It refuses to start when `BRAIN_ID` is set outside the schema pattern.
+- `BrainClient(expected_brain_id=...)` calls `/instance` before any request that
+  carries the bearer and raises `BrainBindingError` on a different or absent id,
+  counting `brain_instance_binding_failures`. Deploy brain-api before clients
+  that verify: an older brain-api has no `/instance` and is refused.
+- On a compose install the identity lives only in `<config root>/.env`, which
+  compose passes to brain-api and the CLI reads, so client and server read one
+  value and the environment still wins. `agentibrain install` writes the two
+  keys when the file lacks them and never rewrites an existing key; changing a
+  brain's id or policy revision afterwards is an operator edit of that file,
+  followed by a stack restart.
+- Rollback: unset `BRAIN_ID` and the brain answers `default` again. Clients that
+  expect another name then refuse it rather than send credentials.
+
 ## Image strategy
 
 Each kernel service has its own image, tagged per branch:
