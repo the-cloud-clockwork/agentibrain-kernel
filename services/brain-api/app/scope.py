@@ -9,6 +9,7 @@ name no brain and stay unscoped.
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 import uuid
@@ -36,6 +37,10 @@ def _load_worker_tokens() -> tuple[dict[str, str], dict[str, frozenset[str]]]:
 
 BRAIN_ID = os.getenv("BRAIN_ID", "").strip()
 POLICY_REVISION = int(os.getenv("BRAIN_POLICY_REVISION", "1"))
+if BRAIN_ID and not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", BRAIN_ID):
+    raise RuntimeError(
+        "BRAIN_ID must match schemas/brain-instance-v2.json brain_id; fix it and restart."
+    )
 WORKER_TOKENS, PROJECT_GRANTS = _load_worker_tokens()
 if WORKER_TOKENS and not BRAIN_ID:
     raise RuntimeError("KB_WORKER_TOKENS is set but BRAIN_ID is not; set BRAIN_ID and restart.")

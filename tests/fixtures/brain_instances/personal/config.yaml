@@ -1,5 +1,3 @@
-brain_id: personal
-policy_revision: 1
 mode: local
 vault_path: VAULT
 brain_url: http://localhost:8103

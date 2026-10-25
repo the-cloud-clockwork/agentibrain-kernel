@@ -1,4 +1,4 @@
-"""SV2-MUL-01: brain-api names the brain it serves before any credential is sent."""
+"""brain-api names the brain it serves before any credential is sent."""
 
 from __future__ import annotations
 
@@ -96,3 +96,13 @@ def test_a_client_expecting_another_brain_is_refused_and_writes_nothing(monkeypa
     assert TEST_BEARER not in str(refused.value)
     assert sorted(str(p.relative_to(vault)) for p in vault.rglob("*")) == before
     assert brain_client.brain_instance_binding_failures == {("swarm", "personal"): 1}
+
+
+def test_a_brain_id_outside_the_schema_refuses_to_start(monkeypatch, vault):
+    monkeypatch.setenv("BRAIN_ID", "github.com/org/repo")
+
+    with pytest.raises(RuntimeError, match="BRAIN_ID"):
+        importlib.reload(importlib.import_module("app.scope"))
+
+    monkeypatch.delenv("BRAIN_ID")
+    importlib.reload(importlib.import_module("app.scope"))

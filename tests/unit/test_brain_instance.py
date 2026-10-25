@@ -1,4 +1,4 @@
-"""SV2-MUL-01: a brain installation names itself, and a client checks the name before it talks."""
+"""A brain installation names itself, and a client checks the name before it talks."""
 
 from __future__ import annotations
 
@@ -36,14 +36,19 @@ def _install(tmp_path: Path, name: str) -> Path:
     root.mkdir()
     text = (FIXTURES / name / "config.yaml").read_text().replace("VAULT", str(vault))
     (root / "config.yaml").write_text(text)
-    (root / ".env").write_text("KB_ROUTER_TOKEN=fixture-bearer\n")
+    shutil.copyfile(FIXTURES / name / "env.fixture", root / ".env")
     return root
 
 
 def _load(root: Path) -> BrainSettings:
     raw = yaml.safe_load((root / "config.yaml").read_text()) or {}
     payload = {k: v for k, v in raw.items() if v is not None}
-    return BrainSettings(**payload, config_dir=root, _env_file=None)
+    return BrainSettings(**payload, config_dir=root, _env_file=root / ".env")
+
+
+def _load_env_only(root: Path) -> tuple[str, int]:
+    settings = BrainSettings(config_dir=root, _env_file=root / ".env")
+    return settings.brain_id, settings.policy_revision
 
 
 def _conforms(record: dict) -> None:
@@ -108,6 +113,17 @@ def test_the_environment_names_the_brain(monkeypatch, tmp_path):
     monkeypatch.setenv("BRAIN_ID", "swarm")
 
     assert _load(_install(tmp_path, "default")).brain_id == "swarm"
+
+
+def test_the_environment_outranks_a_written_instance(monkeypatch, tmp_path):
+    root = _install(tmp_path, "swarm")
+    bootstrap.write_config(_load(root))
+    monkeypatch.setenv("BRAIN_ID", "personal")
+    monkeypatch.setenv("BRAIN_POLICY_REVISION", "5")
+
+    settings = _load(root)
+
+    assert (settings.brain_id, settings.policy_revision) == ("personal", 5)
 
 
 @pytest.mark.parametrize(
@@ -178,8 +194,7 @@ def test_a_legacy_installation_migrates_to_default_keeping_vault_and_credentials
 
     migrated = yaml.safe_load(first)
     assert (root / "config.yaml").read_bytes() == first
-    assert migrated["brain_id"] == "default"
-    assert migrated["policy_revision"] == 1
+    assert (_load(root).brain_id, _load(root).policy_revision) == ("default", 1)
     assert migrated["vault_path"] == legacy["vault_path"]
     assert (root / ".env").read_bytes() == env_before
     assert (tmp_path / "default-vault" / "arcs" / "kept.md").read_bytes() == vault_before
@@ -202,7 +217,7 @@ def test_an_interrupted_migration_leaves_the_legacy_config_readable(tmp_path, mo
     assert sorted(p.name for p in root.iterdir()) == [".env", "config.yaml"]
     assert _load(root).brain_id == "default"
     bootstrap.write_config(_load(root))
-    assert yaml.safe_load((root / "config.yaml").read_text())["brain_id"] == "default"
+    assert _load(root).brain_id == "default"
     assert (tmp_path / "default-vault" / "arcs" / "kept.md").read_text() == "default arc\n"
 
 
@@ -221,10 +236,18 @@ def test_a_named_instance_does_not_rewrite_another_instances_files(tmp_path):
 
 
 def test_the_env_file_carries_the_policy_revision_the_brain_serves(tmp_path):
-    root = _install(tmp_path, "swarm")
+    root = tmp_path / "fresh"
+    settings = BrainSettings(
+        brain_id="swarm",
+        policy_revision=3,
+        config_dir=root,
+        vault_path=tmp_path / "vault",
+        _env_file=None,
+    )
 
-    bootstrap.write_env_file(_load(root), "fixture-bearer")
+    bootstrap.write_env_file(settings, "fixture-bearer")
 
+    assert _load_env_only(root) == ("swarm", 3)
     lines = (root / ".env").read_text().splitlines()
     assert "BRAIN_ID=swarm" in lines
     assert "BRAIN_POLICY_REVISION=3" in lines

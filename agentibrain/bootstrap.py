@@ -152,8 +152,6 @@ def write_config(settings: BrainSettings) -> Path:
     cfg_dir.mkdir(parents=True, exist_ok=True)
 
     payload = {
-        "brain_id": settings.brain_id,
-        "policy_revision": settings.policy_revision,
         "mode": settings.mode,
         "vault_path": str(settings.vault_path),
         "s3_bucket": settings.s3_bucket,
