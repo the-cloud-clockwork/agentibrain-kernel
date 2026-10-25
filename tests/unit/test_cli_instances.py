@@ -210,6 +210,31 @@ def test_an_explicit_default_selection_stops_only_its_own_stack(host, tmp_path):
     assert host.calls == [(str(tmp_path / "b"), ("down",))]
 
 
+def test_an_unselected_up_refuses_to_replace_several_legacy_stacks(host, tmp_path):
+    host.legacy("checkout-a", tmp_path / "a", "agentibrain_redis")
+    host.legacy("checkout-c", tmp_path / "c", "agentibrain_mcp")
+    host.legacy("checkout-b", tmp_path / "b", bootstrap.COMPOSE_MARKER)
+    before = bootstrap.brain_cross_instance_mutation_rejections["ambiguous"]
+
+    result = _cli("up")
+
+    assert result.exit_code == 2
+    assert "brain_cross_instance_mutation_rejections kind=ambiguous count=1" in result.output
+    assert host.calls == []
+    assert bootstrap.brain_cross_instance_mutation_rejections["ambiguous"] - before == 1
+
+
+def test_install_dry_run_lists_the_legacy_stacks_it_would_replace(host, tmp_path):
+    host.legacy("checkout-a", tmp_path / "a", "agentibrain_redis")
+    host.legacy("checkout-b", tmp_path / "b", bootstrap.COMPOSE_MARKER)
+
+    result = _cli("--instance", "default", "install", "--dry-run", "--no-link")
+
+    assert result.exit_code == 0, result.output
+    assert "would remove legacy stack checkout-a" in " ".join(result.output.split())
+    assert host.calls == []
+
+
 def test_the_lookalike_container_is_never_stopped(host, tmp_path):
     host.legacy("checkout-a", tmp_path / "a", "agentibrain_redis")
     host.legacy("checkout-b", tmp_path / "b", bootstrap.COMPOSE_MARKER)

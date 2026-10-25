@@ -208,7 +208,7 @@ def test_up_replaces_every_other_stack(tmp_path, docker_shim):
         f"agentibrain_postgres\tagentibrain\t{home / '.agentibrain'}\n"
         f"agentibrain_redis\trepo\t{repo}\n"
     )
-    r = _run_cli(["up"], home, cwd=repo, path=path)
+    r = _run_cli(["--instance", "default", "up"], home, cwd=repo, path=path)
     assert r.returncode == 0, r.stderr
     lines = record.read_text().splitlines()
     downs = [i for i, ln in enumerate(lines) if "down --remove-orphans" in ln]

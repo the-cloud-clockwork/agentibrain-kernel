@@ -57,7 +57,7 @@ def _load_settings() -> BrainSettings:
         root = instance_root(instance)
         held = root_brain_id(root)
         if held is not None and held != instance:
-            bootstrap.brain_cross_instance_mutation_rejections["instance"] += 1
+            _reject("instance")
             console.print(
                 f"[red]{escape(str(root))} holds brain {escape(held)}, not {escape(instance)}; "
                 "nothing was touched[/red]"
@@ -107,9 +107,16 @@ def _find_deployment_or_exit() -> tuple[str, Path, BrainSettings]:
     return mode, compose_dir, settings
 
 
+def _reject(kind: str, count: int = 1) -> None:
+    """Count a refused cross-instance mutation and print it as one machine-readable line."""
+    if not count:
+        return
+    bootstrap.brain_cross_instance_mutation_rejections[kind] += count
+    console.print(f"brain_cross_instance_mutation_rejections kind={kind} count={count}")
+
+
 def _remove_other_stacks(keep: Path | None) -> None:
-    unowned = bootstrap.legacy_stacks()[1]
-    bootstrap.brain_cross_instance_mutation_rejections["unowned"] += len(unowned)
+    _reject("unowned", len(bootstrap.legacy_stacks()[1]))
     for project, proc in bootstrap.remove_other_stacks(keep):
         if proc.returncode != 0:
             console.print(f"[red]removing stack {project} failed[/red]\n{proc.stderr}")
@@ -117,14 +124,15 @@ def _remove_other_stacks(keep: Path | None) -> None:
         console.print(f"[yellow]removed stack[/yellow] {project}")
 
 
-def _refuse_ambiguous(settings: BrainSettings) -> None:
-    """Without an explicit selection, more than one legacy stack leaves no single target."""
+def _refuse_ambiguous(settings: BrainSettings, keep: Path | None = None) -> None:
+    """Without an explicit selection, more than one legacy stack to stop leaves no single target."""
     if _selected_instance() is not None or settings.compose_project is not None:
         return
     owned = bootstrap.legacy_stacks()[0]
-    if len(owned) < 2:
+    others = [w for w in owned.values() if keep is None or w.resolve() != keep.resolve()]
+    if len(others) < 2:
         return
-    bootstrap.brain_cross_instance_mutation_rejections["ambiguous"] += 1
+    _reject("ambiguous")
     for project, workdir in sorted(owned.items()):
         console.print(f"  legacy stack {escape(project)} @ {escape(str(workdir))}")
     console.print(
@@ -153,6 +161,7 @@ def _make_room(settings: BrainSettings, keep: Path | None) -> None:
     if keep is None:
         return
     if settings.compose_project is None:
+        _refuse_ambiguous(settings, keep)
         _remove_other_stacks(keep)
         return
     # Re-render so PORT_* edits in the brain's .env reach the literal ports compose publishes.
@@ -1472,6 +1481,8 @@ def install_cmd(
         console.print("  [--] skipped — client-only")
     elif no_stack:
         console.print("  [--] skipped (--no-stack)")
+    elif dry_run and deployment is not None:
+        _inventory(settings, *deployment, "start")
     elif dry_run:
         console.print("  would start the compose stack")
     else:
