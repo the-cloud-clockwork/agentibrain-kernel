@@ -19,7 +19,7 @@ from pathlib import Path
 import yaml
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from agentibrain.config import BrainSettings
+from agentibrain.config import DEFAULT_BRAIN_ID, BrainSettings
 
 COMPOSE_TEMPLATE = "compose.yml.j2"
 
@@ -33,7 +33,9 @@ SERVICE_ENV_DEFAULTS = {
     "BRAIN_DECAY_START_DAYS": "7",
     "BRAIN_FEEDBACK_LOOKBACK": "6",
     "BRAIN_HOT_ARC_BLURB_CHARS": "220",
+    "BRAIN_ID": "",
     "BRAIN_LESSON_MIN_CHARS": "40",
+    "BRAIN_POLICY_REVISION": "1",
     "BRAIN_SIGNAL_KEEP_MIN": "25",
     "BRAIN_SIGNAL_RESOLVED_RETAIN_DAYS": "14",
     "BRAIN_SIGNAL_RETAIN_DAYS": "90",
@@ -168,7 +170,15 @@ def write_config(settings: BrainSettings) -> Path:
     if settings.brain_url == f"http://localhost:{settings.port_brain_api}":
         payload.pop("brain_url")
     cfg_path = cfg_dir / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump(payload, sort_keys=False))
+    staged = cfg_dir / ".config.yaml.tmp"
+    try:
+        with staged.open("w") as handle:
+            handle.write(yaml.safe_dump(payload, sort_keys=False))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(staged, cfg_path)
+    finally:
+        staged.unlink(missing_ok=True)
     return cfg_path
 
 
@@ -323,6 +333,8 @@ def write_env_file(settings: BrainSettings, token: str) -> Path:
         # agentihooks reads this file to learn where the brain is; without the
         # URL beside the bearer the file is only half the answer.
         "BRAIN_URL": settings.brain_url,
+        "BRAIN_ID": "" if settings.brain_id == DEFAULT_BRAIN_ID else settings.brain_id,
+        "BRAIN_POLICY_REVISION": str(settings.policy_revision),
         "EMBEDDINGS_API_KEY": embeddings_key,
         "EMBEDDINGS_API_KEYS": embeddings_key,
         "POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD") or DEFAULT_POSTGRES_PASSWORD,

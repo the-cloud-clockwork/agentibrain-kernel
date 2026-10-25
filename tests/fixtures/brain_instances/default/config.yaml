@@ -1,0 +1,8 @@
+mode: local
+vault_path: VAULT
+s3_bucket: null
+s3_endpoint: null
+llm_gateway_url: null
+ollama: false
+ollama_chat_model: llama3.2:3b
+ollama_embed_model: nomic-embed-text

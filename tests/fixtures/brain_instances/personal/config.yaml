@@ -1,0 +1,3 @@
+mode: local
+vault_path: VAULT
+brain_url: http://localhost:8103

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/the-cloud-clockwork/agentibrain-kernel/schemas/brain-instance-v2.json",
+  "title": "Brain instance identity",
+  "description": "One brain deployment. A project namespace lives inside a brain and is never a brain id. GET /instance serves schema, brain_id and policy_revision; config_root and endpoint stay client side.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "brain_id", "policy_revision"],
+  "properties": {
+    "schema": { "const": "brain-instance-v2" },
+    "brain_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,62}$",
+      "description": "An installation without one is the brain named default."
+    },
+    "config_root": { "type": "string", "description": "Directory holding config.yaml and .env for this brain." },
+    "endpoint": { "type": "string", "description": "brain-api URL the client binds to this brain." },
+    "policy_revision": { "type": "integer", "minimum": 1 }
+  }
+}

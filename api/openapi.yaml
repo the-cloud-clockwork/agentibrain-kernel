@@ -138,6 +138,26 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/HealthResponse" }
 
+  /instance:
+    get:
+      summary: >-
+        The brain this endpoint serves. Unauthenticated so a client can refuse a
+        different brain before it sends a bearer or project context. An unnamed
+        installation answers default. Schema: schemas/brain-instance-v2.json.
+      security: []
+      responses:
+        "200":
+          description: Brain identity.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema, brain_id, policy_revision]
+                properties:
+                  schema: { type: string, enum: [brain-instance-v2] }
+                  brain_id: { type: string, pattern: "^[a-z][a-z0-9-]{0,62}$" }
+                  policy_revision: { type: integer, minimum: 1 }
+
   /health/deep:
     get:
       summary: >-

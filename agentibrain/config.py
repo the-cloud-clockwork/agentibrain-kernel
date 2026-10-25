@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +36,11 @@ def config_path() -> Path:
 DEFAULT_CONFIG_DIR = config_dir()
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.yaml"
 
+DEFAULT_BRAIN_ID = "default"
+# Dots and slashes stay out so a project id such as github.com/org/repo can never pass as a brain.
+BRAIN_ID_PATTERN = r"^[a-z][a-z0-9-]{0,62}$"
+INSTANCE_SCHEMA = "brain-instance-v2"
+
 
 class BrainSettings(BaseSettings):
     """Runtime settings for the agentibrain kernel.
@@ -50,6 +55,20 @@ class BrainSettings(BaseSettings):
         env_nested_delimiter="__",
         extra="ignore",
         case_sensitive=False,
+        populate_by_name=True,
+    )
+
+    # --- Instance identity ---
+    brain_id: str = Field(
+        default=DEFAULT_BRAIN_ID,
+        pattern=BRAIN_ID_PATTERN,
+        validation_alias=AliasChoices("BRAIN_ID"),
+        description="Name of this brain deployment; an unnamed installation is the default brain.",
+    )
+    policy_revision: int = Field(
+        default=1,
+        ge=1,
+        validation_alias=AliasChoices("BRAIN_POLICY_REVISION"),
     )
 
     # --- Storage mode ---
@@ -132,6 +151,11 @@ class BrainSettings(BaseSettings):
         ),
     )
 
+    @field_validator("brain_id", mode="before")
+    @classmethod
+    def _unnamed_is_default(cls, value: object) -> object:
+        return value or DEFAULT_BRAIN_ID
+
     @model_validator(mode="after")
     def _derive_brain_url(self) -> BrainSettings:
         if not self.brain_url:
@@ -142,3 +166,12 @@ class BrainSettings(BaseSettings):
         """Raise if mode='s3' but bucket is missing."""
         if self.mode == "s3" and not self.s3_bucket:
             raise ValueError("mode='s3' requires s3_bucket to be set")
+
+    def instance_record(self) -> dict[str, object]:
+        return {
+            "schema": INSTANCE_SCHEMA,
+            "brain_id": self.brain_id,
+            "config_root": str(self.config_dir),
+            "endpoint": self.brain_url,
+            "policy_revision": self.policy_revision,
+        }

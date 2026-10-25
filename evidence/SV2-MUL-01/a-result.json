@@ -1,0 +1,20 @@
+{
+  "package": "SV2-MUL-01",
+  "tested_commit": "17995c86e6c058cf1acfec3bba1cb1444267cf1f",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40216726711",
+  "verification": "CI unit fixtures: pydantic settings over temporary config roots, httpx MockTransport and the real brain-api app through the Starlette test client; no deployed brain was contacted.",
+  "case": "T-SV2-MUL-01-A",
+  "outcome": "passed",
+  "assertions": [
+    "Default, personal and swarm configuration roots each produce an instance record that conforms to schemas/brain-instance-v2.json with its own brain id, configuration root, endpoint and policy revision.",
+    "A second independent fixture run produces the same records from its own roots.",
+    "brain-api GET /instance answers the configured brain id and policy revision without credentials and without vault paths or bearer values.",
+    "BrainClient verifies /instance with no Authorization header, then sends the bearer to /health; personal and swarm both bind.",
+    "Writing personal configuration and env files leaves every swarm file byte identical."
+  ],
+  "measurement": {
+    "brain_instance_binding_failures": {
+      "expected_matches": 0
+    }
+  }
+}
