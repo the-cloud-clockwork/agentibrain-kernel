@@ -16,7 +16,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", "/vault")).resolve()
 BRAIN_FEED_DIR = os.environ.get("BRAIN_FEED_DIR", "brain-feed").strip("/")
 CLUSTERS_DIR = os.environ.get("CLUSTERS_DIR", "clusters").strip("/")

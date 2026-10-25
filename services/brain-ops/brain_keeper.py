@@ -24,13 +24,12 @@ from pathlib import Path
 
 # Import sibling module
 sys.path.insert(0, str(Path(__file__).parent))
-import markers
-import redact
 import brain_verifier
 import lesson_reconcile
+import markers
 import project_feed
+import redact
 import signal_resolution
-
 
 # ── Heat computation ──────────────────────────────────────────────────
 

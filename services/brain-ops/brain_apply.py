@@ -31,11 +31,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+import brain_keeper  # for REGION_DIRS — keep prompt + apply scanners aligned
 import markers
 import project_feed
 import redact
-import brain_keeper  # for REGION_DIRS — keep prompt + apply scanners aligned
-
 
 # Edge-type priority. Used when collapsing multi-type same-pair collisions.
 # Structural hierarchy first; sibling/peer; directional dependencies; the
