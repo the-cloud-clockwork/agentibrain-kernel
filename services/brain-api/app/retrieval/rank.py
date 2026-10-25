@@ -172,6 +172,7 @@ def rank(
                 "id": ident,
                 "type": candidate["type"],
                 "title": candidate["title"],
+                "revision": candidate.get("revision"),
                 "knowledge_status": status,
                 "evidence": "graph" if direct_relevance <= 0 else "direct",
                 "confidence": link["confidence"] if link else None,

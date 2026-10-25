@@ -719,7 +719,15 @@ paths:
             relation (null when the item has none); heat-only candidates are
             counted in excluded; a failed optional source, a partial edge read or
             a scan_limited candidate set sets reduced=true, and a failed source is
-            listed as unavailable and left out of score_basis.
+            listed as unavailable and left out of score_basis. The items are
+            packed within budget.max_tokens (SV2-CTX-03, schemas/context-pack-v2.json):
+            each packed item is whole, carries its entity revision and a reference,
+            and repeated claims collapse into one item listing supporting_source_ids.
+            context.pack reports context_pack_tokens, per-category token budgets,
+            omitted items with reason (over_budget or duplicate) and reference,
+            truncated, unresolved_conflicts and a budget-independent
+            knowledge_revision. BRAIN_CONTEXT_PACKING=false returns reference-only
+            items with pack.degraded=packing_disabled.
         "403": {description: Request names another brain, or a project outside the token grant; recorded as a denial.}
         "409": {description: A newer task revision was already accepted for this task.}
         "413": {description: Request body exceeds the size limit.}
