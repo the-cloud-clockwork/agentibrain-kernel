@@ -1,0 +1,28 @@
+{
+  "package": "SV2-ING-01",
+  "tested_commit": "543ff3c63dd183ede1c28c98284c3a2f78760da6",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40224456289",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40224456289/job/121262760501",
+  "verification": "Mocked: fixture-local HTTP session feed and grant in CI; no production feed exists yet.",
+  "case": "T-SV2-ING-01-A",
+  "outcome": "passed",
+  "tests": [
+    "services/brain-ops/tests/test_session_source.py::test_two_harnesses_extract_through_one_feed",
+    "services/brain-ops/tests/test_session_source.py::test_replayed_change_does_not_refetch_or_recount",
+    "services/brain-ops/tests/test_session_source.py::test_bundle_clusters_each_session_once",
+    "services/brain-ops/tests/test_session_source.py::test_cli_stages_then_commits_after_acceptance"
+  ],
+  "assertions": [
+    "Claude and Codex sessions extract through one FeedSource API without native home mounts.",
+    "An attribution correction moves the Codex session to its corrected project; a deletion is emitted as deleted_sessions.",
+    "Two independent fixture prefixes produce the same shape of committed state.",
+    "The bundle keeps the shape cluster.py consumes and clusters each session once.",
+    "The CLI stages under its stage id and commits only after acceptance."
+  ],
+  "measurement": {
+    "brain_source_cursor_lag": {
+      "before_commit": 8,
+      "after_commit": 0
+    }
+  }
+}

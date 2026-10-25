@@ -1,0 +1,29 @@
+{
+  "package": "SV2-ING-01",
+  "tested_commit": "543ff3c63dd183ede1c28c98284c3a2f78760da6",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40224456289",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40224456289/job/121262760501",
+  "verification": "Mocked: fixture-local HTTP session feed and grant in CI; no production feed exists yet.",
+  "case": "T-SV2-ING-01-C",
+  "outcome": "passed",
+  "tests": [
+    "services/brain-ops/tests/test_session_source.py::test_interrupted_batch_resumes_from_committed_cursor_without_duplicate_arcs",
+    "services/brain-ops/tests/test_session_source.py::test_stale_attempt_cannot_overwrite_newer_commit",
+    "services/brain-ops/tests/test_session_source.py::test_commit_promotes_only_the_stage_the_cluster_accepted",
+    "services/brain-ops/tests/test_session_source.py::test_new_source_generation_replaces_the_replaced_source"
+  ],
+  "assertions": [
+    "An interrupted uncommitted batch leaves the committed cursor unchanged.",
+    "Resume reads from the committed cursor and ends with state equal to a clean run.",
+    "Interrupted and resumed cluster output holds no duplicate arcs.",
+    "A stale attempt cannot overwrite a newer commit; a restage refuses the earlier stage's commit.",
+    "A new source generation replaces the replaced source."
+  ],
+  "rollback": {
+    "switch": "EXTRACT_SOURCE=local",
+    "default": "local",
+    "scope": "EXTRACT_PROJECTS limits the local source to its authorized projects",
+    "feed_cursors_preserved": true,
+    "live_rehearsal": false
+  }
+}

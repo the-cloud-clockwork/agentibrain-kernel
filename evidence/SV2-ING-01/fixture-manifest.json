@@ -1,0 +1,33 @@
+{
+  "package": "SV2-ING-01",
+  "tested_commit": "543ff3c63dd183ede1c28c98284c3a2f78760da6",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40224456289",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40224456289/job/121262760501",
+  "verification": "Mocked: fixture-local HTTP session feed and grant in CI; no production feed exists yet.",
+  "input_hashes": {
+    "services/brain-ops/tests/fixtures/sv2_ing01_feed.json": "6ad9265034309ca54324a99486e54e4b6f31db1a2eb28c74b936ffb462095a01"
+  },
+  "test_source_hashes": {
+    "services/brain-ops/tests/test_session_source.py": "46c0b9e087550b92bc00d38be9f28a7fcd639b5a0b444a41b868c84c86ba4ab6"
+  },
+  "fixture_dimensions": {
+    "harnesses": [
+      "claude",
+      "codex"
+    ],
+    "authorized_projects": [
+      "github.com/acme/alpha",
+      "github.com/acme/gamma"
+    ],
+    "excluded_project": "github.com/acme/beta",
+    "changes": 8,
+    "kinds": [
+      "appended",
+      "attribution",
+      "deleted"
+    ],
+    "interrupted_batch": "page limit 3 with one page per run",
+    "schema_version": 1
+  },
+  "source_material": "Fixture-provided session records only; no live transcripts or private vault content."
+}
