@@ -32,6 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import markers
+import project_feed
 import redact
 import brain_keeper  # for REGION_DIRS — keep prompt + apply scanners aligned
 
@@ -200,6 +201,21 @@ def parse_intent(section: str) -> str:
     return redact.scrub(" ".join(lines))
 
 
+_PROJECT_INTENT_RE = re.compile(
+    r"^[\s\-*`]*PROJECT_INTENT:\s*(?P<project>[^|]+?)\s*\|\s*(?P<text>.+?)\s*[`\s]*$"
+)
+
+
+def parse_project_intents(section: str) -> dict[str, str]:
+    """Parse '### 7. Project Intent' lines into {project id: inferred intent}."""
+    intents = {}
+    for line in section.splitlines():
+        m = _PROJECT_INTENT_RE.match(line)
+        if m:
+            intents[m.group("project").strip()] = redact.scrub(m.group("text").strip())
+    return intents
+
+
 def parse_ai_output(text: str) -> dict:
     """Parse the full AI tick output into structured sections."""
     sections = {}
@@ -237,6 +253,11 @@ def parse_ai_output(text: str) -> dict:
                 sections[current_key] = "\n".join(current_lines)
             current_key = "summaries"
             current_lines = []
+        elif line.startswith("### 7."):
+            if current_key:
+                sections[current_key] = "\n".join(current_lines)
+            current_key = "project_intents"
+            current_lines = []
         else:
             current_lines.append(line)
 
@@ -250,6 +271,7 @@ def parse_ai_output(text: str) -> dict:
         "intent": parse_intent(sections.get("intent", "")),
         "health": parse_health(sections.get("health", "")),
         "summaries": parse_summaries(sections.get("summaries", "")),
+        "project_intents": parse_project_intents(sections.get("project_intents", "")),
     }
 
 
@@ -772,7 +794,13 @@ def apply_summaries(vault_root: Path, summaries: list[dict], dry_run: bool = Fal
     return applied
 
 
-def apply(vault_root: Path, brain_feed_dir: Path, ai_output: str, dry_run: bool = False) -> dict:
+def apply(
+    vault_root: Path,
+    brain_feed_dir: Path,
+    ai_output: str,
+    dry_run: bool = False,
+    now: datetime | None = None,
+) -> dict:
     """Parse AI output and apply all recommendations to the vault."""
     parsed = parse_ai_output(ai_output)
 
@@ -809,6 +837,9 @@ def apply(vault_root: Path, brain_feed_dir: Path, ai_output: str, dry_run: bool 
     if parsed["intent"]:
         print("\n--- Writing intent ---", file=sys.stderr)
         write_intent(brain_feed_dir, parsed["intent"], dry_run)
+    actions["project_intents"] = project_feed.write_project_intents(
+        brain_feed_dir, parsed["project_intents"], now or datetime.now(timezone.utc), dry_run
+    )
 
     # Append health
     print("\n--- Recording health ---", file=sys.stderr)

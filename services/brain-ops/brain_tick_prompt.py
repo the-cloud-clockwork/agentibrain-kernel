@@ -38,6 +38,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import brain_keeper
 import markers
+import project_feed
 from brain_apply import _rank
 
 # Prompt-size guards. The AI reasoning model has a finite context window. An
@@ -317,6 +318,11 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
     except OSError:
         pass
 
+    active_projects = project_feed.active_projects(brain_feed_dir)
+    active_projects_text = (
+        "\n".join(f"- {p}" for p in active_projects) if active_projects else "(none)"
+    )
+
     unsynthesized_text = "\n".join(unsynth_blocks) if unsynth_blocks else "(all synthesized)"
     if len(unsynth_arcs) > MAX_SYNTH_ARCS:
         unsynthesized_text += (
@@ -429,7 +435,21 @@ Rules:
 
 If there are no unsynthesized arcs, say "None."
 
-Respond ONLY with the 6 sections above. No preamble. No explanation of what you're doing. Just the answers.
+### 7. Project Intent
+For EACH active project below, say in one sentence what the operator is doing
+in that project, grounded only in that project's own arcs, signals and
+lessons. Never carry one project's work into another project's line. Skip a
+project the data does not support; its last intent is kept and marked stale.
+
+Active projects:
+{active_projects_text}
+
+Format, one per line, project id first:
+`PROJECT_INTENT: <project id> | <one sentence>`
+
+If there are no active projects, say "None."
+
+Respond ONLY with the 7 sections above. No preamble. No explanation of what you're doing. Just the answers.
 """
 
     # Final hard ceiling. The per-section caps above keep a healthy vault well

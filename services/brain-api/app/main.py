@@ -7,7 +7,7 @@ Endpoints:
   POST /ingest                         — classify + fan out (operator message)
   POST /ingest_with_files              — same, with multipart attachments
   POST /index_artifact                 — embed + index an artifact (called by artifact-store)
-  GET  /feed                           — hot arcs + inject blocks + intent
+  GET  /feed                           — hot arcs + inject blocks + intent; ?project= one project
   GET  /signal                         — current amygdala signal (single file)
   GET  /denials                        — cross scope query denials (router tokens only)
   POST /marker                         — emit lesson/milestone/signal/decision
@@ -49,7 +49,7 @@ from fastapi import (
 from starlette.concurrency import run_in_threadpool
 
 from . import pipeline, scope, vault_reader
-from .feed import VAULT_ROOT, feed_payload
+from .feed import VAULT_ROOT, feed_payload, project_feed_payload
 from .markers import (
     MarkerError,
     claimed_projects,
@@ -510,8 +510,27 @@ async def index_artifact(
 
 
 @app.get("/feed")
-def feed(_: None = Depends(require_token)) -> dict:
-    """Hot arcs + inject blocks + operator intent from $VAULT_ROOT/brain-feed/."""
+def feed(
+    project: str | None = Query(None, min_length=1, max_length=512),
+    authorization: str | None = Header(None),
+    x_session_title: str | None = Header(None, alias="X-Session-Title"),
+    _: None = Depends(require_token),
+) -> dict:
+    """Hot arcs + inject blocks + operator intent from $VAULT_ROOT/brain-feed/.
+
+    With `project`, the feed is that project's own snapshot; a token granted
+    other projects is refused, and a granted token must name its project.
+    """
+    grant = _caller_grant(authorization)
+    if project is not None:
+        if not scope.admits(grant, {project}, unattributed=False):
+            scope.record_denial(
+                scope.worker_brain(_bearer(authorization)) or "", "GET /feed", x_session_title or ""
+            )
+            raise HTTPException(status_code=403, detail="project is outside this token's grant")
+        return project_feed_payload(project, scope.BRAIN_ID)
+    if grant:
+        raise HTTPException(status_code=400, detail="a project scoped token must name its project")
     now = time.time()
     cached = _feed_cache.get("payload")
     ts = float(_feed_cache.get("ts") or 0.0)

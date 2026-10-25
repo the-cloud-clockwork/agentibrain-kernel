@@ -280,20 +280,67 @@ paths:
   /feed:
     get:
       summary: Hot arcs + operator intent for SessionStart injection (Phase 7).
+      description: >
+        Without project, the unscoped legacy feed, served to router tokens and
+        ungranted worker tokens only. With project, that canonical project's own
+        ranked arcs, current lessons and decisions, signals, inferred intent and
+        explicitly shared fleet warnings; a project with no data returns empty
+        lists, never global memory. A worker token granted other projects gets
+        403 and the denial is recorded.
+      parameters:
+        - name: project
+          in: query
+          required: false
+          schema: { type: string, minLength: 1, maxLength: 512 }
       responses:
         "200":
-          description: Fleet feed snapshot.
+          description: Fleet feed snapshot, or one project's feed when project is given.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  hot_arcs:
-                    type: array
-                    items: { type: object }
-                  inject_blocks:
-                    type: array
-                    items: { type: object }
+                oneOf:
+                  - type: object
+                    properties:
+                      hot_arcs:
+                        type: array
+                        items: { type: object }
+                      inject_blocks:
+                        type: array
+                        items: { type: object }
+                  - type: object
+                    required: [scope, project_id, revision, freshness, metrics]
+                    properties:
+                      scope: { type: string, enum: [project] }
+                      project_id: { type: string }
+                      brain_id: { type: string }
+                      revision: { type: string }
+                      freshness:
+                        type: object
+                        properties:
+                          state: { type: string, enum: [fresh, stale, missing] }
+                          generated_at: { type: string, nullable: true }
+                          age_seconds: { type: integer, nullable: true }
+                      arcs: { type: array, items: { type: object } }
+                      lessons: { type: array, items: { type: object } }
+                      decisions: { type: array, items: { type: object } }
+                      signals: { type: array, items: { type: object } }
+                      fleet_warnings: { type: array, items: { type: object } }
+                      intent:
+                        type: object
+                        nullable: true
+                        properties:
+                          text: { type: string }
+                          label: { type: string, enum: [inferred] }
+                          state: { type: string, enum: [fresh, stale] }
+                          inferred_at: { type: string }
+                      metrics:
+                        type: object
+                        properties:
+                          project_feed_cross_scope_failures: { type: integer }
+        "400":
+          description: A project scoped worker token called without project.
+        "403":
+          description: The project is outside the worker token's grant.
 
   /denials:
     get:
