@@ -1,0 +1,11 @@
+{
+  "package": "SV2-GRF-04",
+  "tested_commit": "5eb0f1c9556f7ab8aa4403bf59e66ed228a435e8",
+  "fixture_kind": "HTTP fixtures constructed in test source; isolated SQLite per invocation",
+  "input_hashes": {
+    "services/brain-api/tests/test_current_knowledge.py": "196e0bef8bc5682cbf86830558b851286f5bbd70d832757a9338faa5189a71d0",
+    "services/brain-api/tests/test_current_knowledge_limits.py": "d375b84f0383b1462db6dd5b40fcb0de84a44cbdba3b79eedf18956827056ac6"
+  },
+  "hash_algorithm": "sha256",
+  "cases": 14
+}
