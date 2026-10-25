@@ -363,6 +363,14 @@ def codex_candidates(root: Path, since: datetime) -> list[Path]:
     return found
 
 
+def codex_sessions(
+    paths: list[Path], since: datetime, until: datetime, project: str | None
+) -> list[dict]:
+    """Parsed Codex sessions in the window, filtered by a substring of their working folder."""
+    found = (process_codex_session(path, since, until) for path in paths)
+    return [s for s in found if s and (not project or project.lower() in s["cwd"].lower())]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Extract session summaries from Claude Code jsonl transcripts"
@@ -432,10 +440,7 @@ def main() -> int:
 
     codex = codex_candidates(Path(args.codex_dir), since)
     parsed = [process_session(path, since, until) for path in candidates]
-    for path in codex:
-        s = process_codex_session(path, since, until)
-        if s and (not args.project or args.project.lower() in s["cwd"].lower()):
-            parsed.append(s)
+    parsed += codex_sessions(codex, since, until, args.project)
     candidates += codex
 
     sessions: list[dict] = []

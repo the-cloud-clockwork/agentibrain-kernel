@@ -62,9 +62,8 @@ def register(mcp: FastMCP):
             "producer": "brain-arc",
             "limit": max(top_k * 3, 15),
             "min_score": min_score,
+            "project_id": project or None,
         }
-        if project:
-            body["project_id"] = project
         raw = await http_request(
             "POST",
             f"{EMBED_URL.rstrip('/')}/search",
