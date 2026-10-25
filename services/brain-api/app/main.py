@@ -2,6 +2,7 @@
 
 Endpoints:
   GET  /health                         — liveness
+  GET  /instance                       — the brain id and policy revision served, no auth
   GET  /health/deep                    — dependencies reachable (vault, embeddings, inference)
   GET  /health/pipeline                — the loop is flowing (ingest → … → index)
   POST /ingest                         — classify + fan out (operator message)
@@ -155,6 +156,16 @@ def health() -> dict:
         "service": "brain-api",
         "vault_root": str(VAULT_ROOT),
         "vault_mounted": VAULT_ROOT.exists(),
+    }
+
+
+@app.get("/instance")
+def instance() -> dict:
+    """Unauthenticated, so a client can check the brain before it sends a bearer."""
+    return {
+        "schema": "brain-instance-v2",
+        "brain_id": scope.BRAIN_ID or "default",
+        "policy_revision": scope.POLICY_REVISION,
     }
 
 

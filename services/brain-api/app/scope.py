@@ -35,6 +35,7 @@ def _load_worker_tokens() -> tuple[dict[str, str], dict[str, frozenset[str]]]:
 
 
 BRAIN_ID = os.getenv("BRAIN_ID", "").strip()
+POLICY_REVISION = int(os.getenv("BRAIN_POLICY_REVISION", "1"))
 WORKER_TOKENS, PROJECT_GRANTS = _load_worker_tokens()
 if WORKER_TOKENS and not BRAIN_ID:
     raise RuntimeError("KB_WORKER_TOKENS is set but BRAIN_ID is not; set BRAIN_ID and restart.")

@@ -8,9 +8,18 @@ Phase 5 / Phase 7 implementation. Stubs for now.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 
 import httpx
+
+from agentibrain.config import DEFAULT_BRAIN_ID
+
+brain_instance_binding_failures: Counter[tuple[str, str]] = Counter()
+
+
+class BrainBindingError(RuntimeError):
+    """The endpoint is not the brain the client was configured for."""
 
 
 @dataclass
@@ -20,13 +29,36 @@ class BrainClient:
     base_url: str
     token: str
     timeout: float = 30.0
+    expected_brain_id: str = DEFAULT_BRAIN_ID
+    transport: httpx.BaseTransport | None = None
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token}"}
 
+    def _client(self) -> httpx.Client:
+        return httpx.Client(base_url=self.base_url, timeout=self.timeout, transport=self.transport)
+
+    def verify_instance(self) -> dict:
+        """GET /instance without credentials; raise unless it names the expected brain."""
+        with self._client() as c:
+            r = c.get("/instance")
+        try:
+            body = r.json() if r.status_code == 200 else {}
+        except ValueError:
+            body = {}
+        observed = body.get("brain_id") if isinstance(body, dict) else None
+        if observed != self.expected_brain_id:
+            brain_instance_binding_failures[(self.expected_brain_id, str(observed))] += 1
+            raise BrainBindingError(
+                f"expected brain {self.expected_brain_id}, "
+                f"{self.base_url} answered {observed or 'no brain identity'}"
+            )
+        return body
+
     def health(self) -> dict:
         """GET /health."""
-        with httpx.Client(base_url=self.base_url, timeout=self.timeout) as c:
+        self.verify_instance()
+        with self._client() as c:
             r = c.get("/health", headers=self._headers())
             r.raise_for_status()
             return r.json()
