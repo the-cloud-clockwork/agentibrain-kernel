@@ -159,7 +159,7 @@ def _conflict_entries(valid: dict) -> list[tuple[list[str], list[tuple[str, str,
     return entries
 
 
-def review_record(review) -> dict | None:
+def review_record(review: object) -> dict | None:
     if not isinstance(review, dict):
         return None
     return {key: review[key] for key in ("decision", "relation", "reviewer") if key in review}
