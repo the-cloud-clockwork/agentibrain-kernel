@@ -7,6 +7,7 @@ Run from repo root:
 from __future__ import annotations
 
 import copy
+import importlib
 import json
 import sys
 from datetime import datetime, timezone
@@ -19,9 +20,9 @@ _BRAIN_TOOLS = _HERE.parent
 if str(_BRAIN_TOOLS) not in sys.path:
     sys.path.insert(0, str(_BRAIN_TOOLS))
 
-import cluster  # noqa: E402
-import extract  # noqa: E402
-import session_source  # noqa: E402
+cluster = importlib.import_module("cluster")
+extract = importlib.import_module("extract")
+session_source = importlib.import_module("session_source")
 
 FIXTURE = json.loads((_HERE / "fixtures" / "sv2_ing02_sessions.json").read_text())
 PROJECT = FIXTURE["project_id"]
