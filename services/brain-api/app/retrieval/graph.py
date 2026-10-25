@@ -187,7 +187,7 @@ def expand(store: GraphStore, request: ExpansionRequest, grant: frozenset[str], 
                 _step(view, state, grant)
     except TimeoutError:
         reason = "timeout"
-    if not enabled:
+    if not enabled and reason != "timeout":
         state.nodes = [node for node in state.nodes if not node["path"]]
         reason = "disabled"
     elif reason is None and state.depth_limited:

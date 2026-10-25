@@ -244,15 +244,16 @@ class GraphStore:
         try:
             self._conn.set_progress_handler(lambda: time.monotonic() >= deadline, 100)
             self._conn.execute("BEGIN")
-            yield GraphReadView(self._conn)
+            yield GraphReadView(self._conn, deadline)
         except sqlite3.OperationalError as exc:
-            if "interrupted" not in str(exc):
+            if not any(reason in str(exc) for reason in ("interrupted", "locked")):
                 raise
             raise TimeoutError from exc
         finally:
             self._conn.set_progress_handler(None, 0)
             if self._conn.in_transaction:
                 self._conn.execute("ROLLBACK")
+            self._conn.execute("PRAGMA busy_timeout = 5000")
             self._lock.release()
 
     def put_entity(self, record: dict) -> str:
@@ -438,15 +439,23 @@ class GraphStore:
 
 
 class GraphReadView:
-    def __init__(self, connection: sqlite3.Connection) -> None:
+    def __init__(self, connection: sqlite3.Connection, deadline: float) -> None:
         self._conn = connection
+        self._deadline = deadline
         self.revision = (
             connection.total_changes,
-            connection.execute("PRAGMA data_version").fetchone()[0],
+            self._execute("PRAGMA data_version").fetchone()[0],
         )
 
+    def _execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
+        remaining = self._deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError
+        self._conn.execute(f"PRAGMA busy_timeout = {max(1, int(remaining * 1000))}")
+        return self._conn.execute(sql, params)
+
     def get_entity(self, ident: str) -> dict | None:
-        row = self._conn.execute(
+        row = self._execute(
             "SELECT id, type, revision, projects, vault_ref, title FROM graph_entities WHERE id = ?",
             (ident,),
         ).fetchone()
@@ -456,7 +465,7 @@ class GraphReadView:
 
     def neighbors(self, ident: str, direction: str, after: tuple[str, str]) -> list[dict]:
         own, other = ("source", "target") if direction == "out" else ("target", "source")
-        rows = self._conn.execute(
+        rows = self._execute(
             f"SELECT id, source, target, type, revision, status, confidence FROM graph_relations"
             f" WHERE {own} = ? AND (type, {other}) > (?, ?)"
             f" ORDER BY type, {other} LIMIT 16",
