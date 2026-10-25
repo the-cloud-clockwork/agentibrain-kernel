@@ -1,0 +1,64 @@
+{
+  "project_id": "github.com/acme/agentihooks",
+  "sessions": [
+    {
+      "session_id": "s-alpha-1",
+      "project": "agentihooks",
+      "project_id": "github.com/acme/agentihooks",
+      "task_id": "t-alpha",
+      "cwd": "/srv/worktrees/agentihooks/alpha",
+      "worktree": "/srv/worktrees/agentihooks/alpha",
+      "git_branch": "alpha",
+      "harness": "claude",
+      "installation": "swarm-anton",
+      "start": "2026-10-20T10:00:00+00:00",
+      "end": "2026-10-20T10:30:00+00:00",
+      "first_user_prompt": "fix the retry breaker counter for identical failures",
+      "num_user_turns": 8,
+      "compactions": 0
+    },
+    {
+      "session_id": "s-beta-1",
+      "project": "agentihooks",
+      "project_id": "github.com/acme/agentihooks",
+      "task_id": "t-beta",
+      "cwd": "/srv/worktrees/agentihooks/beta",
+      "worktree": "/srv/worktrees/agentihooks/beta",
+      "git_branch": "beta",
+      "harness": "codex",
+      "installation": "swarm-anton",
+      "start": "2026-10-20T10:05:00+00:00",
+      "end": "2026-10-20T10:40:00+00:00",
+      "first_user_prompt": "add the ledger column resize grips to every table",
+      "num_user_turns": 6,
+      "compactions": 0
+    },
+    {
+      "session_id": "s-alpha-2",
+      "project": "agentihooks",
+      "project_id": "github.com/acme/agentihooks",
+      "task_id": "t-alpha",
+      "cwd": "/srv/worktrees/agentihooks/alpha-2",
+      "worktree": "/srv/worktrees/agentihooks/alpha-2",
+      "git_branch": "alpha",
+      "harness": "claude",
+      "installation": "swarm-hive-3",
+      "start": "2026-10-20T15:00:00+00:00",
+      "end": "2026-10-20T15:30:00+00:00",
+      "first_user_prompt": "continue the retry breaker fix from the handoff",
+      "num_user_turns": 7,
+      "compactions": 1
+    },
+    {
+      "session_id": "s-legacy",
+      "project": "agentihooks",
+      "cwd": "/home/someone/dev/agentihooks",
+      "git_branch": "dev",
+      "start": "2026-10-20T10:10:00+00:00",
+      "end": "2026-10-20T10:20:00+00:00",
+      "first_user_prompt": "why does the statusline show the wrong account",
+      "num_user_turns": 5,
+      "compactions": 0
+    }
+  ]
+}

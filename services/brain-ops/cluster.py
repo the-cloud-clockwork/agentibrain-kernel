@@ -4,8 +4,11 @@
 Consumes the JSON bundle from extract.py and groups sessions into cluster
 stubs WITHOUT any LLM reasoning. Pure heuristics:
 
-    - Sessions on same project within TIME_WINDOW_MIN of each other → same candidate
-    - Compaction boundary → new candidate
+    - Sessions sharing a task or work-thread id in one canonical project → same candidate
+    - Otherwise sessions on the same canonical project (or, unattributed, the same
+      worktree path) within TIME_WINDOW_MIN of each other → same candidate
+    - Compaction boundary → new candidate (time-window grouping only)
+    - BRAIN_ARC_GROUPING=legacy → grouping generation 1 (basename project, time window)
     - Branch swap → new candidate (unless same project, short gap)
     - cluster_id = sha1(sorted(session_ids))[:12] + "-" + slug(first_prompt)
     - region: amygdala if error_markers / joy_markers ratio > 2 AND any session
@@ -33,6 +36,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -43,6 +47,8 @@ TIME_WINDOW_MIN = 120  # sessions within 2h on same project → same candidate
 ERROR_NUCLEAR_THRESHOLD = 10  # error markers above this → amygdala candidate
 JOY_PINEAL_THRESHOLD = 5  # joy markers above this with low errors → pineal
 HEAT_MAX = 10
+GROUPING_GENERATION = 2
+UNATTRIBUTED = "unattributed"
 
 SLUG_RE = re.compile(r"[^a-z0-9]+")
 CREATIVE_BRANCH_RE = re.compile(
@@ -69,12 +75,32 @@ def session_sort_key(sess: dict) -> tuple:
 
 
 def group_sessions(sessions: list[dict]) -> list[list[dict]]:
-    """Deterministic grouping pass.
+    """Group by explicit task provenance first, the time window only without it.
 
-    Sort by (project, start_time). Start a new group when:
-      - project changes
-      - gap from last session > TIME_WINDOW_MIN
-      - compaction boundary on either session
+    A session with a task or work-thread id joins every session of that thread
+    in the same canonical project, whatever the gap. Without one, the time
+    window applies only within one canonical project, or for unattributed
+    sessions within one exact worktree path, so a basename never merges work.
+    """
+    if _legacy():
+        return group_sessions_legacy(sessions)
+    buckets: dict[tuple[str, str, str], list[dict]] = {}
+    for sess in sorted(sessions, key=lambda s: (parse_ts(s["start"]), s["session_id"])):
+        buckets.setdefault(grouping_key(sess), []).append(sess)
+    groups: list[list[dict]] = []
+    for key in sorted(buckets):
+        if key[0] == "task":
+            groups.append(buckets[key])
+        else:
+            groups.extend(_split_by_window(buckets[key]))
+    return groups
+
+
+def group_sessions_legacy(sessions: list[dict]) -> list[list[dict]]:
+    """Grouping generation 1: sort by (project, start_time). Start a new group when:
+    - project changes
+    - gap from last session > TIME_WINDOW_MIN
+    - compaction boundary on either session
     """
     if not sessions:
         return []
@@ -86,12 +112,7 @@ def group_sessions(sessions: list[dict]) -> list[list[dict]]:
     for sess in sorted_sessions[1:]:
         prev = current[-1]
         same_project = sess.get("project") == prev.get("project")
-        prev_end = parse_ts(prev["end"])
-        this_start = parse_ts(sess["start"])
-        gap_min = (this_start - prev_end).total_seconds() / 60.0
-        has_compaction = (sess.get("compactions", 0) > 0) or (prev.get("compactions", 0) > 0)
-
-        if same_project and gap_min <= TIME_WINDOW_MIN and not has_compaction:
+        if same_project and _within_window(prev, sess):
             current.append(sess)
         else:
             groups.append(current)
@@ -99,6 +120,56 @@ def group_sessions(sessions: list[dict]) -> list[list[dict]]:
 
     groups.append(current)
     return groups
+
+
+def _legacy() -> bool:
+    return os.environ.get("BRAIN_ARC_GROUPING", "").strip().lower() == "legacy"
+
+
+def _within_window(prev: dict, sess: dict) -> bool:
+    gap_min = (parse_ts(sess["start"]) - parse_ts(prev["end"])).total_seconds() / 60.0
+    has_compaction = (sess.get("compactions", 0) > 0) or (prev.get("compactions", 0) > 0)
+    return gap_min <= TIME_WINDOW_MIN and not has_compaction
+
+
+def _split_by_window(members: list[dict]) -> list[list[dict]]:
+    groups = [[members[0]]]
+    for sess in members[1:]:
+        if _within_window(groups[-1][-1], sess):
+            groups[-1].append(sess)
+        else:
+            groups.append([sess])
+    return groups
+
+
+def thread_of(sess: dict) -> str:
+    return sess.get("task_id") or sess.get("work_thread_id") or ""
+
+
+def attribution(sess: dict) -> str:
+    return sess.get("project_id") or ""
+
+
+def grouping_key(sess: dict) -> tuple[str, str, str]:
+    project = attribution(sess)
+    if project and (thread := thread_of(sess)):
+        return ("task", project, thread)
+    if project:
+        return ("project", project, "")
+    return (UNATTRIBUTED, "", sess.get("worktree") or sess.get("cwd") or sess["session_id"])
+
+
+def grouping_basis(group: list[dict]) -> str:
+    if grouping_key(group[0])[0] == "task":
+        return "task"
+    return "time-window" if len(group) > 1 else "single"
+
+
+def arc_grouping_ambiguities(groups: list[list[dict]]) -> dict[str, int]:
+    """Heuristic time-window merges and sessions left without a canonical project."""
+    merges = sum(len(g) - 1 for g in groups if grouping_basis(g) == "time-window")
+    unattributed = sum(1 for g in groups for s in g if not attribution(s))
+    return {"total": merges + unattributed, "merges": merges, "unattributed": unattributed}
 
 
 def classify_region(group: list[dict]) -> str:
@@ -158,9 +229,13 @@ def compute_heat(group: list[dict], now: datetime) -> int:
 
 
 def compute_cluster_id(group: list[dict], first_prompt: str) -> str:
-    """Stable deterministic id from sorted session ids + slug."""
-    sids = sorted(s["session_id"] for s in group)
-    h = hashlib.sha1("\n".join(sids).encode("utf-8")).hexdigest()[:12]
+    """Stable deterministic id: a task arc hashes (project, thread) so later attempts
+    keep it; any other arc hashes its sorted session ids."""
+    if not _legacy() and grouping_key(group[0])[0] == "task":
+        key = "\n".join(grouping_key(group[0]))
+    else:
+        key = "\n".join(sorted(s["session_id"] for s in group))
+    h = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
     date = parse_ts(group[0]["start"]).strftime("%Y-%m-%d")
     slug = slugify(first_prompt)
     return f"{date}-{slug}-{h}"
@@ -206,9 +281,26 @@ def find_sibling_arcs(
     return siblings
 
 
+def recorded_sessions(path: Path) -> set[str]:
+    """Session ids already recorded in an existing stub's source_sessions."""
+    if not path.exists():
+        return set()
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    if "source_sessions:" not in lines:
+        return set()
+    recorded: set[str] = set()
+    for line in lines[lines.index("source_sessions:") + 1 :]:
+        if not line.startswith("  - "):
+            break
+        recorded.add(line[4:].strip())
+    return recorded
+
+
 def write_stub(cluster: dict, out_dir: Path, clusters_root: Path | None = None) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True, mode=0o777)
     path = out_dir / f"{cluster['cluster_id']}.md"
+    if {s["session_id"] for s in cluster["sessions"]} < recorded_sessions(path):
+        return path
     siblings = find_sibling_arcs(cluster["sessions"], clusters_root, cluster["cluster_id"])
 
     group = cluster["sessions"]
@@ -231,7 +323,12 @@ def write_stub(cluster: dict, out_dir: Path, clusters_root: Path | None = None) 
     for s in group:
         frontmatter.append(f"  - {s['session_id']}")
     frontmatter += [
-        f"project: {group[0].get('project', 'unknown')}",
+        f"project: {cluster['project']}",
+        f"task_id: {cluster['task_id']}",
+        f"grouping_generation: {cluster['grouping_generation']}",
+        f"grouping_basis: {cluster['grouping_basis']}",
+        "provenance:",
+        *(f"  - {_provenance(s)}" for s in group),
         f"created: {datetime.now(timezone.utc).isoformat()}",
         f"signals: {{errors: {total_errors}, joy: {total_joy}, tools: {total_tools}}}",
         f"edges: {json.dumps([{'sibling': s} for s in siblings]) if siblings else '[]'}",
@@ -364,7 +461,36 @@ def build_cluster(group: list[dict], now: datetime) -> dict:
         "heat": compute_heat(group, now),
         "ignition": first_prompt[:280] or "(no prompt captured)",
         "sessions": group,
+        **_attribution_fields(group),
     }
+
+
+def _attribution_fields(group: list[dict]) -> dict:
+    if _legacy():
+        return {
+            "project": group[0].get("project", "unknown"),
+            "task_id": "",
+            "grouping_generation": 1,
+            "grouping_basis": "legacy",
+        }
+    return {
+        "project": attribution(group[0]) or UNATTRIBUTED,
+        "task_id": thread_of(group[0]),
+        "grouping_generation": GROUPING_GENERATION,
+        "grouping_basis": grouping_basis(group),
+    }
+
+
+def _provenance(sess: dict) -> str:
+    return json.dumps(
+        {
+            "session": sess["session_id"],
+            "branch": sess.get("git_branch") or sess.get("branch") or "",
+            "worktree": sess.get("worktree") or sess.get("cwd") or "",
+            "harness": sess.get("harness") or "unknown",
+            "installation": sess.get("installation") or "unknown",
+        }
+    )
 
 
 def write_dashboard(clusters: list[dict], out_dir: Path) -> Path:
@@ -422,6 +548,12 @@ def main() -> int:
     now = datetime.now(timezone.utc)
     groups = group_sessions(sessions)
     clusters = [build_cluster(g, now) for g in groups]
+    ambiguities = arc_grouping_ambiguities(groups)
+    print(
+        f"arc_grouping_ambiguities={ambiguities['total']} merges={ambiguities['merges']} "
+        f"unattributed={ambiguities['unattributed']}",
+        file=sys.stderr,
+    )
 
     out_dir = Path(args.out_dir)
 

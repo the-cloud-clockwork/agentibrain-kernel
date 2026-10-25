@@ -62,6 +62,7 @@ PROGRAM_ENV_DEFAULTS = {
     "AUTH_MODE": "",
     "BRAIN_API_TOKEN": "",
     "BRAIN_API_URL": "http://brain-api:8080",
+    "BRAIN_ARC_GROUPING": "",
     "BRAIN_DENIALS_KEPT": "1000",
     "BRAIN_FEED_DIR": "brain-feed",
     "BRAIN_ID": "",
