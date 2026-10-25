@@ -18,23 +18,24 @@ from .current_knowledge import select_current
 
 log = logging.getLogger("brain-api.rank")
 
+
+@dataclass(frozen=True)
+class Policy:
+    revision: str
+    lexical: float
+    task: float
+    semantic: float
+    graph: float
+    heat: float
+    inferred: float
+
+    def weight(self, component: str) -> float:
+        return getattr(self, component)
+
+
 POLICIES = {
-    "1": {
-        "lexical": 0.5,
-        "task": 0.3,
-        "semantic": 0.0,
-        "graph": 0.2,
-        "heat": 0.05,
-        "inferred": 0.5,
-    },
-    "2": {
-        "lexical": 0.4,
-        "task": 0.25,
-        "semantic": 0.2,
-        "graph": 0.15,
-        "heat": 0.05,
-        "inferred": 0.4,
-    },
+    "1": Policy("1", lexical=0.5, task=0.3, semantic=0.0, graph=0.2, heat=0.05, inferred=0.5),
+    "2": Policy("2", lexical=0.4, task=0.25, semantic=0.2, graph=0.15, heat=0.05, inferred=0.4),
 }
 CURRENT = "2"
 DIRECT = ("lexical", "task", "semantic")
@@ -69,8 +70,8 @@ class Sources:
 NO_SOURCES = Sources()
 
 
-def policy(revision: str) -> dict:
-    return {"revision": revision, **POLICIES[revision]}
+def policy(revision: str) -> Policy:
+    return POLICIES[revision]
 
 
 def terms(*texts: str) -> frozenset[str]:
@@ -93,7 +94,7 @@ def _optional(name: str, source: Source | None, query: str, ids: list[str]) -> t
         return None, "unavailable"
 
 
-def _direct(candidate: dict, query: frozenset, task: frozenset, semantic, active: dict) -> tuple:
+def _direct(candidate: dict, query: frozenset, task: frozenset, semantic, active: Policy) -> tuple:
     text = terms(candidate["title"], candidate.get("summary", ""))
     lexical, lexical_terms = _overlap(query, text)
     named, task_terms = _overlap(task, text)
@@ -109,16 +110,16 @@ def _direct(candidate: dict, query: frozenset, task: frozenset, semantic, active
         reasons.append("names task terms " + ", ".join(task_terms))
     if components["semantic"]:
         reasons.append(f"semantic similarity {components['semantic']:.2f}")
-    relevance = sum(active[k] * v for k, v in components.items() if v is not None)
+    relevance = sum(active.weight(k) * v for k, v in components.items() if v is not None)
     return components, relevance, reasons
 
 
-def _graph(edges: list[dict], relevance: dict[str, float], active: dict) -> dict[str, dict]:
+def _graph(edges: list[dict], relevance: dict[str, float], active: Policy) -> dict[str, dict]:
     best: dict[str, dict] = {}
     for edge in edges:
         if edge["status"] != "accepted":
             continue
-        factor = active["inferred"] if edge["confidence"] == "inferred" else 1.0
+        factor = active.inferred if edge["confidence"] == "inferred" else 1.0
         for near, far in ((edge["source"], edge["target"]), (edge["target"], edge["source"])):
             value = relevance.get(near, 0.0) * factor
             if value > 0 and value > best.get(far, {}).get("value", 0.0):
@@ -136,7 +137,7 @@ def rank(
     task: Task,
     candidates: list[dict],
     edges: list[dict],
-    active: dict,
+    active: Policy,
     sources: Sources = NO_SOURCES,
 ) -> dict:
     ids = [candidate["id"] for candidate in candidates]
@@ -152,13 +153,13 @@ def rank(
         relevance = direct_relevance
         link = graph.get(ident)
         components = {**components, "graph": link["value"] if link else 0.0}
-        relevance += active["graph"] * components["graph"]
+        relevance += active.graph * components["graph"]
         components["heat"] = None if heat_values is None else heat_values[ident]
         if relevance <= 0:
             excluded["heat_only" if components["heat"] else "no_task_evidence"] += 1
             continue
         status = candidate.get("knowledge_status", "unverified")
-        score = relevance * STATUS_WEIGHT[status] + active["heat"] * (components["heat"] or 0.0)
+        score = relevance * STATUS_WEIGHT[status] + active.heat * (components["heat"] or 0.0)
         path = []
         if link:
             path = [{k: link[k] for k in ("relation_id", "type", "from", "confidence")}]
@@ -185,15 +186,15 @@ def rank(
             }
         )
     items.sort(key=lambda item: (-item["score"], item["id"]))
-    sources = {"semantic": semantic_state, "heat": heat_state}
+    states = {"semantic": semantic_state, "heat": heat_state}
     return {
-        "policy_revision": active["revision"],
+        "policy_revision": active.revision,
         "authority": "recalled_evidence",
         "items": items[: task.limit],
         "excluded": excluded,
-        "sources": sources,
-        "reduced": "unavailable" in sources.values(),
-        "score_basis": [k for k in (*DIRECT, "graph", "heat") if sources.get(k, "ok") == "ok"],
+        "sources": states,
+        "reduced": "unavailable" in states.values(),
+        "score_basis": [k for k in (*DIRECT, "graph", "heat") if states.get(k, "ok") == "ok"],
     }
 
 
@@ -212,9 +213,9 @@ def _edges(view, ids: set[str], budget: int) -> tuple[list[dict], bool]:
     return edges, True
 
 
-def _unavailable(state: str, active: dict) -> dict:
+def _unavailable(state: str, active: Policy) -> dict:
     return {
-        "policy_revision": active["revision"],
+        "policy_revision": active.revision,
         "authority": "recalled_evidence",
         "items": [],
         "excluded": {"heat_only": 0, "no_task_evidence": 0},
@@ -228,7 +229,7 @@ def retrieve(
     store,
     project: str,
     task: Task,
-    active: dict,
+    active: Policy,
     sources: Sources = NO_SOURCES,
     time_budget: float = 0.25,
 ) -> dict:

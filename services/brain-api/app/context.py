@@ -73,7 +73,7 @@ def enabled() -> bool:
     return os.getenv("BRAIN_TASK_CONTEXT", "true").lower() != "false"
 
 
-def ranking_policy() -> dict | None:
+def ranking_policy() -> rank.Policy | None:
     if os.getenv("BRAIN_CONTEXT_RANKING", "true").lower() == "false":
         return None
     revision = os.getenv("BRAIN_RANKING_POLICY", rank.CURRENT)
@@ -194,7 +194,7 @@ def accept(
     active = ranking_policy()
     if active is None:
         return _admit(request, trusted, operation_id(request, trusted))
-    identity = {**trusted, "ranking_policy": active["revision"]}
+    identity = {**trusted, "ranking_policy": active.revision}
     return _admit(
         request,
         trusted,
