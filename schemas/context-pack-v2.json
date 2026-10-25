@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ContextPack",
+  "description": "The pack field of a POST /v2/context response context (SV2-CTX-03).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "max_tokens",
+    "category_tokens",
+    "context_pack_tokens",
+    "omitted_items",
+    "omitted",
+    "truncated",
+    "unresolved_conflicts",
+    "knowledge_revision",
+    "degraded",
+    "authority"
+  ],
+  "properties": {
+    "max_tokens": {"type": "integer", "minimum": 1},
+    "category_tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "lesson", "arc"],
+      "properties": {
+        "decision": {"type": "integer", "minimum": 0},
+        "lesson": {"type": "integer", "minimum": 0},
+        "arc": {"type": "integer", "minimum": 0}
+      }
+    },
+    "context_pack_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Estimated tokens of the packed items, never above max_tokens."
+    },
+    "omitted_items": {"type": "integer", "minimum": 0},
+    "omitted": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "reason", "tokens", "reference"],
+        "properties": {
+          "id": {"type": "string"},
+          "type": {"enum": ["arc", "lesson", "decision"]},
+          "reason": {"enum": ["over_budget", "duplicate"]},
+          "tokens": {"type": "integer", "minimum": 0},
+          "reference": {"$ref": "#/$defs/Reference"},
+          "duplicate_of": {"type": "string"}
+        }
+      }
+    },
+    "truncated": {"type": "boolean"},
+    "unresolved_conflicts": {"type": "array", "items": {"type": "string"}},
+    "knowledge_revision": {"type": "string", "pattern": "^kr-[0-9a-f]{32}$"},
+    "degraded": {"enum": [null, "packing_disabled"]},
+    "authority": {"const": "recalled_evidence"}
+  },
+  "$defs": {
+    "Reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity_id", "revision"],
+      "properties": {
+        "entity_id": {"type": "string"},
+        "revision": {"type": ["integer", "null"]}
+      }
+    }
+  }
+}

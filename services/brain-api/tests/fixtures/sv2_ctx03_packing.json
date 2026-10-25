@@ -1,0 +1,60 @@
+{
+  "first": {
+    "request": {
+      "intent": "Implement incremental transcript ingestion with durable acknowledgements.",
+      "query": "transcript ingestion acknowledgement",
+      "subsystems": ["session-catalog"],
+      "budget": {"max_tokens": 700, "max_graph_depth": 2, "max_items": 12}
+    },
+    "smaller_budget": 300,
+    "oversized": {
+      "id": "arc:ingestion-rewrite-saga",
+      "marker": "OVERSIZED-ARC-FIRST",
+      "phrase": "transcript ingestion acknowledgement replay step ",
+      "repeat": 400
+    },
+    "entities": [
+      {"id": "lesson:ack-after-commit", "type": "lesson", "revision": 2, "projects": ["alpha"], "vault_ref": null, "title": "Acknowledge transcript ingestion only after the commit lands.", "provenance": {"source": "fixture:ack-a", "revision": "p1"}},
+      {"id": "lesson:ack-after-commit-copy", "type": "lesson", "revision": 1, "projects": ["alpha"], "vault_ref": null, "title": "acknowledge transcript ingestion only after the commit lands", "provenance": {"source": "fixture:ack-b", "revision": "p1"}},
+      {"id": "lesson:short-retry", "type": "lesson", "revision": 1, "projects": ["alpha"], "vault_ref": null, "title": "Retry ingestion with the same batch id.", "provenance": {"source": "fixture:retry", "revision": "p1"}},
+      {"id": "decision:ack-per-batch", "type": "decision", "revision": 3, "projects": ["alpha"], "vault_ref": null, "title": "Acknowledge transcript ingestion per batch.", "provenance": {"source": "fixture:batch", "revision": "p1"}},
+      {"id": "decision:ack-per-event", "type": "decision", "revision": 1, "projects": ["alpha"], "vault_ref": null, "title": "Acknowledge transcript ingestion per event.", "provenance": {"source": "fixture:event", "revision": "p1"}}
+    ],
+    "relations": [
+      {"source": "decision:ack-per-batch", "type": "contradicts", "target": "decision:ack-per-event", "status": "accepted", "confidence": "observed", "evidence": []}
+    ],
+    "semantic": {"arc:ingestion-rewrite-saga": 0.95, "lesson:ack-after-commit": 0.9, "lesson:ack-after-commit-copy": 0.85, "lesson:short-retry": 0.7, "decision:ack-per-batch": 0.6, "decision:ack-per-event": 0.55},
+    "duplicate": {"kept": "lesson:ack-after-commit", "dropped": "lesson:ack-after-commit-copy"},
+    "small_lesson": "lesson:ack-after-commit",
+    "conflicted": ["decision:ack-per-batch", "decision:ack-per-event"]
+  },
+  "second": {
+    "request": {
+      "intent": "Repair the shard timeout on the unit suite merge group.",
+      "query": "shard timeout merge group",
+      "subsystems": ["ci-shards"],
+      "budget": {"max_tokens": 700, "max_graph_depth": 2, "max_items": 12}
+    },
+    "smaller_budget": 300,
+    "oversized": {
+      "id": "arc:shard-capacity-saga",
+      "marker": "OVERSIZED-ARC-SECOND",
+      "phrase": "shard timeout merge group runner wait ",
+      "repeat": 500
+    },
+    "entities": [
+      {"id": "lesson:shard-pin-image", "type": "lesson", "revision": 4, "projects": ["alpha"], "vault_ref": null, "title": "Pin the shard runner image before raising the timeout.", "provenance": {"source": "fixture:pin-a", "revision": "p1"}},
+      {"id": "lesson:shard-pin-image-copy", "type": "lesson", "revision": 1, "projects": ["alpha"], "vault_ref": null, "title": "PIN the shard runner image, before raising the timeout!", "provenance": {"source": "fixture:pin-b", "revision": "p1"}},
+      {"id": "lesson:shard-rerun", "type": "lesson", "revision": 1, "projects": ["alpha"], "vault_ref": null, "title": "Rerun only the failed shard.", "provenance": {"source": "fixture:rerun", "revision": "p1"}},
+      {"id": "decision:shard-ten-minutes", "type": "decision", "revision": 2, "projects": ["alpha"], "vault_ref": null, "title": "Shard timeout stays at ten minutes.", "provenance": {"source": "fixture:ten", "revision": "p1"}},
+      {"id": "decision:shard-twenty-minutes", "type": "decision", "revision": 2, "projects": ["alpha"], "vault_ref": null, "title": "Shard timeout rises to twenty minutes.", "provenance": {"source": "fixture:twenty", "revision": "p1"}}
+    ],
+    "relations": [
+      {"source": "decision:shard-twenty-minutes", "type": "contradicts", "target": "decision:shard-ten-minutes", "status": "accepted", "confidence": "observed", "evidence": []}
+    ],
+    "semantic": {"arc:shard-capacity-saga": 0.95, "lesson:shard-pin-image": 0.9, "lesson:shard-pin-image-copy": 0.85, "lesson:shard-rerun": 0.7, "decision:shard-ten-minutes": 0.6, "decision:shard-twenty-minutes": 0.55},
+    "duplicate": {"kept": "lesson:shard-pin-image", "dropped": "lesson:shard-pin-image-copy"},
+    "small_lesson": "lesson:shard-pin-image",
+    "conflicted": ["decision:shard-ten-minutes", "decision:shard-twenty-minutes"]
+  }
+}
