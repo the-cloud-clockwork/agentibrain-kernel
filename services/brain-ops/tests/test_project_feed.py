@@ -11,6 +11,7 @@ Run from repo root:
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import sys
 from datetime import datetime, timedelta, timezone
@@ -23,11 +24,11 @@ _BRAIN_OPS = _HERE.parent
 if str(_BRAIN_OPS) not in sys.path:
     sys.path.insert(0, str(_BRAIN_OPS))
 
-import brain_apply  # noqa: E402
-import brain_keeper  # noqa: E402
-import brain_tick_prompt  # noqa: E402
-import markers  # noqa: E402
-import project_feed  # noqa: E402
+brain_apply = importlib.import_module("brain_apply")
+brain_keeper = importlib.import_module("brain_keeper")
+brain_tick_prompt = importlib.import_module("brain_tick_prompt")
+markers = importlib.import_module("markers")
+project_feed = importlib.import_module("project_feed")
 
 FIXTURE = _HERE / "fixtures" / "sv2_brp04_projects.json"
 SETS = json.loads(FIXTURE.read_text(encoding="utf-8"))["sets"]
