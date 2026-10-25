@@ -1,0 +1,97 @@
+{
+  "package": "SV2-BRP-03",
+  "sets": [
+    {
+      "name": "alpha",
+      "brain": "swarm",
+      "log_date": "2026-10-20",
+      "filler": {
+        "count": 30,
+        "projects": ["the-cloud-clockwork/agentihooks", "the-cloud-clockwork/agentihooks-bundle"],
+        "text": "Routine note number {n} about ledger writes, tick passes and seat recaps, recorded so the daily log grows long enough to cross the old whole log embedding limit."
+      },
+      "late_lesson": {
+        "marker_id": "mk-a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "ts": "2026-10-20T23:58:00+00:00",
+        "source": "engineer-7",
+        "project_id": "the-cloud-clockwork/agentihooks",
+        "session_id": "sess-alpha-late",
+        "arc": "arc-alpha-ledger",
+        "content": "Late lesson zebracrane: a hive member must renew its lease before every mutation, because a stale lease lets an older generation write over a newer claim. This lesson also mentions agentihooks-bundle in passing."
+      },
+      "historical": {
+        "log_date": "2026-03-02",
+        "ts": "2026-03-02T09:15:00+00:00",
+        "source": "unknown",
+        "content": "Historical entry quillfern written before project attribution existed: restart the tick by its own process id, never by pattern."
+      },
+      "decisions": {
+        "superseded": {
+          "file": "ADR-0011-tick-cadence.md",
+          "id": "ADR-0011",
+          "marker_id": "mk-a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2",
+          "project_id": "the-cloud-clockwork/agentihooks",
+          "title": "Tick runs every five minutes",
+          "superseded_by": "ADR-0012",
+          "content": "The swarm tick runs every five minutes so ledger writes stay cheap."
+        },
+        "current": {
+          "file": "ADR-0012-tick-cadence-minute.md",
+          "id": "ADR-0012",
+          "marker_id": "mk-a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3",
+          "project_id": "the-cloud-clockwork/agentihooks",
+          "title": "Tick runs every minute",
+          "content": "The swarm tick runs every minute; it replaces the five minute cadence."
+        }
+      },
+      "foreign_project": "the-cloud-clockwork/agentihooks-bundle",
+      "substring_probe": "agentihooks"
+    },
+    {
+      "name": "beta",
+      "brain": "personal",
+      "log_date": "2026-10-21",
+      "filler": {
+        "count": 34,
+        "projects": ["the-cloud-clockwork/agentibrain-kernel", "the-cloud-clockwork/antoncore"],
+        "text": "Background observation {n} on embedding refresh, prune guards and vault reads, padded so the day's log runs well past four thousand characters."
+      },
+      "late_lesson": {
+        "marker_id": "mk-b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+        "ts": "2026-10-21T23:59:30+00:00",
+        "source": "engineer-9",
+        "project_id": "the-cloud-clockwork/agentibrain-kernel",
+        "session_id": "sess-beta-late",
+        "arc": "arc-beta-index",
+        "content": "Late lesson otterlamp: never prune a producer after a scan read error, because the keep set then misses every entry of the unreadable log. It names antoncore only as a deployment target."
+      },
+      "historical": {
+        "log_date": "2026-02-11",
+        "ts": "2026-02-11T14:40:00+00:00",
+        "source": "unknown",
+        "content": "Historical entry mossgrain from before attribution: the embeddings schema dimension must match the configured model."
+      },
+      "decisions": {
+        "superseded": {
+          "file": "ADR-0021-single-stack.md",
+          "id": "ADR-0021",
+          "marker_id": "mk-b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+          "project_id": "the-cloud-clockwork/agentibrain-kernel",
+          "title": "One brain stack per host",
+          "superseded_by": "ADR-0022",
+          "content": "Each host runs exactly one brain stack with fixed container names."
+        },
+        "current": {
+          "file": "ADR-0022-instance-names.md",
+          "id": "ADR-0022",
+          "marker_id": "mk-b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3",
+          "project_id": "the-cloud-clockwork/agentibrain-kernel",
+          "title": "Brain instances carry their own names",
+          "content": "Every brain instance names its containers after itself so two can share a host."
+        }
+      },
+      "foreign_project": "the-cloud-clockwork/antoncore",
+      "substring_probe": "agentibrain"
+    }
+  ]
+}
