@@ -1,4 +1,5 @@
 import os
+from collections.abc import Callable
 
 from app.graph import GraphReadView
 
@@ -123,6 +124,8 @@ def classify(nodes: list[dict], edges: list[dict], complete: bool) -> dict:
     }
 
 
-def select_current(view: GraphReadView, nodes: list[dict], visible, budget: int) -> dict:
+def select_current(
+    view: GraphReadView, nodes: list[dict], visible: Callable[[dict | None], bool], budget: int
+) -> dict:
     edges, examined, complete = _assertions(view, nodes, visible, budget)
     return {**classify(nodes, edges, complete), "selection_edges_examined": examined}
