@@ -125,7 +125,9 @@ class TestNormalize:
 
     def test_block_style_frontmatter_edges_are_quarantined_not_dropped(self, tmp_path):
         arc = tmp_path / "arc-b.md"
-        arc.write_text("---\ncluster_id: arc-b\nedges:\n  - sibling: arc-c\nproject: alpha\n---\n")
+        arc.write_text(
+            "---\ncluster_id: arc-b\nedges:\n\n  - sibling: arc-c\nproject: alpha\n---\n"
+        )
         found = edge_relations.file_assertions(arc, "left/arc-b.md")
         assert found == [
             edge_relations.Assertion("arc-b", "", "", "left/arc-b.md#L3", "frontmatter")

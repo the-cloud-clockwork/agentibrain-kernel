@@ -61,7 +61,7 @@ def _frontmatter_assertions(text: str, source: str, ref: str) -> list[Assertion]
         if not match:
             continue
         evidence = f"{ref}#L{offset + 1}"
-        following = lines[offset + 1].strip() if offset + 1 < len(lines) else ""
+        following = next((rest.strip() for rest in lines[offset + 1 :] if rest.strip()), "")
         block = not match.group(1) and following.startswith("-")
         try:
             items = None if block else json.loads(match.group(1) or "[]")
