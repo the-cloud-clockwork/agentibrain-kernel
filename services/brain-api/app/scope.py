@@ -1,7 +1,8 @@
 """Brain scope: a worker token names one brain, and a query from another brain is denied.
 
 BRAIN_ID names this brain. KB_WORKER_TOKENS lists worker tokens as
-``brain_id=token`` pairs, comma separated. Router tokens (KB_ROUTER_TOKENS)
+``brain_id=token`` pairs, comma separated; ``brain_id@projA|projB=token`` also
+grants the token only those projects. Router tokens (KB_ROUTER_TOKENS)
 name no brain and stay unscoped.
 """
 
@@ -17,21 +18,24 @@ DENIALS_KEPT = int(os.getenv("BRAIN_DENIALS_KEPT", "1000"))
 SESSION_TITLE_MAX = 200
 
 
-def _load_worker_tokens() -> dict[str, str]:
+def _load_worker_tokens() -> tuple[dict[str, str], dict[str, frozenset[str]]]:
     found: dict[str, str] = {}
+    grants: dict[str, frozenset[str]] = {}
     for pair in os.getenv("KB_WORKER_TOKENS", "").split(","):
-        brain, sep, token = pair.strip().partition("=")
+        named, sep, token = pair.strip().partition("=")
+        brain, _, projects = named.partition("@")
         brain, token = brain.strip(), token.strip()
         if not (sep and brain and token):
             continue
         if found.get(token, brain) != brain:
             raise RuntimeError("KB_WORKER_TOKENS names one token for two brains")
         found[token] = brain
-    return found
+        grants[token] = frozenset(p.strip() for p in projects.split("|") if p.strip())
+    return found, grants
 
 
 BRAIN_ID = os.getenv("BRAIN_ID", "").strip()
-WORKER_TOKENS = _load_worker_tokens()
+WORKER_TOKENS, PROJECT_GRANTS = _load_worker_tokens()
 if WORKER_TOKENS and not BRAIN_ID:
     raise RuntimeError("KB_WORKER_TOKENS is set but BRAIN_ID is not; set BRAIN_ID and restart.")
 
@@ -41,6 +45,19 @@ _lock = threading.Lock()
 
 def worker_brain(token: str) -> str | None:
     return WORKER_TOKENS.get(token)
+
+
+def project_grant(token: str) -> frozenset[str]:
+    """Projects a worker token may write and read; empty means the whole brain."""
+    return PROJECT_GRANTS.get(token, frozenset())
+
+
+def admits(grant: frozenset[str], claimed: set[str], *, unattributed: bool) -> bool:
+    if not grant:
+        return True
+    if not claimed:
+        return unattributed
+    return claimed <= grant
 
 
 def record_denial(requester_scope: str, query: str, session_title: str) -> None:

@@ -806,7 +806,7 @@ def _drain_marker_dir(
         attrs.setdefault("session_id", session_id)
         attrs.setdefault("source", entry.get("agent_name") or attrs.get("source") or "sync")
         if entry.get("project"):
-            attrs.setdefault("project", entry["project"])
+            attrs.setdefault("cwd", entry["project"])
         if entry.get("ts"):
             attrs.setdefault("ts", entry["ts"])
         idem = entry.get("idempotency_key")
