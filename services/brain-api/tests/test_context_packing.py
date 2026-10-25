@@ -291,3 +291,17 @@ def test_an_empty_context_packs_to_an_empty_pack():
     assert packed["items"] == [] and packed["pack"]["omitted"] == []
     assert packed["pack"]["context_pack_tokens"] == 0
     assert packed["pack"]["truncated"] is False
+
+
+def test_claims_differing_beyond_case_and_punctuation_stay_distinct():
+    items = [
+        _item("decision:ja", "decision", "日本語の決定"),
+        _item("decision:zh", "decision", "中文の決定"),
+        _item("lesson:yes", "lesson", "Ship ✓"),
+        _item("lesson:no", "lesson", "Ship ✗"),
+        _item("lesson:dots", "lesson", "..."),
+        _item("lesson:bang", "lesson", "!!!"),
+    ]
+    packed = _pack(5000, items)
+    assert [item["id"] for item in packed["items"]] == [item["id"] for item in items]
+    assert packed["pack"]["omitted"] == []

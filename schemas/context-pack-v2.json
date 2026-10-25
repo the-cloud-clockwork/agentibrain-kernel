@@ -17,53 +17,129 @@
     "authority"
   ],
   "properties": {
-    "max_tokens": {"type": "integer", "minimum": 1},
+    "max_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
     "category_tokens": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["decision", "lesson", "arc"],
+      "required": [
+        "decision",
+        "lesson",
+        "arc"
+      ],
       "properties": {
-        "decision": {"type": "integer", "minimum": 0},
-        "lesson": {"type": "integer", "minimum": 0},
-        "arc": {"type": "integer", "minimum": 0}
-      }
+        "decision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lesson": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "arc": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "Per-category shares of max_tokens applied in a first pass in rank order; tokens a category leaves unused are released to remaining items, still in rank order, within max_tokens."
     },
     "context_pack_tokens": {
       "type": "integer",
       "minimum": 0,
       "description": "Estimated tokens of the packed items, never above max_tokens."
     },
-    "omitted_items": {"type": "integer", "minimum": 0},
+    "omitted_items": {
+      "type": "integer",
+      "minimum": 0
+    },
     "omitted": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "type", "reason", "tokens", "reference"],
+        "required": [
+          "id",
+          "type",
+          "reason",
+          "tokens",
+          "reference"
+        ],
         "properties": {
-          "id": {"type": "string"},
-          "type": {"enum": ["arc", "lesson", "decision"]},
-          "reason": {"enum": ["over_budget", "duplicate"]},
-          "tokens": {"type": "integer", "minimum": 0},
-          "reference": {"$ref": "#/$defs/Reference"},
-          "duplicate_of": {"type": "string"}
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "arc",
+              "lesson",
+              "decision"
+            ]
+          },
+          "reason": {
+            "enum": [
+              "over_budget",
+              "duplicate"
+            ]
+          },
+          "tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reference": {
+            "$ref": "#/$defs/Reference"
+          },
+          "duplicate_of": {
+            "type": "string"
+          }
         }
+      },
+      "description": "Items left out, in rank order. A duplicate is a repeated claim (same type, same title ignoring case, whitespace and ASCII punctuation) folded into the higher ranked item, which lists every supporting_source_ids; conflicted items are never folded."
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "True when any item was omitted over budget. Item text is never cut: an item is packed whole or listed in omitted."
+    },
+    "unresolved_conflicts": {
+      "type": "array",
+      "items": {
+        "type": "string"
       }
     },
-    "truncated": {"type": "boolean"},
-    "unresolved_conflicts": {"type": "array", "items": {"type": "string"}},
-    "knowledge_revision": {"type": "string", "pattern": "^kr-[0-9a-f]{32}$"},
-    "degraded": {"enum": [null, "packing_disabled"]},
-    "authority": {"const": "recalled_evidence"}
+    "knowledge_revision": {
+      "type": "string",
+      "pattern": "^kr-[0-9a-f]{32}$",
+      "description": "Hash of the ranked items (id, revision, knowledge status, title) for this request before packing; it does not depend on max_tokens, so a smaller retry budget reports the same revision."
+    },
+    "degraded": {
+      "enum": [
+        null,
+        "packing_disabled"
+      ]
+    },
+    "authority": {
+      "const": "recalled_evidence"
+    }
   },
   "$defs": {
     "Reference": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["entity_id", "revision"],
+      "required": [
+        "entity_id",
+        "revision"
+      ],
       "properties": {
-        "entity_id": {"type": "string"},
-        "revision": {"type": ["integer", "null"]}
+        "entity_id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
       }
     }
   }

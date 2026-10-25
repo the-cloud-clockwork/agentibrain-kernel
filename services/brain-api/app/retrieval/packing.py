@@ -10,13 +10,14 @@ import hashlib
 import json
 import math
 import re
+import string
 
 SHARES = {"decision": 0.4, "lesson": 0.4, "arc": 0.2}
 REFERENCE_FIELDS = ("id", "type", "knowledge_status", "revision", "authority")
-_CLAIM = re.compile(r"[^a-z0-9]+")
+_CLAIM = re.compile(r"[\s" + re.escape(string.punctuation) + r"]+")
 
 
-def tokens(value) -> int:
+def tokens(value: object) -> int:
     raw = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return math.ceil(len(raw) / 4)
 
@@ -39,7 +40,8 @@ def _reference(item: dict) -> dict:
 
 
 def _claim(item: dict) -> tuple[str, str]:
-    return item["type"], _CLAIM.sub(" ", item["title"].lower()).strip()
+    claim = _CLAIM.sub(" ", item["title"].casefold()).strip()
+    return item["type"], claim or item["title"]
 
 
 def _deduplicate(items: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -79,9 +81,7 @@ def _entry(item: dict, conservative: bool) -> dict:
     }
 
 
-def pack(context: dict, max_tokens: int, conservative: bool = False) -> dict:
-    ranked = context["items"]
-    unique, duplicates = _deduplicate(ranked)
+def _select(unique: list[dict], max_tokens: int, conservative: bool) -> tuple:
     caps = category_budgets(max_tokens)
     spent = dict.fromkeys(caps, 0)
     used, packed, deferred = 0, [], []
@@ -101,6 +101,13 @@ def pack(context: dict, max_tokens: int, conservative: bool = False) -> dict:
             packed.append(entry)
         else:
             omitted.append(_omission(item, "over_budget", cost))
+    return caps, used, packed, omitted
+
+
+def pack(context: dict, max_tokens: int, conservative: bool = False) -> dict:
+    ranked = context["items"]
+    unique, duplicates = _deduplicate(ranked)
+    caps, used, packed, omitted = _select(unique, max_tokens, conservative)
     order = {item["id"]: index for index, item in enumerate(ranked)}
     packed.sort(key=lambda entry: order[entry["id"]])
     for duplicate in duplicates:
