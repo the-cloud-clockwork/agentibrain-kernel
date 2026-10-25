@@ -1,1 +1,3 @@
-from .harness import brain, embeddings, model  # noqa: F401
+from .harness import brain, embeddings, model
+
+__all__ = ["brain", "embeddings", "model"]
