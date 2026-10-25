@@ -38,7 +38,7 @@
   "red": {
     "commit": "48d2fd2c38bf9fa08377d69d89c33eab18dbd463",
     "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40243125987",
-    "outcome": "failure: ModuleNotFoundError app.retrieval.packing on 3.10, 3.11 and 3.12"
+    "outcome": "failure in CI: the packing tests failed with ModuleNotFoundError app.retrieval.packing and the endpoint cases failed on a context without pack, on 3.10, 3.11 and 3.12"
   },
   "compatibility": "Against the SV2-CTX-02 response every existing context field is unchanged; items keep their ranked fields and gain revision, complete, reference and supporting_source_ids; only over budget items and folded duplicates leave items. test_context_ranking.py is unchanged in this pull request and passes.",
   "cases": [
@@ -88,15 +88,21 @@
   },
   "commands": [
     {
-      "invocation": "python -m pytest -q services/brain-api/tests (3.12)",
+      "source": "CI job lint-test (3.12)",
+      "job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244156006/job/121322089661",
+      "invocation": "python -m pytest -q services/brain-api/tests (run in CI, not locally)",
       "output": "339 passed, 2 warnings in 68.05s"
     },
     {
-      "invocation": "python -m pytest -q services/brain-api/tests (3.11)",
+      "source": "CI job lint-test (3.11)",
+      "job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244156006/job/121322089697",
+      "invocation": "python -m pytest -q services/brain-api/tests (run in CI, not locally)",
       "output": "339 passed, 2 warnings in 77.31s"
     },
     {
-      "invocation": "python -m pytest -q services/brain-api/tests (3.10)",
+      "source": "CI job lint-test (3.10)",
+      "job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244156006/job/121322089685",
+      "invocation": "python -m pytest -q services/brain-api/tests (run in CI, not locally)",
       "output": "339 passed, 2 warnings in 75.89s"
     }
   ]
