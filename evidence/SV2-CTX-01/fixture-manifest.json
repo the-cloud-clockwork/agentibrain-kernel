@@ -1,0 +1,26 @@
+{
+  "package": "SV2-CTX-01",
+  "tested_commit": "6b3d3f2fc56ad45fb38ab209819533c7cf38f32b",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40202068412",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40202068412/job/121195145356",
+  "verification": "CI fixture HTTP through the FastAPI test client; tokens, grants and requests are fixture-local, not production.",
+  "input_hashes": {
+    "engineer_request": "b8ef6c8ebb12a77823f3040ce8f8250124533b54a111da0c01e899e8cb3dc722",
+    "ci_request": "559de54b2951b5042a324cc46273f2a9e8cdbdb89731c6d6855d1969d18fdd36",
+    "wrong_brain_audience": "b8af03fccaea8d5537d193f56ebbbd2a9d826ad43a01232d315e04d546acf3d0",
+    "oversized_prompt": "582b72d757f36ed8921fa3ab9394a3ad35419db76ba8a7c571444ecdc7d7bafc"
+  },
+  "input_hash_method": "sha256 of sort_keys JSON of the fixture request dict",
+  "test_source_hashes": {
+    "services/brain-api/tests/test_context_request.py": "14774d9baf2a17a391caa1468eb027edb4ed380d0e3b8e39ad3ca6c3e7ddab3f"
+  },
+  "fixture_dimensions": {
+    "brain": "hive-a",
+    "other_brain": "hive-b",
+    "authorized_project": "alpha",
+    "excluded_project": "beta",
+    "tokens": "hive-a@alpha#eng=engineer, hive-a@alpha#ci=ci, hive-b@alpha=other",
+    "max_body_bytes": 65536
+  },
+  "source_material": "Fixture requests only; no live brain, vault content or credentials."
+}

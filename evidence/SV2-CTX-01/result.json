@@ -1,0 +1,78 @@
+{
+  "package": "SV2-CTX-01",
+  "tested_commit": "6b3d3f2fc56ad45fb38ab209819533c7cf38f32b",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40202068412",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40202068412/job/121195145356",
+  "verification": "CI fixture HTTP through the FastAPI test client; tokens, grants and requests are fixture-local, not production.",
+  "dependency": [
+    "SV2-GRF-05",
+    "SV2-IDX-05"
+  ],
+  "integration_gate": "G6",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/156",
+  "issue": "https://github.com/the-cloud-clockwork/agentibrain-kernel/issues/155",
+  "interfaces": [
+    "POST /v2/context",
+    "GET /v2/context/stats",
+    "KB_WORKER_TOKENS lane suffix #eng|ci",
+    "schemas/context-v2.json"
+  ],
+  "supported_versions": {
+    "context_request": [
+      "2.0"
+    ],
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ]
+  },
+  "state": {
+    "observed": "All ten pull request checks pass on the tested commit.",
+    "accepted": "Sixteen new brain-api fixture cases pass in the full brain-api suite on three Python versions.",
+    "committed": "6b3d3f2fc56ad45fb38ab209819533c7cf38f32b",
+    "externally_verified": "None; no deployed brain was exercised. G6 rollout must validate deployed behavior."
+  },
+  "commands": [
+    {
+      "invocation": "python -m pytest -q services/brain-api/tests (3.12)",
+      "output": "290 passed, 2 warnings in 49.07s"
+    },
+    {
+      "invocation": "python -m pytest -q services/brain-api/tests (3.11)",
+      "output": "290 passed, 2 warnings in 40.46s"
+    },
+    {
+      "invocation": "python -m pytest -q services/brain-api/tests (3.10)",
+      "output": "290 passed, 2 warnings in 79.46s"
+    },
+    {
+      "invocation": "python -m pytest -q tests/unit (3.12)",
+      "output": "208 passed in 7.29s"
+    }
+  ],
+  "red_proofs": [
+    {
+      "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40201393149",
+      "output": "12 failed, 276 passed, 2 warnings in 48.69s",
+      "cause": "Task-context route and module absent."
+    }
+  ],
+  "acceptance": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ],
+  "rollback": {
+    "switch": "BRAIN_TASK_CONTEXT=false",
+    "rehearsal": "Fixture disables the route, reads the project feed, re-enables and compares the operation id unchanged.",
+    "data_safety": "The route writes no authoritative state; the replay cache and revision guard are process memory and safe to drop."
+  },
+  "limitations": [
+    "Launch binding is not validated: execution_id is accepted as supplied and is not tied to the credential; the kernel holds no launch-binding credential yet.",
+    "A worker token without a #lane suffix may act as any lane, matching the open-by-default project grant; deployed KB_WORKER_TOKENS must carry lane suffixes. Tests exercise eng and ci only.",
+    "The stale revision guard and replay cache are per process: a restart, a second worker process, or LRU eviction past BRAIN_CONTEXT_ACCEPTED_KEPT (10000) tasks lets an older task revision be accepted again.",
+    "No retrieval, ranking, packing, caching or receipts: those are SV2-CTX-02 to SV2-CTX-05. The response is the accepted request with its operation identity.",
+    "No production rollout is claimed."
+  ]
+}
