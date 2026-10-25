@@ -99,7 +99,7 @@ def test_missing_source_range_and_reference_boundary(monkeypatch, vault, tmp_pat
     refs = [
         {"entity_id": "lesson:attached", "revision": 1, "kind": "lesson"},
         {
-            "entity_id": "transcript_chunk:missing",
+            "entity_id": "evidence:missing",
             "revision": 1,
             "kind": "source_range",
             "start": 1,
@@ -132,3 +132,94 @@ def test_refusals_and_rollback_keep_authoritative_bytes(monkeypatch, vault, tmp_
     assert _read(client).status_code == 503
     monkeypatch.setenv("BRAIN_FULL_DETAIL", "true")
     assert _read(client, revision=1).json() == before
+
+
+def test_available_lesson_and_source_ranges_resolve_exact_revisions(monkeypatch, vault, tmp_path):
+    client = _client(monkeypatch, vault, tmp_path / "references.db", "hive-a@alpha=worker")
+    for ident, text in [
+        ("lesson:attached", "complete lesson"),
+        ("evidence:records", "one\ntwo\nthree"),
+    ]:
+        entity = _entity(ident)
+        assert client.post("/graph/entity", json=entity, headers=_auth(ROUTER)).status_code == 201
+        payload = {"entity_id": ident, "revision": 1, "sections": [{"id": "body", "content": text}]}
+        assert (
+            client.post("/knowledge/detail", json=payload, headers=_auth(ROUTER)).status_code == 201
+        )
+    refs = [
+        {"entity_id": "lesson:attached", "revision": 1, "kind": "lesson"},
+        {
+            "entity_id": "evidence:records",
+            "revision": 1,
+            "kind": "source_range",
+            "start": 4,
+            "end": 8,
+        },
+        {
+            "entity_id": "evidence:records",
+            "revision": 1,
+            "kind": "source_range",
+            "start": 4,
+            "end": 999,
+        },
+    ]
+    _publish(client, references=refs)
+    result = _read(client).json()
+    assert [r["availability"] for r in result["references"]] == [
+        "available",
+        "available",
+        "range_unavailable",
+    ]
+    assert result["knowledge_reference_resolution_failures"] == 1
+    ref = result["references"][1]
+    source = client.get(
+        "/knowledge/detail",
+        params={
+            "entity_id": ref["entity_id"],
+            "revision": ref["revision"],
+            "content_hash": ref["content_hash"],
+        },
+        headers=_auth("worker"),
+    ).json()
+    assert source["trust_class"] == "original_evidence"
+    assert source["sections"][0]["content"][ref["start"] : ref["end"]] == "two\n"
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"sections": [{"id": "same", "content": "a"}, {"id": "same", "content": "b"}]},
+        {"sections": [], "text_preview": "excerpt"},
+        {
+            "references": [
+                {
+                    "entity_id": "evidence:x",
+                    "revision": 1,
+                    "kind": "source_range",
+                    "start": 3,
+                    "end": 1,
+                }
+            ]
+        },
+        {
+            "references": [
+                {
+                    "entity_id": "lesson:x",
+                    "revision": 1,
+                    "kind": "source_range",
+                    "start": 0,
+                    "end": 1,
+                }
+            ]
+        },
+    ],
+)
+def test_invalid_publications_never_replace_accepted_document(
+    monkeypatch, vault, tmp_path, changes
+):
+    client = _client(monkeypatch, vault, tmp_path / "invalid.db", "hive-a@alpha=worker")
+    payload, _ = _publish(client)
+    before = _read(client).json()
+    response = client.post("/knowledge/detail", json={**payload, **changes}, headers=_auth(ROUTER))
+    assert response.status_code == 422
+    assert _read(client).json() == before

@@ -53,7 +53,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from . import graph, pipeline, scope, vault_reader
+from . import arcs, graph, pipeline, provenance, scope, vault_reader
 from .feed import VAULT_ROOT, feed_payload, project_feed_payload
 from .markers import (
     MarkerError,
@@ -783,6 +783,54 @@ def post_graph_expand(
     _: None = Depends(require_token),
 ) -> dict:
     return expand(_graph_store(), body, _caller_grant(authorization), _bearer(authorization))
+
+
+@app.post("/knowledge/detail", status_code=201)
+def publish_knowledge_detail(
+    payload: arcs.Publication,
+    _: None = Depends(require_router_token),
+) -> dict:
+    store = _graph_store()
+    try:
+        action, value = store.put_detail(
+            payload.model_dump(), lambda entity: arcs.document(payload, entity)
+        )
+    except graph.GraphRejection as exc:
+        raise HTTPException(status_code=409, detail={"reason": exc.reason}) from exc
+    return {"action": action, "content_hash": value["content_hash"], "revision": payload.revision}
+
+
+@app.get("/knowledge/detail")
+def read_knowledge_detail(
+    query: arcs.ReadRequest = Depends(arcs.ReadRequest),
+    authorization: str | None = Header(None),
+    _: None = Depends(require_token),
+) -> dict:
+    if os.getenv("BRAIN_FULL_DETAIL", "true").lower() == "false":
+        raise HTTPException(status_code=503, detail="full detail reads are disabled")
+    store = _graph_store()
+    visible = _graph_visible(authorization)
+    value = store.read_detail(query.entity_id, query.revision, visible)
+    if value is None:
+        raise HTTPException(status_code=404, detail="detail revision unavailable")
+    if query.content_hash and query.content_hash != value["content_hash"]:
+        raise HTTPException(status_code=409, detail="detail hash does not match reference")
+    if (query.section_offset or query.reference_offset) and query.revision is None:
+        raise HTTPException(status_code=422, detail="continuations require an explicit revision")
+    return {
+        "entity_id": query.entity_id,
+        "revision": value["entity"]["revision"],
+        "content_hash": value["content_hash"],
+        "total_bytes": value["total_bytes"],
+        "trust_class": "original_evidence"
+        if value["entity"]["type"] == "evidence"
+        else "synthesized_knowledge",
+        "provenance": value["entity"]["provenance"],
+        **arcs.page(value, query.section, query.section_offset, query.section_limit),
+        **provenance.page(
+            store, value["references"], visible, query.reference_offset, query.reference_limit
+        ),
+    }
 
 
 @app.get("/graph/stats")
