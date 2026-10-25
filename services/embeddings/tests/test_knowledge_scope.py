@@ -258,7 +258,8 @@ def test_a_late_lesson_from_the_indexer_is_found_under_its_project(fresh_db, fx)
     projects = fx["filler"]["projects"]
     entries = [
         f"## {fx['log_date']}T00:00:{n % 60:02d}+00:00 — filler <!-- @provenance "
-        f'marker_id="mk-{n:032d}" project_id="{projects[n % len(projects)]}" -->\n\n'
+        f'marker_id="mk-{n:032d}" project_id="{projects[n % len(projects)]}" '
+        f'brain="{fx["brain"]}" -->\n\n'
         f"{fx['filler']['text'].format(n=n)}\n"
         for n in range(fx["filler"]["count"])
     ]
@@ -285,7 +286,14 @@ def test_a_late_lesson_from_the_indexer_is_found_under_its_project(fresh_db, fx)
 
     hits = db.search(_vector(dim), project_id=late["project_id"], brain=fx["brain"], limit=100)
 
-    assert [h["key"] for h in hits] == [f"lesson:{late['marker_id']}"]
-    assert hits[0]["metadata"]["source"]["path"] == rel
-    assert hits[0]["metadata"]["source"]["entry_ts"] == late["ts"]
-    assert late["content"] in hits[0]["text_preview"]
+    expected = 1 + sum(
+        projects[n % len(projects)] == late["project_id"] for n in range(fx["filler"]["count"])
+    )
+    assert len(hits) == expected
+    assert all(late["project_id"] in h["metadata"]["projects"] for h in hits)
+    late_hit = {h["key"]: h for h in hits}[f"lesson:{late['marker_id']}"]
+    assert late_hit["metadata"]["source"]["path"] == rel
+    assert late_hit["metadata"]["source"]["entry_ts"] == late["ts"]
+    assert late["content"] in late_hit["text_preview"]
+    foreign = db.search(_vector(dim), project_id=fx["foreign_project"], limit=100)
+    assert f"lesson:{late['marker_id']}" not in {h["key"] for h in foreign}

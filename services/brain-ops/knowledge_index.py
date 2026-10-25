@@ -129,7 +129,13 @@ def decision_items(rel: str, text: str) -> list[KnowledgeItem]:
     return [KnowledgeItem(key, "decision", body, _metadata("decision", fm, body, source, status))]
 
 
-def _read_sources(vault: Path, paths: list[Path], parse, items: list, errors: list) -> None:
+def _read_sources(
+    vault: Path,
+    paths: list[Path],
+    parse: Callable[[str, str], list[KnowledgeItem]],
+    items: list[KnowledgeItem],
+    errors: list[str],
+) -> None:
     for path in paths:
         rel = str(path.relative_to(vault))
         try:
@@ -221,8 +227,8 @@ def index_knowledge(run: IndexRun) -> dict:
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            print("SKIP[knowledge]: another index run holds the lock")
-            return {"knowledge_skipped_locked": 1, "errors": 0}
+            print("SKIP[knowledge]: another index run holds the lock", file=sys.stderr)
+            return {"knowledge_skipped_locked": 1, "knowledge_items_unindexed": None, "errors": 1}
         try:
             return _index_locked(run)
         finally:
@@ -264,7 +270,9 @@ def _index_locked(run: IndexRun) -> dict:
     return stats
 
 
-def _pending(items: list[KnowledgeItem], state: dict, stats: dict) -> list:
+def _pending(
+    items: list[KnowledgeItem], state: dict, stats: dict
+) -> list[tuple[KnowledgeItem, bool]]:
     pending = []
     for item in items:
         prior = state.get(item.key) or {}
@@ -275,7 +283,9 @@ def _pending(items: list[KnowledgeItem], state: dict, stats: dict) -> list:
     return pending
 
 
-def _apply(run: IndexRun, pending: list, state: dict, stats: dict) -> int:
+def _apply(
+    run: IndexRun, pending: list[tuple[KnowledgeItem, bool]], state: dict, stats: dict
+) -> int:
     """Stop at the first failure and save after each write, so a retry resumes where this stopped."""
     written = 0
     for item, content_known in pending:

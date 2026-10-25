@@ -520,8 +520,9 @@ def test_an_overlapping_run_writes_nothing(monkeypatch, vault: Path):
         rc, stats = _run(monkeypatch, vault, store, "--prune")
         fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
-    assert rc == 0
+    assert rc == 1
     assert stats["knowledge_skipped_locked"] == 1
+    assert stats["knowledge_items_unindexed"] is None
     assert store.knowledge() == {}
     assert store.calls("prune") == []
 

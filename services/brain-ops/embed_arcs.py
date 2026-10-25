@@ -263,7 +263,8 @@ def scan_arcs(vault: Path):
 
 def _index_knowledge_stage(args: argparse.Namespace, vault: Path, state_path: Path) -> dict:
     knowledge_state_path = state_path.with_name(knowledge_index.STATE_FILENAME)
-    report_root = vault if state_path.parent == vault else state_path.parent
+    # A read-only vault moves state to /tmp; the report then has nowhere it belongs.
+    report = vault / knowledge_index.REPORT_PATH if state_path.parent == vault else None
     return knowledge_index.index_knowledge(
         knowledge_index.IndexRun(
             vault=vault,
@@ -272,7 +273,7 @@ def _index_knowledge_stage(args: argparse.Namespace, vault: Path, state_path: Pa
             load=lambda: {} if args.force_all else load_state(knowledge_state_path),
             save=lambda s: save_state(knowledge_state_path, s),
             lock_path=state_path.with_name(knowledge_index.LOCK_FILENAME),
-            report_path=report_root / knowledge_index.REPORT_PATH,
+            report_path=report,
             dry_run=args.dry_run,
             prune=args.prune,
         )
