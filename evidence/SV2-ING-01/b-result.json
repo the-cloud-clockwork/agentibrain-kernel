@@ -1,0 +1,27 @@
+{
+  "package": "SV2-ING-01",
+  "tested_commit": "543ff3c63dd183ede1c28c98284c3a2f78760da6",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40224456289",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40224456289/job/121262760501",
+  "verification": "Mocked: fixture-local HTTP session feed and grant in CI; no production feed exists yet.",
+  "case": "T-SV2-ING-01-B",
+  "outcome": "passed",
+  "tests": [
+    "services/brain-ops/tests/test_session_source.py::test_out_of_grant_change_refuses_the_batch",
+    "services/brain-ops/tests/test_session_source.py::test_attribution_outside_grant_refuses_the_batch",
+    "services/brain-ops/tests/test_session_source.py::test_unknown_attribution_is_not_a_grant",
+    "services/brain-ops/tests/test_session_source.py::test_missing_grant_refuses_before_any_request",
+    "services/brain-ops/tests/test_session_source.py::test_unsupported_page_refuses_without_mutation",
+    "services/brain-ops/tests/test_session_source.py::test_feed_refusal_has_no_local_fallback",
+    "services/brain-ops/tests/test_session_source.py::test_local_source_keeps_only_its_authorized_scope"
+  ],
+  "assertions": [
+    "A change outside the principal's project grant refuses the whole batch with forbidden_scope.",
+    "Committed bytes are unchanged and nothing is staged after a refusal.",
+    "The diagnostic names neither the outside project nor the outside session, nor the token.",
+    "Unknown attribution is never treated as a grant.",
+    "Schema major mismatch and unknown authority fields are refused without mutation.",
+    "A feed refusal never falls back to the local filesystem source.",
+    "The legacy local source keeps only sessions in EXTRACT_PROJECTS when set."
+  ]
+}

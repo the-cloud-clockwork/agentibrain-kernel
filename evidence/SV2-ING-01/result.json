@@ -1,0 +1,54 @@
+{
+  "package": "SV2-ING-01",
+  "tested_commit": "543ff3c63dd183ede1c28c98284c3a2f78760da6",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40224456289",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40224456289/job/121262760501",
+  "verification": "Mocked: fixture-local HTTP session feed and grant in CI; no production feed exists yet.",
+  "dependency": [
+    "SV2-BRP-05",
+    "SV2-IDX-05"
+  ],
+  "integration_gate": "G6",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/162",
+  "image_ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40224456411",
+  "interfaces": [
+    "GET /v2/sessions/changes (consumed)",
+    "GET /v2/sessions/{uid}/records (consumed)",
+    "session_source.FeedSource",
+    "session_source.extract_batch",
+    "session_source.Store.commit",
+    "extract.py --source feed --stage-id",
+    "extract.py --commit --stage-id",
+    "tick_cycle.extract EXTRACT_SOURCE"
+  ],
+  "supported_versions": {
+    "session_feed_schema": 1,
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ]
+  },
+  "state": {
+    "observed": "All pull request checks pass on the tested commit, including macos smoke.",
+    "accepted": "Nineteen session source fixture cases pass within the brain-ops suite.",
+    "committed": "543ff3c63dd183ede1c28c98284c3a2f78760da6",
+    "externally_verified": "None: no agentihooks producer of the feed exists yet; G6 rollout unverified."
+  },
+  "commands": [
+    {
+      "invocation": "python -m pytest -q tests/unit",
+      "output": "228 passed in 12.01s"
+    },
+    {
+      "invocation": "python -m pytest -q services/brain-ops/tests",
+      "output": "280 passed in 14.36s"
+    }
+  ],
+  "limitations": [
+    "The feed producer in agentihooks is not built; the wire contract is defined by the consumer at schema version 1.",
+    "cluster.py does not yet retire arcs of sessions reported deleted; they are emitted as deleted_sessions.",
+    "Mocked evidence only; live evidence is due at the G6 rollout gate."
+  ],
+  "rollback_rehearsal": "EXTRACT_SOURCE defaults to local; test_local_source_keeps_only_its_authorized_scope covers the scoped legacy path. No live rehearsal."
+}

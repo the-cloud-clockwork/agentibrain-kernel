@@ -1,0 +1,53 @@
+{
+  "grant": {
+    "principal": "brain-extractor@hive-a",
+    "projects": ["github.com/acme/alpha", "github.com/acme/gamma"]
+  },
+  "outside_project": "github.com/acme/beta",
+  "sessions": {
+    "claude:hive-a:c1": {
+      "source_generation": "g1",
+      "records": [
+        {"sequence": 1, "kind": "user", "timestamp": "2026-10-20T10:00:00Z", "text": "fix the failing ledger write", "project_id": "github.com/acme/alpha", "cwd": "/work/alpha", "git_branch": "fix-ledger"},
+        {"sequence": 2, "kind": "injected", "timestamp": "2026-10-20T10:00:01Z", "text": "recalled lesson: retry the ledger write", "project_id": "github.com/acme/alpha"},
+        {"sequence": 3, "kind": "assistant", "timestamp": "2026-10-20T10:01:00Z", "text": "the write failed with error 503", "project_id": "github.com/acme/alpha"},
+        {"sequence": 4, "kind": "tool_call", "timestamp": "2026-10-20T10:02:00Z", "tool": "Bash", "project_id": "github.com/acme/alpha"},
+        {"sequence": 5, "kind": "tool_result", "timestamp": "2026-10-20T10:02:30Z", "text": "ok", "project_id": "github.com/acme/alpha"},
+        {"sequence": 6, "kind": "user", "timestamp": "2026-10-20T10:20:00Z", "text": "ship it", "project_id": "github.com/acme/alpha"}
+      ]
+    },
+    "codex:hive-a:x1": {
+      "source_generation": "g1",
+      "records": [
+        {"sequence": 1, "kind": "user", "timestamp": "2026-10-20T11:00:00Z", "text": "add the gamma importer", "project_id": "github.com/acme/alpha", "cwd": "/work/gamma", "git_branch": "importer"},
+        {"sequence": 2, "kind": "assistant", "timestamp": "2026-10-20T11:01:00Z", "text": "importer added, tests green", "project_id": "github.com/acme/alpha"},
+        {"sequence": 3, "kind": "tool_call", "timestamp": "2026-10-20T11:02:00Z", "tool": "shell", "project_id": "github.com/acme/gamma"},
+        {"sequence": 4, "kind": "user", "timestamp": "2026-10-20T11:10:00Z", "text": "now document it", "project_id": "github.com/acme/gamma"}
+      ]
+    },
+    "claude:hive-a:c2": {
+      "source_generation": "g1",
+      "records": [
+        {"sequence": 1, "kind": "user", "timestamp": "2026-10-20T12:00:00Z", "text": "private scratch question", "project_id": "github.com/acme/alpha"},
+        {"sequence": 2, "kind": "assistant", "timestamp": "2026-10-20T12:01:00Z", "text": "answered", "project_id": "github.com/acme/alpha"}
+      ]
+    },
+    "codex:hive-a:x9": {
+      "source_generation": "g1",
+      "records": [
+        {"sequence": 1, "kind": "user", "timestamp": "2026-10-20T13:00:00Z", "text": "beta only work", "project_id": "github.com/acme/beta"}
+      ]
+    }
+  },
+  "changes": [
+    {"change_id": "ch-1", "kind": "appended", "session_uid": "claude:hive-a:c1", "harness": "claude", "source_generation": "g1", "first_sequence": 1, "last_sequence": 3},
+    {"change_id": "ch-2", "kind": "appended", "session_uid": "codex:hive-a:x1", "harness": "codex", "source_generation": "g1", "first_sequence": 1, "last_sequence": 2},
+    {"change_id": "ch-3", "kind": "appended", "session_uid": "claude:hive-a:c2", "harness": "claude", "source_generation": "g1", "first_sequence": 1, "last_sequence": 2},
+    {"change_id": "ch-4", "kind": "appended", "session_uid": "claude:hive-a:c1", "harness": "claude", "source_generation": "g1", "first_sequence": 4, "last_sequence": 6},
+    {"change_id": "ch-5", "kind": "attribution", "session_uid": "codex:hive-a:x1", "source_generation": "g1", "first_sequence": 1, "last_sequence": 2, "project_id": "github.com/acme/gamma"},
+    {"change_id": "ch-6", "kind": "appended", "session_uid": "codex:hive-a:x1", "harness": "codex", "source_generation": "g1", "first_sequence": 3, "last_sequence": 4},
+    {"change_id": "ch-7", "kind": "deleted", "session_uid": "claude:hive-a:c2"},
+    {"change_id": "ch-8", "kind": "appended", "session_uid": "claude:hive-a:c1", "harness": "claude", "source_generation": "g1", "first_sequence": 1, "last_sequence": 6}
+  ],
+  "outside_change": {"change_id": "ch-x", "kind": "appended", "session_uid": "codex:hive-a:x9", "harness": "codex", "source_generation": "g1", "first_sequence": 1, "last_sequence": 1}
+}

@@ -344,24 +344,34 @@ def extract(vault: Path) -> Step:
     outdir = vault / "clusters" / time.strftime("%Y-%m-%d", time.gmtime())
     outdir.mkdir(parents=True, exist_ok=True)
     outdir.chmod(0o777)
-    producer = subprocess.Popen(
-        [
-            sys.executable,
-            str(HERE / "extract.py"),
-            "--since",
-            os.environ.get("EXTRACT_SINCE", "26h"),
-            "--min-turns",
-            os.environ.get("EXTRACT_MIN_TURNS", "5"),
-            "--projects-dir",
-            os.environ.get("EXTRACT_PROJECTS_DIR", "/shared/.claude/projects"),
-            "--codex-dir",
-            os.environ.get("EXTRACT_CODEX_DIR", "/shared/.codex/sessions"),
-        ],
-        stdout=subprocess.PIPE,
-    )
+    source = os.environ.get("EXTRACT_SOURCE") or "local"
+    command = [
+        sys.executable,
+        str(HERE / "extract.py"),
+        "--source",
+        source,
+        "--since",
+        os.environ.get("EXTRACT_SINCE", "26h"),
+        "--min-turns",
+        os.environ.get("EXTRACT_MIN_TURNS", "5"),
+        "--projects-dir",
+        os.environ.get("EXTRACT_PROJECTS_DIR", "/shared/.claude/projects"),
+        "--codex-dir",
+        os.environ.get("EXTRACT_CODEX_DIR", "/shared/.codex/sessions"),
+    ]
+    stage_id = uuid.uuid4().hex
+    if source == "feed":
+        command += ["--stage-id", stage_id]
+    producer = subprocess.Popen(command, stdout=subprocess.PIPE)
     step = _run([str(HERE / "cluster.py"), "--out-dir", str(outdir)], stdin=producer.stdout)
     producer.stdout.close()
-    return Step(producer.wait() == 0 and step.ok, step.output)
+    ok = producer.wait() == 0 and step.ok
+    if ok and source == "feed":
+        committed = _run(
+            [str(HERE / "extract.py"), "--source", "feed", "--commit", "--stage-id", stage_id]
+        )
+        return Step(committed.ok, step.output + committed.output)
+    return Step(ok, step.output)
 
 
 def amygdala(vault: Path) -> Step:
