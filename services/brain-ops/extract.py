@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -370,6 +371,30 @@ def codex_sessions(
     return [s for s in found if s and (not project or project.lower() in s["cwd"].lower())]
 
 
+def feed_main(args: argparse.Namespace) -> int:
+    """Extract from the session change feed, or commit the batch the cluster step accepted."""
+    import session_source
+
+    store = session_source.Store(args.state_dir)
+    try:
+        if args.commit:
+            state = store.commit()
+            print(f"committed session feed position {state['position']}", file=sys.stderr)
+            return 0
+        source, grant = session_source.feed_from_env(dict(os.environ))
+        bundle = session_source.extract_batch(
+            source, grant, store, args.min_turns, limit=args.limit
+        )
+    except session_source.Refused as refused:
+        print(f"ERROR: {refused.error_class}: {refused.detail}", file=sys.stderr)
+        return 2
+    lag = bundle["source"][session_source.LAG_METRIC]["after_commit"]
+    print(f"{session_source.LAG_METRIC}={lag}", file=sys.stderr)
+    json.dump(bundle, sys.stdout, indent=2, default=str)
+    sys.stdout.write("\n")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Extract session summaries from Claude Code jsonl transcripts"
@@ -405,7 +430,26 @@ def main() -> int:
         default=str(Path.home() / ".codex" / "sessions"),
         help="Root of Codex rollout sessions, skipped when absent (default: ~/.codex/sessions)",
     )
+    parser.add_argument(
+        "--source",
+        choices=("local", "feed"),
+        default=os.environ.get("EXTRACT_SOURCE") or "local",
+        help="feed reads the session change feed; local is the legacy native home layout",
+    )
+    parser.add_argument(
+        "--state-dir",
+        default=os.environ.get("EXTRACT_STATE_DIR", str(Path.home() / ".agentibrain" / "extract")),
+        help="Committed and staged session feed cursor state",
+    )
+    parser.add_argument("--limit", type=int, default=100, help="Session feed page size")
+    parser.add_argument(
+        "--commit",
+        action="store_true",
+        help="Commit the staged session feed batch once its output was accepted",
+    )
     args = parser.parse_args()
+    if args.source == "feed":
+        return feed_main(args)
 
     since = parse_since(args.since)
     until = parse_since(args.until) if args.until else datetime.now(timezone.utc)
@@ -442,11 +486,14 @@ def main() -> int:
     parsed += codex_sessions(codex, since, until, args.project)
     candidates += codex
 
+    granted = {p.strip() for p in os.environ.get("EXTRACT_PROJECTS", "").split(",")} - {""}
     sessions: list[dict] = []
     for s in parsed:
         if s is None:
             continue
         if s["num_user_turns"] < args.min_turns:
+            continue
+        if granted and s["project_id"] not in granted:
             continue
         sessions.append(s)
 
