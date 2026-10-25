@@ -21,6 +21,26 @@ def _headers() -> dict:
     return {"Authorization": f"Bearer {EMBED_KEY}"}
 
 
+async def _expand_arcs(arcs: list[dict], project: str) -> dict:
+    if not BRAIN_API_URL or not BRAIN_API_TOKEN:
+        return {"error": "brain API authorization is not configured", "partial": True}
+    seeds = [arc["cluster_id"] for arc in arcs[:16] if arc.get("cluster_id")]
+    raw = await http_request(
+        "POST",
+        f"{BRAIN_API_URL.rstrip('/')}/graph/expand",
+        headers={"Authorization": f"Bearer {BRAIN_API_TOKEN}"},
+        body={
+            "seed_ids": [seed if seed.startswith("arc:") else f"arc:{seed}" for seed in seeds],
+            "project": project,
+        },
+        timeout=2,
+    )
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {"error": "invalid graph response", "partial": True}
+
+
 def register(mcp: FastMCP):
     """Register brain arc tools on a FastMCP server."""
 
@@ -31,6 +51,7 @@ def register(mcp: FastMCP):
         min_heat: int = 0,
         min_score: float = 0.0,
         project: str = "",
+        expand_graph: bool = False,
     ) -> str:
         """Semantic search over brain arcs using pgvector.
 
@@ -53,6 +74,7 @@ def register(mcp: FastMCP):
             project: Canonical project id, e.g. "github.com/owner/repo". Only
                      arcs grouped under exactly that project are returned; a
                      text mention of the repo is not a match. Empty searches all.
+            expand_graph: Include authorized connected history and its evidence paths.
         """
         if not EMBED_KEY:
             return json.dumps({"error": "EMBEDDINGS_API_KEY not set"})
@@ -105,14 +127,10 @@ def register(mcp: FastMCP):
             if len(filtered) >= top_k:
                 break
 
-        return json.dumps(
-            {
-                "query": query,
-                "count": len(filtered),
-                "arcs": filtered,
-            },
-            indent=2,
-        )
+        response = {"query": query, "count": len(filtered), "arcs": filtered}
+        if expand_graph and filtered:
+            response["graph"] = await _expand_arcs(filtered, project)
+        return json.dumps(response, indent=2)
 
     @mcp.tool()
     async def brain_get_arc(cluster_id: str) -> str:
