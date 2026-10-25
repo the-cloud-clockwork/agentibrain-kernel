@@ -28,10 +28,14 @@ def category_budgets(max_tokens: int) -> dict[str, int]:
 
 def knowledge_revision(items: list[dict]) -> str:
     basis = sorted(
-        [item["id"], item.get("revision"), item["knowledge_status"], item["title"]]
+        json.dumps(
+            [item["id"], item.get("revision"), item["knowledge_status"], item["title"]],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
         for item in items
     )
-    raw = json.dumps(basis, ensure_ascii=False, separators=(",", ":"))
+    raw = "\n".join(basis)
     return "kr-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
@@ -81,33 +85,53 @@ def _entry(item: dict, conservative: bool) -> dict:
     }
 
 
+def _units(unique: list[dict], conservative: bool) -> list[list[tuple]]:
+    units: list[list[tuple]] = []
+    conflicted: list[tuple] = []
+    for item in unique:
+        entry = _entry(item, conservative)
+        member = (item, entry, tokens(entry))
+        if item["knowledge_status"] != "conflicted":
+            units.append([member])
+            continue
+        if not conflicted:
+            units.append(conflicted)
+        conflicted.append(member)
+    return units
+
+
 def _select(unique: list[dict], max_tokens: int, conservative: bool) -> tuple:
     caps = category_budgets(max_tokens)
     spent = dict.fromkeys(caps, 0)
     used, packed, deferred = 0, [], []
-    for item in unique:
-        entry = _entry(item, conservative)
-        cost = tokens(entry)
-        if used + cost <= max_tokens and spent[item["type"]] + cost <= caps[item["type"]]:
-            spent[item["type"]] += cost
-            used += cost
-            packed.append(entry)
+    for unit in _units(unique, conservative):
+        need = dict.fromkeys(caps, 0)
+        for item, _, cost in unit:
+            need[item["type"]] += cost
+        total = sum(need.values())
+        if used + total <= max_tokens and all(spent[k] + need[k] <= caps[k] for k in caps):
+            for kind in caps:
+                spent[kind] += need[kind]
+            used += total
+            packed.extend(entry for _item, entry, _cost in unit)
         else:
-            deferred.append((item, entry, cost))
+            deferred.append((unit, need, total))
     omitted = []
-    for item, entry, cost in deferred:
-        if used + cost <= max_tokens:
-            used += cost
-            packed.append(entry)
+    for unit, need, total in deferred:
+        if used + total <= max_tokens:
+            for kind in caps:
+                spent[kind] += need[kind]
+            used += total
+            packed.extend(entry for _item, entry, _cost in unit)
         else:
-            omitted.append(_omission(item, "over_budget", cost))
-    return caps, used, packed, omitted
+            omitted.extend(_omission(item, "over_budget", cost) for item, _, cost in unit)
+    return caps, spent, used, packed, omitted
 
 
 def pack(context: dict, max_tokens: int, conservative: bool = False) -> dict:
     ranked = context["items"]
     unique, duplicates = _deduplicate(ranked)
-    caps, used, packed, omitted = _select(unique, max_tokens, conservative)
+    caps, spent, used, packed, omitted = _select(unique, max_tokens, conservative)
     order = {item["id"]: index for index, item in enumerate(ranked)}
     packed.sort(key=lambda entry: order[entry["id"]])
     for duplicate in duplicates:
@@ -121,6 +145,7 @@ def pack(context: dict, max_tokens: int, conservative: bool = False) -> dict:
         "pack": {
             "max_tokens": max_tokens,
             "category_tokens": caps,
+            "category_spent": spent,
             "context_pack_tokens": used,
             "omitted_items": len(omitted),
             "omitted": omitted,

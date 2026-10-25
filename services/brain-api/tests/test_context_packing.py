@@ -141,10 +141,17 @@ def test_b_an_oversized_item_is_omitted_whole_never_cut(monkeypatch, vault, tmp_
         assert all(item["complete"] is True for item in context["items"])
         assert fixture["oversized"]["id"] in {entry["id"] for entry in context["pack"]["omitted"]}
         assert context["pack"]["unresolved_conflicts"] == sorted(fixture["conflicted"])
-    rejected = _ask(client, fixture, 0)
+    ctx = importlib.import_module("app.context")
+    ledger = (copy.deepcopy(dict(ctx._accepted)), dict(ctx._latest))
+    rejected = _ask(client, fixture, 0, request_id="context-request-rejected-0001")
     assert rejected.status_code == 422
     assert marker not in rejected.text
+    assert (dict(ctx._accepted), dict(ctx._latest)) == ledger
     assert store.snapshot() == before
+    corrected = _ask(client, fixture, 2, request_id="context-request-rejected-0001")
+    assert corrected.status_code == 200
+    assert corrected.json()["replayed"] is False
+    assert corrected.json()["context"]["items"] == []
 
 
 @pytest.mark.parametrize("name", SETS)
@@ -178,6 +185,22 @@ def test_c_a_smaller_retry_budget_is_a_deterministic_reduced_pack_of_the_same_re
     assert after["context"] == reduced["context"]
     original = _ask(restarted, fixture).json()
     assert original["context"] == full["context"]
+    assert store.snapshot() == before
+
+
+@pytest.mark.parametrize("name", SETS)
+def test_c_an_earlier_task_revision_cannot_replace_a_newer_accepted_pack(
+    monkeypatch, vault, tmp_path, name
+):
+    client, store, fixture = _context(monkeypatch, vault, tmp_path, name)
+    newer = _ask(client, fixture, task_revision=4).json()
+    before = store.snapshot()
+    stale = _ask(client, fixture, fixture["smaller_budget"], task_revision=3)
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["reason"] == "stale_task_revision"
+    again = _ask(client, fixture, task_revision=4).json()
+    assert again["replayed"] is True
+    assert again["context"] == newer["context"]
     assert store.snapshot() == before
 
 
@@ -305,3 +328,29 @@ def test_claims_differing_beyond_case_and_punctuation_stay_distinct():
     packed = _pack(5000, items)
     assert [item["id"] for item in packed["items"]] == [item["id"] for item in items]
     assert packed["pack"]["omitted"] == []
+
+
+def test_conflicting_items_are_packed_together_or_omitted_together():
+    packing = _packing()
+    conflicted = [ITEMS[0], ITEMS[1]]
+    group = sum(
+        packing.tokens(packing.pack({"items": [i]}, 10_000)["items"][0]) for i in conflicted
+    )
+    lesson = [_item("lesson:z", "lesson", "Small lesson.")]
+    for budget in range(1, group + 200, 3):
+        packed = packing.pack({"items": copy.deepcopy([*conflicted, *lesson])}, budget)
+        ids = {item["id"] for item in packed["items"]}
+        assert {"decision:a", "decision:b"} <= ids or not ids & {"decision:a", "decision:b"}
+        assert packed["pack"]["unresolved_conflicts"] == ["decision:a", "decision:b"]
+        assert packed["pack"]["context_pack_tokens"] <= budget
+        assert (
+            sum(packed["pack"]["category_spent"].values()) == packed["pack"]["context_pack_tokens"]
+        )
+    assert {"decision:a", "decision:b"} <= {
+        item["id"] for item in packing.pack({"items": copy.deepcopy(conflicted)}, group)["items"]
+    }
+
+
+def test_an_identical_revision_basis_sorts_with_missing_revisions():
+    items = [_item("lesson:a", "lesson", "A", revision=None), _item("lesson:a", "lesson", "A")]
+    assert _packing().knowledge_revision(items).startswith("kr-")
