@@ -1,0 +1,21 @@
+{
+  "package": "SV2-MUL-02",
+  "tested_commit": "62b77eb1ffd2a45683c735245ed29af2f755ee78",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40233314886",
+  "verification": "CI unit fixtures: two generated compose projects (personal and swarm) rendered into temporary config roots; docker host view and compose invocations faked at the agentibrain.bootstrap seam. Mocked: no docker daemon or deployed brain was contacted.",
+  "case": "T-SV2-MUL-02-A",
+  "outcome": "passed",
+  "assertions": [
+    "Personal and swarm on distinct ports render compose projects agentibrain-personal and agentibrain-swarm with no container_name, disjoint published ports and project scoped volume names.",
+    "A second independent fixture on another port set renders the same shape from its own roots.",
+    "Every service URL in a named brain's environment names a service of the same project on its project network.",
+    "Starting both brains runs compose only in each brain's own config root, never runs down and never removes another stack.",
+    "A named brain resolves only its own config root, even when a kernel checkout is the cwd and Docker reports the default stack.",
+    "The default brain keeps its fixed agentibrain_* names, no project name and its legacy ports."
+  ],
+  "measurement": {
+    "brain_instance_resource_conflicts": {
+      "expected_increments": 0
+    }
+  }
+}

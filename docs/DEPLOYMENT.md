@@ -136,6 +136,21 @@ installs keep their vault and credentials with no migration step.
 - Rollback: unset `BRAIN_ID` and the brain answers `default` again. Clients that
   expect another name then refuse it rather than send credentials.
 
+### Two brains on one host
+
+A named brain (any `BRAIN_ID` but `default`) renders its own compose project,
+`agentibrain-<id>`, with no fixed container names, so its volumes and network are
+project scoped. Give each one its own `AGENTIBRAIN_HOME`, vault and published ports
+(`PORT_BRAIN_API`, `PORT_POSTGRES`, `PORT_REDIS`, `PORT_MCP`, `PORT_OLLAMA` in that
+brain's `.env`). `agentibrain up|build|fix` re-renders the named brain's compose and
+refuses to start when a port, its project name or its vault is already taken; it
+never stops another stack. `down` and `uninstall` act on the selected brain only.
+
+The default brain keeps its fixed `agentibrain_*` names and still replaces other
+default stacks; it does not see named brains' ports, so such a clash surfaces as
+Docker's own bind error. Rollback to a single brain: select the default brain
+explicitly and leave named brains' config roots and volumes in place.
+
 ## Image strategy
 
 Each kernel service has its own image, tagged per branch:
