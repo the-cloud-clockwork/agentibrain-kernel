@@ -459,7 +459,9 @@ paths:
       description: >
         An inverse name is stored as its canonical edge, so an inverse pair is
         one edge. An unknown endpoint, unknown type or incompatible endpoint
-        type is rejected and counted in graph_invalid_relations_total.
+        type is rejected and counted in graph_invalid_relations_total. Each
+        relation carries a positive revision (default 1); a revision older than,
+        or different at the same number from, the stored edge is a 409.
       parameters:
         - { name: quarantine, in: query, required: false, schema: { type: boolean, default: false } }
       responses:
@@ -467,6 +469,8 @@ paths:
           description: Relation stored; action is created, updated or replayed.
         "202":
           description: Invalid relation held in quarantine (quarantine=true).
+        "409":
+          description: A newer or different revision of this relation is stored.
         "422":
           description: Invalid relation; detail.reason and graph_invalid_relations_total.
 

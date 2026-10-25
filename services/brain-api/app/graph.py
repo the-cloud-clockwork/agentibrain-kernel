@@ -125,6 +125,9 @@ def _relation_fields(record: dict) -> dict:
     status = record.get("status", "proposed")
     confidence = record.get("confidence")
     evidence = record.get("evidence", [])
+    revision = record.get("revision", 1)
+    if type(revision) is not int or revision < 1:
+        raise GraphRejection("invalid_relation", "revision must be a positive integer")
     if not isinstance(status, str) or status not in STATUSES:
         raise GraphRejection("invalid_relation", f"status {status!r} is not known")
     if not isinstance(confidence, str) or confidence not in CONFIDENCE_CLASSES:
@@ -137,6 +140,7 @@ def _relation_fields(record: dict) -> dict:
         "source": source,
         "type": name,
         "target": target,
+        "revision": revision,
         "status": status,
         "confidence": confidence,
         "evidence": list(evidence),
@@ -270,15 +274,23 @@ class GraphStore:
     def _upsert_relation(self, relation: dict) -> str:
         ident = relation_id(relation["source"], relation["type"], relation["target"])
         row = self._conn.execute(
-            "SELECT status, confidence, evidence FROM graph_relations WHERE id = ?", (ident,)
+            "SELECT revision, status, confidence, evidence FROM graph_relations WHERE id = ?",
+            (ident,),
         ).fetchone()
-        values = (relation["status"], relation["confidence"], json.dumps(relation["evidence"]))
+        values = (
+            relation["revision"],
+            relation["status"],
+            relation["confidence"],
+            json.dumps(relation["evidence"]),
+        )
         if row is not None and tuple(row) == values:
             return "replayed"
+        if row is not None and row["revision"] >= relation["revision"]:
+            return "stale"
         self._conn.execute(
             "INSERT OR REPLACE INTO graph_relations"
-            " (id, source, type, target, status, confidence, evidence)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " (id, source, type, target, revision, status, confidence, evidence)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (ident, relation["source"], relation["type"], relation["target"], *values),
         )
         return "created" if row is None else "updated"
@@ -308,7 +320,9 @@ class GraphStore:
 
     def relations(self, ident: str, visible: Visible = _always) -> list[dict]:
         """Every edge touching an entity, named from its side, limited to visible neighbours."""
-        columns = "r.id, r.type, r.status, r.confidence, r.evidence, e.id, e.type, e.projects"
+        columns = (
+            "r.id, r.type, r.revision, r.status, r.confidence, r.evidence, e.id, e.type, e.projects"
+        )
         with self._lock:
             rows = self._conn.execute(
                 f"SELECT 'out', {columns} FROM graph_relations r"
@@ -318,7 +332,18 @@ class GraphStore:
                 (ident, ident),
             ).fetchall()
         views = []
-        for direction, rel, kind, status, confidence, evidence, other, other_type, projects in rows:
+        for (
+            direction,
+            rel,
+            kind,
+            revision,
+            status,
+            confidence,
+            evidence,
+            other,
+            other_type,
+            projects,
+        ) in rows:
             if not visible({"id": other, "type": other_type, "projects": json.loads(projects)}):
                 continue
             views.append(
@@ -328,6 +353,7 @@ class GraphStore:
                     "name": kind if direction == "out" else RELATION_TYPES[kind].inverse,
                     "direction": direction,
                     "other": other,
+                    "revision": revision,
                     "status": status,
                     "confidence": confidence,
                     "evidence": json.loads(evidence),
@@ -357,7 +383,8 @@ class GraphStore:
                 " FROM graph_entities"
             ).fetchall()
             relations = self._conn.execute(
-                "SELECT source, type, target, status, confidence, evidence FROM graph_relations"
+                "SELECT source, type, target, revision, status, confidence, evidence"
+                " FROM graph_relations"
             ).fetchall()
         return frozenset(tuple(r) for r in entities), frozenset(tuple(r) for r in relations)
 

@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS graph_relations (
     source TEXT NOT NULL REFERENCES graph_entities (id),
     type TEXT NOT NULL,
     target TEXT NOT NULL REFERENCES graph_entities (id),
+    revision INTEGER NOT NULL,
     status TEXT NOT NULL,
     confidence TEXT NOT NULL,
     evidence TEXT NOT NULL,

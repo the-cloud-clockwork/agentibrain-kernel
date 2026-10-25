@@ -250,13 +250,46 @@ def test_a_replayed_relation_leaves_one_edge_and_a_changed_one_updates_it(tmp_pa
     count = len(store.snapshot()[1])
 
     assert store.put_relation(fixture["valid"][2])["action"] == "replayed"
-    changed = dict(fixture["valid"][2], status="accepted", evidence=["evidence:alpha-run-1"])
+    changed = dict(
+        fixture["valid"][2], revision=2, status="accepted", evidence=["evidence:alpha-run-1"]
+    )
     assert store.put_relation(changed)["action"] == "updated"
 
     assert len(store.snapshot()[1]) == count
     view = next(v for v in store.relations(changed["source"]) if v["name"] == "applies_decision")
+    assert view["revision"] == 2
     assert view["status"] == "accepted"
     assert view["evidence"] == ["evidence:alpha-run-1"]
+
+
+def test_an_outdated_relation_revision_cannot_overwrite_a_newer_one(tmp_path):
+    fixture = FIXTURE["alpha"]
+    store = _loaded(tmp_path, fixture)
+    newer = dict(fixture["valid"][2], revision=3, status="accepted")
+    assert store.put_relation(newer)["action"] == "updated"
+    before = store.snapshot()
+
+    older = dict(fixture["valid"][2], revision=2, status="retired")
+    same_number = dict(newer, status="retired")
+
+    assert store.put_relation(older)["action"] == "stale"
+    assert store.put_relation(same_number)["action"] == "stale"
+    assert store.snapshot() == before
+
+
+def test_rebuild_keeps_the_newest_relation_revision_in_any_order(tmp_path):
+    fixture = FIXTURE["alpha"]
+    newer = dict(fixture["valid"][2], revision=2, status="accepted")
+    forward = {"entities": fixture["entities"], "relations": [*fixture["valid"], newer]}
+    backward = {"entities": fixture["entities"], "relations": [newer, *fixture["valid"]]}
+    first, second = _store(tmp_path, "a.db"), _store(tmp_path, "b.db")
+
+    first.rebuild(forward)
+    second.rebuild(backward)
+
+    assert first.snapshot() == second.snapshot()
+    view = next(v for v in first.relations(newer["source"]) if v["name"] == "applies_decision")
+    assert (view["revision"], view["status"]) == (2, "accepted")
 
 
 def test_a_stale_entity_revision_cannot_overwrite_a_newer_one(tmp_path):
@@ -513,3 +546,28 @@ def test_a_scoped_worker_cannot_write_an_entity_with_no_project(monkeypatch, vau
 
     assert response.status_code == 403
     assert client.get(f"/graph/entity/{unscoped['id']}", headers=_auth(ROUTER)).status_code == 404
+
+
+def test_http_refuses_an_outdated_relation_revision(monkeypatch, vault, tmp_path):
+    fixture = FIXTURE["alpha"]
+    client = _client(monkeypatch, vault, tmp_path / "graph.db")
+    _seed(client, fixture)
+    newer = dict(fixture["valid"][0], revision=2, status="retired")
+    assert client.post("/graph/relation", json=newer, headers=_auth(ROUTER)).status_code == 201
+
+    stale = client.post("/graph/relation", json=fixture["valid"][0], headers=_auth(ROUTER))
+    body = client.get(f"/graph/entity/{newer['source']}", headers=_auth(ROUTER)).json()
+
+    assert stale.status_code == 409
+    view = next(r for r in body["relations"] if r["other"] == newer["target"])
+    assert (view["revision"], view["status"]) == (2, "retired")
+
+
+def test_http_rejects_entity_projects_that_are_not_ids(monkeypatch, vault, tmp_path):
+    client = _client(monkeypatch, vault, tmp_path / "graph.db")
+    bad = dict(FIXTURE["alpha"]["entities"][0], projects=[["proj-alpha"]])
+
+    response = client.post("/graph/entity", json=bad, headers=_auth(ROUTER))
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["reason"] == "invalid_entity"

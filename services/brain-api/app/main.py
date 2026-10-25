@@ -703,6 +703,11 @@ def post_graph_entity(
     store = _graph_store()
     grant = _caller_grant(authorization)
     projects = payload.get("projects") if isinstance(payload.get("projects"), list) else []
+    if not all(isinstance(p, str) for p in projects):
+        raise HTTPException(
+            status_code=422,
+            detail={"reason": "invalid_entity", "error": "projects must be a list of project ids"},
+        )
     stored = store.get_entity(payload["id"]) if isinstance(payload.get("id"), str) else None
     if not scope.admits(grant, set(projects), unattributed=False) or (
         stored is not None and not scope.admits(grant, set(stored["projects"]), unattributed=False)
@@ -744,6 +749,8 @@ def post_graph_relation(
             status_code=422,
             detail={"reason": exc.reason, "graph_invalid_relations_total": total},
         ) from exc
+    if result["action"] == "stale":
+        raise HTTPException(status_code=409, detail="a newer or different revision is stored")
     if result["action"] == "quarantined":
         total = sum(store.invalid_relations_total().values())
         log.warning("graph_invalid_relations_total=%d reason=%s", total, result["reason"])
