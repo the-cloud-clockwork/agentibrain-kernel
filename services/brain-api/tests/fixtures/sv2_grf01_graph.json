@@ -1,0 +1,40 @@
+{
+  "alpha": {
+    "project": "proj-alpha",
+    "entities": [
+      {"id": "arc:alpha-arc-1", "type": "arc", "revision": 1, "projects": ["proj-alpha"], "vault_ref": "left/projects/alpha/alpha-arc-1.md", "title": "Alpha ingest retries", "provenance": {"source": "clusters/2026-10-20/alpha-arc-1.md", "revision": "c1"}},
+      {"id": "session:alpha-sess-1", "type": "session", "revision": 1, "projects": ["proj-alpha"], "vault_ref": null, "title": "Alpha session one", "provenance": {"source": "session-catalog/alpha-sess-1", "revision": "r1"}},
+      {"id": "lesson:alpha-lesson-1", "type": "lesson", "revision": 1, "projects": ["proj-alpha"], "vault_ref": "left/reference/lessons-2026-10-20.md#alpha-lesson-1", "title": "Retry with a fresh connection", "provenance": {"source": "marker:alpha-lesson-1", "revision": "m1"}},
+      {"id": "decision:alpha-decision-1", "type": "decision", "revision": 1, "projects": ["proj-alpha"], "vault_ref": "frontal-lobe/decisions/alpha-decision-1.md", "title": "Keep one retry budget", "provenance": {"source": "marker:alpha-decision-1", "revision": "m2"}},
+      {"id": "evidence:alpha-run-1", "type": "evidence", "revision": 1, "projects": ["proj-alpha"], "vault_ref": null, "title": "CI run of the retry fix", "provenance": {"source": "ci-run:alpha-1", "revision": "e1"}}
+    ],
+    "valid": [
+      {"source": "arc:alpha-arc-1", "type": "has_lesson", "target": "lesson:alpha-lesson-1", "status": "accepted", "confidence": "extracted", "evidence": ["evidence:alpha-run-1"]},
+      {"source": "arc:alpha-arc-1", "type": "derived_from", "target": "session:alpha-sess-1", "status": "accepted", "confidence": "observed", "evidence": []},
+      {"source": "arc:alpha-arc-1", "type": "applies_decision", "target": "decision:alpha-decision-1", "status": "proposed", "confidence": "inferred", "evidence": []},
+      {"source": "lesson:alpha-lesson-1", "type": "supported_by", "target": "evidence:alpha-run-1", "status": "accepted", "confidence": "observed", "evidence": []}
+    ],
+    "inverse": {"source": "lesson:alpha-lesson-1", "type": "lesson_of", "target": "arc:alpha-arc-1", "status": "accepted", "confidence": "extracted", "evidence": ["evidence:alpha-run-1"]},
+    "missing_target": {"source": "arc:alpha-arc-1", "type": "has_lesson", "target": "lesson:alpha-missing", "status": "accepted", "confidence": "extracted", "evidence": []},
+    "incompatible": {"source": "arc:alpha-arc-1", "type": "has_lesson", "target": "session:alpha-sess-1", "status": "accepted", "confidence": "extracted", "evidence": []}
+  },
+  "beta": {
+    "project": "proj-beta",
+    "entities": [
+      {"id": "arc:beta-arc-1", "type": "arc", "revision": 1, "projects": ["proj-beta"], "vault_ref": "left/projects/beta/beta-arc-1.md", "title": "Beta cache warmup", "provenance": {"source": "clusters/2026-10-21/beta-arc-1.md", "revision": "c7"}},
+      {"id": "session:beta-sess-1", "type": "session", "revision": 1, "projects": ["proj-beta"], "vault_ref": null, "title": "Beta session one", "provenance": {"source": "session-catalog/beta-sess-1", "revision": "r4"}},
+      {"id": "lesson:beta-lesson-1", "type": "lesson", "revision": 1, "projects": ["proj-beta"], "vault_ref": "left/reference/lessons-2026-10-21.md#beta-lesson-1", "title": "Warm the cache before the first read", "provenance": {"source": "marker:beta-lesson-1", "revision": "m9"}},
+      {"id": "decision:beta-decision-1", "type": "decision", "revision": 1, "projects": ["proj-beta"], "vault_ref": "frontal-lobe/decisions/beta-decision-1.md", "title": "Cache lives per worker", "provenance": {"source": "marker:beta-decision-1", "revision": "m10"}},
+      {"id": "evidence:beta-run-1", "type": "evidence", "revision": 1, "projects": ["proj-beta"], "vault_ref": null, "title": "Load test of the warmup", "provenance": {"source": "ci-run:beta-1", "revision": "e3"}}
+    ],
+    "valid": [
+      {"source": "arc:beta-arc-1", "type": "has_lesson", "target": "lesson:beta-lesson-1", "status": "accepted", "confidence": "extracted", "evidence": ["evidence:beta-run-1"]},
+      {"source": "arc:beta-arc-1", "type": "derived_from", "target": "session:beta-sess-1", "status": "accepted", "confidence": "observed", "evidence": []},
+      {"source": "arc:beta-arc-1", "type": "applies_decision", "target": "decision:beta-decision-1", "status": "accepted", "confidence": "observed", "evidence": []},
+      {"source": "decision:beta-decision-1", "type": "supported_by", "target": "evidence:beta-run-1", "status": "accepted", "confidence": "observed", "evidence": []}
+    ],
+    "inverse": {"source": "lesson:beta-lesson-1", "type": "lesson_of", "target": "arc:beta-arc-1", "status": "accepted", "confidence": "extracted", "evidence": ["evidence:beta-run-1"]},
+    "missing_target": {"source": "arc:beta-arc-1", "type": "has_lesson", "target": "lesson:beta-missing", "status": "accepted", "confidence": "extracted", "evidence": []},
+    "incompatible": {"source": "arc:beta-arc-1", "type": "applies_decision", "target": "lesson:beta-lesson-1", "status": "accepted", "confidence": "extracted", "evidence": []}
+  }
+}
