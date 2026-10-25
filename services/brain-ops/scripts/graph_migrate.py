@@ -48,7 +48,7 @@ def _dump(value) -> bytes:
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
-    tmp = path.with_name(f".{path.name}.tmp")
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     tmp.write_bytes(data)
     os.replace(tmp, path)
 

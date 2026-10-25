@@ -22,7 +22,7 @@ SUPPORTED = frozenset({"parent", "child", "sibling", "related", "unblocks", "sup
 INVERSE = {"child": "parent"}
 SYMMETRIC = frozenset({"sibling", "related"})
 DIRECTED = frozenset({"parent", "unblocks", "supersedes"})
-EXCLUSIVE = (frozenset({"parent", "sibling"}),)
+EXCLUSIVE = frozenset({"parent", "sibling"})
 _FM_EDGES_RE = re.compile(r"^edges:\s*(.*)$")
 
 
@@ -55,13 +55,16 @@ def _frontmatter_assertions(text: str, source: str, ref: str) -> list[Assertion]
         return []
     found = []
     head = text.split(markers.FM_DELIM, 2)[1] if text.count(markers.FM_DELIM) >= 2 else ""
-    for offset, line in enumerate(head.splitlines()):
+    lines = head.splitlines()
+    for offset, line in enumerate(lines):
         match = _FM_EDGES_RE.match(line.strip())
         if not match:
             continue
         evidence = f"{ref}#L{offset + 1}"
+        following = lines[offset + 1].strip() if offset + 1 < len(lines) else ""
+        block = not match.group(1) and following.startswith("-")
         try:
-            items = json.loads(match.group(1) or "[]")
+            items = None if block else json.loads(match.group(1) or "[]")
         except ValueError:
             items = None
         if not isinstance(items, list):
@@ -124,12 +127,10 @@ def _pair_conflicts(keys: set[tuple[str, str, str]]) -> dict[tuple[str, str, str
     for source, kind, target in keys:
         if kind in DIRECTED and (target, kind, source) in keys:
             found.setdefault((source, kind, target), set()).add("contradictory_direction")
-    kinds = {k[1] for k in keys}
-    for exclusive in EXCLUSIVE:
-        if len(kinds & exclusive) > 1:
-            for key in keys:
-                if key[1] in exclusive:
-                    found.setdefault(key, set()).add("conflicting_types")
+    if len({k[1] for k in keys} & EXCLUSIVE) > 1:
+        for key in keys:
+            if key[1] in EXCLUSIVE:
+                found.setdefault(key, set()).add("conflicting_types")
     return found
 
 
@@ -158,6 +159,12 @@ def _conflict_entries(valid: dict) -> list[tuple[list[str], list[tuple[str, str,
     return entries
 
 
+def review_record(review) -> dict | None:
+    if not isinstance(review, dict):
+        return None
+    return {key: review[key] for key in ("decision", "relation", "reviewer") if key in review}
+
+
 def _accepted_review(review: dict | None, keys: list[tuple[str, str, str]]):
     if not isinstance(review, dict) or review.get("decision") != "accept":
         return None
@@ -178,7 +185,7 @@ def _quarantine(groups: list, assertions: list[Assertion], reviews: dict):
                     {"relation": list(k), "evidence": [assertions[i].evidence for i in members[k]]}
                     for k in keys
                 ],
-                "review": reviews.get(qid),
+                "review": review_record(reviews.get(qid)),
                 "present": True,
             }
         )
@@ -239,7 +246,13 @@ def normalize(
 
     present = {q["id"] for q in quarantine}
     quarantine += [
-        {"id": qid, "reasons": [], "relations": [], "review": review, "present": False}
+        {
+            "id": qid,
+            "reasons": [],
+            "relations": [],
+            "review": review_record(review),
+            "present": False,
+        }
         for qid, review in sorted(reviews.items())
         if qid not in present
     ]

@@ -123,6 +123,38 @@ class TestNormalize:
             ("arc-m", "sibling", "arc-n"),
         }
 
+    def test_block_style_frontmatter_edges_are_quarantined_not_dropped(self, tmp_path):
+        arc = tmp_path / "arc-b.md"
+        arc.write_text("---\ncluster_id: arc-b\nedges:\n  - sibling: arc-c\nproject: alpha\n---\n")
+        found = edge_relations.file_assertions(arc, "left/arc-b.md")
+        assert found == [
+            edge_relations.Assertion("arc-b", "", "", "left/arc-b.md#L3", "frontmatter")
+        ]
+        assert edge_relations.normalize(found)["quarantine"][0]["reasons"] == ["malformed"]
+
+    def test_empty_frontmatter_edges_before_another_key_assert_nothing(self, tmp_path):
+        arc = tmp_path / "arc-b.md"
+        arc.write_text("---\ncluster_id: arc-b\nedges:\nproject: alpha\n---\n")
+        assert edge_relations.file_assertions(arc, "left/arc-b.md") == []
+
+    def test_review_keeps_only_its_decision_relation_and_reviewer(self):
+        keys = [("arc-m", "parent", "arc-n"), ("arc-n", "parent", "arc-m")]
+        assertions = [edge_relations.Assertion(s, k, t, f"{s}#L1", "inline") for s, k, t in keys]
+        qid = edge_relations.normalize(assertions)["quarantine"][0]["id"]
+        review = {
+            "decision": "accept",
+            "relation": list(keys[0]),
+            "reviewer": "operator",
+            "role": "admin",
+        }
+        out = edge_relations.normalize(assertions, {qid: review})
+        assert out["quarantine"][0]["review"] == {
+            "decision": "accept",
+            "relation": list(keys[0]),
+            "reviewer": "operator",
+        }
+        assert [(r["source"], r["type"], r["target"]) for r in out["relations"]] == [keys[0]]
+
 
 class TestPositive:
     """T-SV2-GRF-02-A: valid parent, child and related links survive with their evidence."""
