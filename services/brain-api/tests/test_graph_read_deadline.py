@@ -10,7 +10,7 @@ LONG_READ = (
 )
 
 
-def test_a_long_graph_read_is_interrupted_at_its_deadline(monkeypatch, tmp_path):
+def test_long_graph_read_is_interrupted_at_its_deadline(monkeypatch, tmp_path):
     graph = importlib.import_module("app.graph")
     clock = SimpleNamespace(now=100.0, reads_after_deadline=0)
     deadline = 101.0
@@ -33,6 +33,7 @@ def test_a_long_graph_read_is_interrupted_at_its_deadline(monkeypatch, tmp_path)
     assert isinstance(caught.value.__cause__, sqlite3.OperationalError)
     assert "interrupted" in str(caught.value.__cause__)
     assert clock.reads_after_deadline == 1
+    assert not store._conn.in_transaction
     clock.now = 100.0
     with store.read_view(deadline) as view:
         assert view.get_entity("arc:absent") is None
