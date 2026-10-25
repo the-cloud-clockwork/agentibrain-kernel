@@ -1,0 +1,16 @@
+{
+  "package": "SV2-GRF-04",
+  "case": "T-SV2-GRF-04-B",
+  "tested_commit": "5eb0f1c9556f7ab8aa4403bf59e66ed228a435e8",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40186214459",
+  "status": "passed",
+  "verification": "CI HTTP fixture, real SQLite, no live deployment",
+  "assertions": [
+    "Supersession cycle returns no guidance and exposes supersession_cycle conflict",
+    "Cycle retrieval does not mutate the graph snapshot",
+    "Hidden project replacement does not appear or change authorized guidance",
+    "Proposed or inferred replacement does not supersede the old lesson",
+    "Depth, node, edge and relation-filter truncation cannot claim current guidance",
+    "Competing replacements yield an explicit conflict and no arbitrary guidance"
+  ]
+}

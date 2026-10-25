@@ -67,6 +67,7 @@ PROGRAM_ENV_DEFAULTS = {
     "BRAIN_FEED_DIR": "brain-feed",
     "BRAIN_GRAPH_DB": "",
     "BRAIN_GRAPH_EXPANSION": "false",
+    "BRAIN_CURRENT_KNOWLEDGE": "true",
     "BRAIN_ID": "",
     "BRAIN_PROJECT_FEED_ARCS": "10",
     "BRAIN_PROJECT_FEED_KNOWLEDGE": "10",

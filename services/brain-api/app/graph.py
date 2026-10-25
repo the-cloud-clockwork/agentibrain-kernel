@@ -41,6 +41,18 @@ RELATION_TYPES = {
     t.name: t
     for t in (
         RelationType("derived_from", frozenset({"arc"}), frozenset({"session"}), "source_of"),
+        RelationType(
+            "supersedes",
+            frozenset({"lesson", "decision"}),
+            frozenset({"lesson", "decision"}),
+            "superseded_by",
+        ),
+        RelationType(
+            "contradicts",
+            frozenset({"lesson", "decision"}),
+            frozenset({"lesson", "decision"}),
+            "contradicted_by",
+        ),
         RelationType("has_lesson", frozenset({"arc"}), frozenset({"lesson"}), "lesson_of"),
         RelationType(
             "applies_decision", frozenset({"arc"}), frozenset({"decision"}), "decision_applied_by"

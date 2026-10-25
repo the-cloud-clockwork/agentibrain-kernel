@@ -1,0 +1,64 @@
+{
+  "package": "SV2-GRF-04",
+  "dependency": "SV2-GRF-03",
+  "integration_gate": "G6",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/152",
+  "tested_commit": "5eb0f1c9556f7ab8aa4403bf59e66ed228a435e8",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40186214459",
+  "job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40186214459/job/121147436626",
+  "verification": "CI HTTP fixtures with real SQLite; transport and grants are fixture-local. Not a live deployment.",
+  "live_deployment_verified": false,
+  "interfaces": [
+    "POST /graph/relation",
+    "POST /graph/expand"
+  ],
+  "supported_python_versions": [
+    "3.10",
+    "3.11",
+    "3.12"
+  ],
+  "state": {
+    "observed": "All CI jobs and image builds passed on the tested commit",
+    "accepted": "Fourteen HTTP fixture cases pass inside the full API suite",
+    "committed": "5eb0f1c9556f7ab8aa4403bf59e66ed228a435e8",
+    "externally_verified": "G6 live rollout remains unverified"
+  },
+  "commands": [
+    {
+      "invocation": "python -m pytest -q services/brain-api/tests",
+      "output": "264 passed, 2 warnings in 50.48s"
+    },
+    {
+      "invocation": "python -m pytest -q tests/unit",
+      "output": "208 passed in 7.93s"
+    },
+    {
+      "invocation": "python -m pytest -q services/mcp/tests",
+      "output": "28 passed, 1 warning in 1.05s"
+    }
+  ],
+  "red_proof": {
+    "commit": "6df75097ceb682b763dc3e515354d8eb4ef59cf7",
+    "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40185568595",
+    "job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40185568595/job/121145513720",
+    "output": "8 failed, 250 passed, 2 warnings in 42.70s",
+    "cause": "All eight new fixture cases rejected supersedes or contradicts with unknown_relation_type"
+  },
+  "acceptance": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ],
+  "rollback": {
+    "control": "BRAIN_CURRENT_KNOWLEDGE=false",
+    "rehearsal": "HTTP fixture preserves graph snapshot and explicit contradiction count, with guidance empty and selection_enabled false",
+    "authoritative_data": "Graph entities, revisioned relation assertions and provenance are retained"
+  },
+  "limitations": [
+    "Supersession affects current guidance only for accepted observed assertions; inferred assertions cannot retire guidance.",
+    "Existing project-authorized graph writers retain their authority. A router-only approval restriction was excluded by plan review and recorded as a ledger follow-up.",
+    "Knowledge selection is limited to authorized graph results; a truncated semantic neighborhood yields no current guidance.",
+    "Cyclic assertions remain inspectable; selection withholds guidance instead of changing authoritative assertions.",
+    "Production rollout and G6 validation remain required at the integration gate."
+  ]
+}
