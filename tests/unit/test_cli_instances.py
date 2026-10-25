@@ -223,6 +223,28 @@ def test_the_lookalike_container_is_never_stopped(host, tmp_path):
     assert bootstrap.brain_cross_instance_mutation_rejections["unowned"] - before == 1
 
 
+def test_a_lookalike_inside_a_legacy_project_disowns_it(host, tmp_path):
+    host.legacy("checkout-a", tmp_path / "a", "agentibrain_redis", "agentibrain_redis_backup")
+    host.legacy("checkout-b", tmp_path / "b", bootstrap.COMPOSE_MARKER)
+
+    result = _cli("--instance", "default", "up")
+
+    assert result.exit_code == 0, result.output
+    assert [cmd for _, cmd in host.calls if "down" in cmd] == []
+    assert bootstrap.legacy_stacks()[0] == {"checkout-b": tmp_path / "b"}
+
+
+def test_a_quoted_brain_id_still_selects_its_root(host):
+    root = _instance("swarm", LAYOUTS["first"]["swarm"])
+    env = root / ".env"
+    env.write_text(env.read_text().replace("BRAIN_ID=swarm", 'export BRAIN_ID="swarm"'))
+
+    result = _cli("--instance", "swarm", "down")
+
+    assert result.exit_code == 0, result.output
+    assert {cwd for cwd, _ in host.calls} == {str(root)}
+
+
 def test_a_root_holding_another_brain_refuses(host):
     _instance("personal", LAYOUTS["first"]["personal"])
     misbound = _root("swarm")

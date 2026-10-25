@@ -169,7 +169,9 @@ named brain; a root whose `.env` names another brain is refused untouched.
 - `install` and `uninstall` default the agentihooks profile alias to `brain`
   for the default brain and `brain-<id>` for a named one. A rerun of an
   interrupted `install --instance <id>` completes that instance and keeps its
-  bearer and identity.
+  bearer and identity. Only the default brain's install removes the old
+  projected copy of the bearer from agentihooks; a named brain leaves that
+  machine-wide file alone.
 - Rollback: run `--dry-run` first and select `--instance default` explicitly.
 
 ## Image strategy

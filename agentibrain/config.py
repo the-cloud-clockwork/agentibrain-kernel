@@ -198,8 +198,9 @@ def root_brain_id(root: Path) -> str | None:
     if not env_path.is_file():
         return DEFAULT_BRAIN_ID if (root / "config.yaml").is_file() else None
     for line in env_path.read_text().splitlines():
-        if line.startswith("BRAIN_ID="):
-            return line.split("=", 1)[1].strip() or DEFAULT_BRAIN_ID
+        key, sep, value = line.strip().removeprefix("export ").partition("=")
+        if sep and key.strip() == "BRAIN_ID":
+            return value.strip().strip("'\"") or DEFAULT_BRAIN_ID
     return DEFAULT_BRAIN_ID
 
 

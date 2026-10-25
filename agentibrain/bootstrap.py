@@ -586,15 +586,18 @@ def _is_kernel_compose(workdir: str) -> bool:
 def legacy_stacks() -> tuple[dict[str, Path], list[list[str]]]:
     """Owned legacy compose projects (project to working dir) and the unowned containers.
 
-    A project is owned when one of its containers carries a fixed legacy kernel
-    name and its compose working dir holds a kernel compose file. Any other
-    ``agentibrain_*`` container is a lookalike and is never stopped.
+    A project is owned when every ``agentibrain_*`` container in it carries a
+    fixed legacy kernel name and its compose working dir holds a kernel compose
+    file; stopping the project stops all of them, so one lookalike disowns it.
+    Any other ``agentibrain_*`` container is a lookalike and is never stopped.
     """
-    owned: dict[str, Path] = {}
     candidates = _kernel_containers()
-    for name, project, workdir in candidates:
-        if name in LEGACY_CONTAINER_NAMES and project and workdir and _is_kernel_compose(workdir):
-            owned[project] = Path(workdir)
+    disowned = {p for n, p, w in candidates if n not in LEGACY_CONTAINER_NAMES or not p or not w}
+    owned: dict[str, Path] = {
+        project: Path(workdir)
+        for _, project, workdir in candidates
+        if project not in disowned and _is_kernel_compose(workdir)
+    }
     unowned = [c for c in candidates if c[1] not in owned]
     return owned, unowned
 
