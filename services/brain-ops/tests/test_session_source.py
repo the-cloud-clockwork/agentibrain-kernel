@@ -30,6 +30,7 @@ if str(_BRAIN_OPS) not in sys.path:
 
 session_source = importlib.import_module("session_source")
 cluster_module = importlib.import_module("cluster")
+extract_module = importlib.import_module("extract")
 
 FIXTURE = json.loads((_HERE / "fixtures" / "sv2_ing01_feed.json").read_text(encoding="utf-8"))
 TOKEN = "fixture-feed-token"
@@ -38,7 +39,7 @@ ALPHA, GAMMA = "github.com/acme/alpha", "github.com/acme/gamma"
 
 
 def independent(fixture: dict, prefix: str) -> dict:
-    """A second fixture whose session ids and principal share nothing with the first."""
+    """A second fixture with its own session ids and principal over the same projects."""
     text = json.dumps(fixture).replace("hive-a", prefix)
     return json.loads(text)
 
@@ -182,7 +183,7 @@ def test_two_harnesses_extract_through_one_feed(serve, tmp_path: Path, prefix: s
     store = session_source.Store(tmp_path / "state")
 
     bundle = run(url, fixture, store, limit=3)
-    assert store.committed_path.exists() is False
+    assert not store.committed_path.exists()
     committed = store.commit(bundle["source"]["stage_id"])
 
     sessions = by_id(bundle)
@@ -240,19 +241,24 @@ def test_cli_stages_then_commits_after_acceptance(serve, tmp_path: Path) -> None
     state = tmp_path / "state"
     base = [sys.executable, str(_BRAIN_OPS / "extract.py"), "--source", "feed"]
     staged = subprocess.run(
-        [*base, "--state-dir", str(state), "--min-turns", "1"],
+        [*base, "--state-dir", str(state), "--min-turns", "1", "--stage-id", "s1"],
         env=env,
         capture_output=True,
         text=True,
     )
     assert staged.returncode == 0, staged.stderr
-    assert "brain_source_cursor_lag=0" in staged.stderr
+    assert "brain_source_cursor_lag=8" in staged.stderr
     assert {s["session_id"] for s in json.loads(staged.stdout)["sessions"]} == {C1, X1}
     assert not (state / "committed.json").exists()
 
-    done = subprocess.run(
-        [*base, "--state-dir", str(state), "--commit"], env=env, capture_output=True, text=True
-    )
+    commit = [*base, "--state-dir", str(state), "--commit"]
+    unbound = subprocess.run(commit, env=env, capture_output=True, text=True)
+    assert unbound.returncode == 2 and "--stage-id" in unbound.stderr
+    other = subprocess.run([*commit, "--stage-id", "s0"], env=env, capture_output=True, text=True)
+    assert other.returncode == 2 and "revision_conflict" in other.stderr
+    assert not (state / "committed.json").exists()
+
+    done = subprocess.run([*commit, "--stage-id", "s1"], env=env, capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
     assert json.loads((state / "committed.json").read_text())["position"] == 8
 
@@ -397,9 +403,39 @@ def test_stale_attempt_cannot_overwrite_newer_commit(serve, tmp_path: Path) -> N
 
     old_state = session_source.empty_state()
     with pytest.raises(session_source.Refused):
-        store.stage(old_state, base_revision=0)
+        store.stage(old_state, base_revision=0, stage_id="old")
     assert committed_bytes(store) == snapshot
     assert committed["position"] == 8
+
+
+def test_commit_promotes_only_the_stage_the_cluster_accepted(serve, tmp_path: Path) -> None:
+    url = serve(Feed(FIXTURE))
+    store = session_source.Store(tmp_path / "state")
+    accepted = run(url, FIXTURE, store, limit=2, max_pages=1, stage_id="accepted")
+    restaged = run(url, FIXTURE, store, stage_id="restaged")
+    assert accepted["source"]["stage_id"] == "accepted"
+
+    with pytest.raises(session_source.Refused) as refused:
+        store.commit("accepted")
+    assert refused.value.error_class == "revision_conflict"
+    assert committed_bytes(store) is None
+
+    assert store.commit("restaged")["position"] == restaged["source"]["staged_position"]
+
+
+@pytest.mark.parametrize(
+    ("projects", "expected"),
+    [("", ["a", "g"]), (ALPHA, ["a"]), (f"{GAMMA}, ", ["g"]), ("github.com/acme/beta", [])],
+)
+def test_local_source_keeps_only_its_authorized_scope(projects: str, expected: list) -> None:
+    parsed = [
+        {"session_id": "a", "num_user_turns": 5, "project_id": ALPHA},
+        {"session_id": "g", "num_user_turns": 5, "project_id": GAMMA},
+        {"session_id": "short", "num_user_turns": 1, "project_id": ALPHA},
+        None,
+    ]
+    kept = extract_module.granted_sessions(parsed, 5, projects)
+    assert [s["session_id"] for s in kept] == expected
 
 
 def test_new_source_generation_replaces_the_replaced_source(serve, tmp_path: Path) -> None:

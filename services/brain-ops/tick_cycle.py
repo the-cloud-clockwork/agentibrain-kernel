@@ -359,12 +359,17 @@ def extract(vault: Path) -> Step:
         "--codex-dir",
         os.environ.get("EXTRACT_CODEX_DIR", "/shared/.codex/sessions"),
     ]
+    stage_id = uuid.uuid4().hex
+    if source == "feed":
+        command += ["--stage-id", stage_id]
     producer = subprocess.Popen(command, stdout=subprocess.PIPE)
     step = _run([str(HERE / "cluster.py"), "--out-dir", str(outdir)], stdin=producer.stdout)
     producer.stdout.close()
     ok = producer.wait() == 0 and step.ok
     if ok and source == "feed":
-        committed = _run([str(HERE / "extract.py"), "--source", "feed", "--commit"])
+        committed = _run(
+            [str(HERE / "extract.py"), "--source", "feed", "--commit", "--stage-id", stage_id]
+        )
         return Step(committed.ok, step.output + committed.output)
     return Step(ok, step.output)
 

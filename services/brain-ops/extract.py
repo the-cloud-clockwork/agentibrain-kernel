@@ -388,17 +388,17 @@ def feed_main(args: argparse.Namespace) -> int:
     store = session_source.Store(args.state_dir)
     try:
         if args.commit:
-            state = store.commit()
+            state = store.commit(args.stage_id)
             print(f"committed session feed position {state['position']}", file=sys.stderr)
             return 0
         source, grant = session_source.feed_from_env(dict(os.environ))
         bundle = session_source.extract_batch(
-            source, grant, store, args.min_turns, limit=args.limit
+            source, grant, store, args.min_turns, limit=args.limit, stage_id=args.stage_id
         )
     except session_source.Refused as refused:
         print(f"ERROR: {refused.error_class}: {refused.detail}", file=sys.stderr)
         return 2
-    lag = bundle["source"][session_source.LAG_METRIC]["after_commit"]
+    lag = bundle["source"][session_source.LAG_METRIC]["committed"]
     print(f"{session_source.LAG_METRIC}={lag}", file=sys.stderr)
     json.dump(bundle, sys.stdout, indent=2, default=str)
     sys.stdout.write("\n")
@@ -458,7 +458,14 @@ def main() -> int:
         action="store_true",
         help="Commit the staged session feed batch once its output was accepted",
     )
+    parser.add_argument(
+        "--stage-id",
+        default="",
+        help="Stage the feed batch under this id; --commit promotes only this stage",
+    )
     args = parser.parse_args()
+    if args.commit and not args.stage_id:
+        parser.error("--commit needs the --stage-id the cluster step accepted")
     if args.source == "feed":
         return feed_main(args)
 

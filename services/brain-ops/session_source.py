@@ -403,23 +403,22 @@ class Store:
         _version(state, "committed state")
         return state
 
-    def stage(self, state: dict, base_revision: int) -> str:
+    def stage(self, state: dict, base_revision: int, stage_id: str) -> str:
         with self._locked():
             if self.load()["revision"] != base_revision:
                 raise Refused("revision_conflict", STALE_BATCH)
-            stage_id = uuid.uuid4().hex
             self._write(
                 self.staged_path,
                 {"stage_id": stage_id, "base_revision": base_revision, "state": state},
             )
             return stage_id
 
-    def commit(self, stage_id: str | None = None) -> dict:
+    def commit(self, stage_id: str) -> dict:
         with self._locked():
             if not self.staged_path.exists():
                 raise Refused("revision_conflict", NOTHING_STAGED)
             staged = json.loads(self.staged_path.read_text(encoding="utf-8"))
-            if stage_id is not None and staged["stage_id"] != stage_id:
+            if staged["stage_id"] != stage_id:
                 raise Refused("revision_conflict", STALE_BATCH)
             if self.load()["revision"] != staged["base_revision"]:
                 self.staged_path.unlink()
@@ -437,10 +436,11 @@ def extract_batch(
     min_turns: int,
     limit: int = 100,
     max_pages: int = 50,
+    stage_id: str = "",
 ) -> dict:
     committed = store.load()
     state, touched, head = Extraction(source, grant).build(committed, limit, max_pages)
-    stage_id = store.stage(state, committed["revision"])
+    stage_id = store.stage(state, committed["revision"], stage_id or uuid.uuid4().hex)
     sessions = [summary(uid, state["sessions"][uid]) for uid in sorted(touched)]
     returned = [s for s in sessions if s["num_user_turns"] >= min_turns]
     returned.sort(key=lambda s: (s["start"] or "", s["session_id"]))
