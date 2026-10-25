@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Deterministic session extractor for the brain-clusters skill.
 
-Scans ~/.claude/projects/*/<session>.jsonl files and Codex rollout files
-under ~/.codex/sessions, filters by time window and project substring, and
-emits a structured JSON bundle that the AI side of the
-skill consumes to produce semantic cluster markdown files.
+Scans ~/.claude/projects/*/<session>.jsonl files and Codex rollout files under
+~/.codex/sessions, filters by time window and project substring, and emits a
+structured JSON bundle that the AI side of the skill consumes to produce
+semantic cluster markdown files.
 
 Usage:
     python3 extract.py --since 24h [--project my-project] [--min-turns 5]

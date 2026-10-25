@@ -15,6 +15,10 @@ GitHub. The agentihooks client and the kernel derive it the same way:
 | Codex session | The `repository_url` Codex records in the rollout's session metadata, else its working folder as above. |
 | Marker | The `project_id` the client sends, checked against the token's project grant. |
 
+A folder without a remote may be registered by the client as
+`local:<name>` through `AGENTIHOOKS_PROJECT_ID`; the kernel accepts that id
+on markers and arcs as given.
+
 A session whose folder no longer exists on the extraction host, or whose
 repository has no `origin`, stays unattributed. The kernel never guesses a
 project from a folder name.

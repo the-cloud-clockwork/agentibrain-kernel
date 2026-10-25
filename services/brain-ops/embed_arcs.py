@@ -42,7 +42,7 @@ REQ_TIMEOUT = 30
 LESSON_STATE_FILENAME = ".brain-lesson-embed.state.json"
 LESSON_PRODUCER = "brain-lesson"
 LESSON_MAX_TEXT_CHARS = 4000
-# Legacy grouping wrote a folder basename as the project; only canonical ids are indexed.
+# Canonical ids only: host/owner/repo, or local:<name> from AGENTIHOOKS_PROJECT_ID.
 CANONICAL_PROJECT_RE = re.compile(
     r"local:[A-Za-z0-9][A-Za-z0-9._-]*|[^/\s]+\.[^/\s]+/[^/\s]+/[^/\s]+"
 )

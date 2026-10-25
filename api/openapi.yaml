@@ -118,10 +118,10 @@ components:
               description: Canonical project, host/owner/repo; checked against a worker token's grant.
             scope:
               type: string
-              enum: [fleet]
               description: >-
-                On a signal, shares it with every project: the next tick serves
-                it in each project feed's fleet_warnings.
+                Kept as provenance. On a signal, the value fleet shares it with
+                every project: the next tick serves it in each project feed's
+                fleet_warnings.
 
 security:
   - bearerAuth: []
