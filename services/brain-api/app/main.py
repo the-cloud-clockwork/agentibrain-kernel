@@ -800,6 +800,20 @@ def publish_knowledge_detail(
     return {"action": action, "content_hash": value["content_hash"], "revision": payload.revision}
 
 
+@app.get("/knowledge/neighbors")
+def read_knowledge_neighbors(
+    entity_id: str = Query(..., min_length=3, max_length=256),
+    after: str = Query("", max_length=256),
+    limit: int = Query(25, ge=1, le=100),
+    authorization: str | None = Header(None),
+    _: None = Depends(require_token),
+) -> dict:
+    result = _graph_store().neighbor_page(entity_id, after, limit, _graph_visible(authorization))
+    if result is None:
+        raise HTTPException(status_code=404, detail="entity not found")
+    return result
+
+
 @app.get("/knowledge/detail")
 def read_knowledge_detail(
     query: Annotated[arcs.ReadRequest, Depends(arcs.ReadRequest)],

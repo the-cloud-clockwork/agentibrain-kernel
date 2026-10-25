@@ -654,3 +654,25 @@ paths:
           description: |
             Full reads disabled by BRAIN_FULL_DETAIL=false or graph unconfigured.
             Rollback retains published revisions and the truthful MCP preview tool.
+
+  /knowledge/neighbors:
+    get:
+      summary: Page the authorized current graph neighborhood with a keyset.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: entity_id, in: query, required: true, schema: {type: string, minLength: 3, maxLength: 256}}
+        - {name: after, in: query, schema: {type: string, default: "", maxLength: 256}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 25}}
+      responses:
+        "200":
+          description: |
+            entity_id, view=current_graph, relations and next_after. Relations
+            are ordered by immutable relation id. Continue on the same entity
+            with next_after until null. Each request rechecks current grants for
+            both endpoints. Hidden neighbors are omitted and do not consume the
+            visible page. This is a live graph view, not historical guidance or a
+            repeatable snapshot; newly inserted relations before the keyset require
+            a fresh scan. Full entity sections use the separate pinned detail API.
+        "404": {description: Entity unavailable in caller scope.}
+        "422": {description: Invalid page bound.}
+        "503": {description: Graph storage is not configured.}
