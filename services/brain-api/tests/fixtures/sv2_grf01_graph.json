@@ -1,0 +1,54 @@
+{
+  "sets": {
+    "alpha": {
+      "scope": {"brain": "swarm", "projects": ["github.com/acme/alpha"]},
+      "entities": [
+        {"id": "arc:alpha-retry-storm", "kind": "arc", "revision": 3, "brain": "swarm", "project_id": "github.com/acme/alpha", "vault_ref": "clusters/alpha-retry-storm.md"},
+        {"id": "session:5f1c2a9e-alpha-1", "kind": "session", "revision": 1, "brain": "swarm", "project_id": "github.com/acme/alpha", "vault_ref": "raw/sessions/5f1c2a9e-alpha-1.jsonl"},
+        {"id": "session:5f1c2a9e-alpha-2", "kind": "session", "revision": 1, "brain": "swarm", "project_id": "github.com/acme/alpha", "vault_ref": "raw/sessions/5f1c2a9e-alpha-2.jsonl"},
+        {"id": "lesson:mk-alpha-backoff", "kind": "lesson", "revision": 1, "brain": "swarm", "project_id": "github.com/acme/alpha", "vault_ref": "left/reference/lessons-2026-10-20.md#mk-alpha-backoff"},
+        {"id": "decision:mk-alpha-jitter", "kind": "decision", "revision": 2, "brain": "swarm", "project_id": "github.com/acme/alpha", "vault_ref": "left/decisions/ADR-0007-alpha-jitter.md"},
+        {"id": "evidence:run-alpha-40100", "kind": "evidence", "revision": 1, "brain": "swarm", "project_id": "github.com/acme/alpha", "vault_ref": "https://ci.example/acme/alpha/runs/40100"},
+        {"id": "arc:alpha-queue-drain", "kind": "arc", "revision": 1, "brain": "swarm", "project_id": "github.com/acme/alpha", "vault_ref": "clusters/alpha-queue-drain.md"},
+        {"id": "arc:other-project-arc", "kind": "arc", "revision": 1, "brain": "swarm", "project_id": "github.com/acme/other", "vault_ref": "clusters/other-project-arc.md"}
+      ],
+      "valid": [
+        {"relation": "derived_from", "source": "arc:alpha-retry-storm", "target": "session:5f1c2a9e-alpha-1", "status": "verified", "confidence": "high", "revision": 1},
+        {"relation": "derived_from", "source": "arc:alpha-retry-storm", "target": "session:5f1c2a9e-alpha-2", "status": "verified", "confidence": "high", "revision": 1},
+        {"relation": "has_lesson", "source": "arc:alpha-retry-storm", "target": "lesson:mk-alpha-backoff", "status": "verified", "confidence": "high", "revision": 1},
+        {"relation": "applies_decision", "source": "arc:alpha-retry-storm", "target": "decision:mk-alpha-jitter", "status": "approved", "confidence": "high", "revision": 1},
+        {"relation": "supported_by", "source": "lesson:mk-alpha-backoff", "target": "evidence:run-alpha-40100", "status": "verified", "confidence": "medium", "revision": 1},
+        {"relation": "unblocks", "source": "arc:alpha-retry-storm", "target": "arc:alpha-queue-drain", "status": "suggested", "confidence": "low", "evidence": ["evidence:run-alpha-40100"], "revision": 1},
+        {"relation": "related", "source": "arc:alpha-retry-storm", "target": "arc:other-project-arc", "status": "suggested", "confidence": "low", "revision": 1}
+      ],
+      "inverse": {"relation": "lesson_of", "source": "lesson:mk-alpha-backoff", "target": "arc:alpha-retry-storm", "status": "verified", "confidence": "high", "revision": 1},
+      "missing_target": {"relation": "has_lesson", "source": "arc:alpha-retry-storm", "target": "lesson:mk-alpha-never-written", "status": "suggested", "confidence": "low", "revision": 1},
+      "incompatible": {"relation": "has_lesson", "source": "arc:alpha-retry-storm", "target": "decision:mk-alpha-jitter", "status": "suggested", "confidence": "low", "revision": 1}
+    },
+    "beta": {
+      "scope": {"brain": "personal", "projects": ["github.com/beta-org/beta"]},
+      "entities": [
+        {"id": "arc:beta-cache-miss", "kind": "arc", "revision": 1, "brain": "personal", "project_id": "github.com/beta-org/beta", "vault_ref": "clusters/beta-cache-miss.md"},
+        {"id": "session:019a77c0-beta-1", "kind": "session", "revision": 1, "brain": "personal", "project_id": "github.com/beta-org/beta", "vault_ref": "raw/sessions/019a77c0-beta-1.jsonl"},
+        {"id": "session:019a77c0-beta-2", "kind": "session", "revision": 1, "brain": "personal", "project_id": "github.com/beta-org/beta", "vault_ref": "raw/sessions/019a77c0-beta-2.jsonl"},
+        {"id": "lesson:mk-beta-ttl", "kind": "lesson", "revision": 4, "brain": "personal", "project_id": "github.com/beta-org/beta", "vault_ref": "left/reference/lessons-2026-10-21.md#mk-beta-ttl"},
+        {"id": "decision:ADR-0012", "kind": "decision", "revision": 1, "brain": "personal", "project_id": "github.com/beta-org/beta", "vault_ref": "left/decisions/ADR-0012-beta-ttl.md"},
+        {"id": "evidence:commit-beta-9c1e", "kind": "evidence", "revision": 1, "brain": "personal", "project_id": "github.com/beta-org/beta", "vault_ref": "https://git.example/beta-org/beta/commit/9c1e"},
+        {"id": "arc:beta-warmup", "kind": "arc", "revision": 2, "brain": "personal", "project_id": "github.com/beta-org/beta", "vault_ref": "clusters/beta-warmup.md"},
+        {"id": "arc:beta-elsewhere", "kind": "arc", "revision": 1, "brain": "personal", "project_id": "github.com/beta-org/elsewhere", "vault_ref": "clusters/beta-elsewhere.md"}
+      ],
+      "valid": [
+        {"relation": "derived_from", "source": "arc:beta-cache-miss", "target": "session:019a77c0-beta-1", "status": "verified", "confidence": "high", "revision": 1},
+        {"relation": "derived_from", "source": "arc:beta-cache-miss", "target": "session:019a77c0-beta-2", "status": "verified", "confidence": "medium", "revision": 1},
+        {"relation": "has_lesson", "source": "arc:beta-cache-miss", "target": "lesson:mk-beta-ttl", "status": "verified", "confidence": "high", "revision": 2},
+        {"relation": "applies_decision", "source": "arc:beta-cache-miss", "target": "decision:ADR-0012", "status": "verified", "confidence": "medium", "revision": 1},
+        {"relation": "supported_by", "source": "decision:ADR-0012", "target": "evidence:commit-beta-9c1e", "status": "verified", "confidence": "high", "revision": 1},
+        {"relation": "unblocks", "source": "arc:beta-cache-miss", "target": "arc:beta-warmup", "status": "approved", "confidence": "medium", "evidence": ["evidence:commit-beta-9c1e"], "revision": 1},
+        {"relation": "related", "source": "arc:beta-cache-miss", "target": "arc:beta-elsewhere", "status": "suggested", "confidence": "low", "revision": 1}
+      ],
+      "inverse": {"relation": "source_of", "source": "session:019a77c0-beta-1", "target": "arc:beta-cache-miss", "status": "verified", "confidence": "high", "revision": 1},
+      "missing_target": {"relation": "applies_decision", "source": "arc:beta-cache-miss", "target": "decision:ADR-0999", "status": "suggested", "confidence": "low", "revision": 1},
+      "incompatible": {"relation": "derived_from", "source": "arc:beta-cache-miss", "target": "lesson:mk-beta-ttl", "status": "suggested", "confidence": "low", "revision": 1}
+    }
+  }
+}
