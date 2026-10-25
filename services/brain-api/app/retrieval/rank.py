@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sqlite3
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -86,10 +87,10 @@ def _optional(name: str, source: Source | None, query: str, ids: list[str]) -> t
         return None, "not_configured"
     try:
         values = source(query, ids)
+        return {ident: min(1.0, max(0.0, float(values.get(ident, 0.0)))) for ident in ids}, "ok"
     except Exception:
         log.warning("optional ranking source %s failed", name)
         return None, "unavailable"
-    return {ident: min(1.0, max(0.0, float(values.get(ident, 0.0)))) for ident in ids}, "ok"
 
 
 def _direct(candidate: dict, query: frozenset, task: frozenset, semantic, active: dict) -> tuple:
@@ -171,7 +172,9 @@ def rank(
                 "type": candidate["type"],
                 "title": candidate["title"],
                 "knowledge_status": status,
-                "confidence": link["confidence"] if direct_relevance <= 0 else "direct",
+                "evidence": "graph" if direct_relevance <= 0 else "direct",
+                "confidence": link["confidence"] if link else None,
+                "approval": "accepted" if link else None,
                 "authority": "recalled_evidence",
                 "score": round(score, 6),
                 "components": {
@@ -233,18 +236,19 @@ def retrieve(
         return _unavailable("not_configured", active)
     try:
         with store.read_view(time.monotonic() + time_budget) as view:
-            scanned = view.entities(SCAN_LIMIT)
-            nodes = [e for e in scanned if project in e["projects"] and e["type"] in TYPES]
+            nodes = view.entities(project, TYPES, SCAN_LIMIT)
             ids = {node["id"] for node in nodes}
             edges, edges_complete = _edges(view, ids, EDGE_BUDGET)
             labelled = select_current(
                 view, nodes, lambda e: e is not None and project in e["projects"], EDGE_BUDGET
             )["nodes"]
-    except TimeoutError:
+    except (TimeoutError, sqlite3.Error):
+        log.warning("graph candidate source failed")
         return _unavailable("unavailable", active)
     result = rank(task, labelled, edges, active, sources)
     result["sources"]["graph"] = "ok" if edges_complete else "partial"
-    result["scan_limited"] = len(scanned) >= SCAN_LIMIT
+    result["reduced"] = result["reduced"] or not edges_complete
+    result["scan_limited"] = len(nodes) >= SCAN_LIMIT
     return result
 
 

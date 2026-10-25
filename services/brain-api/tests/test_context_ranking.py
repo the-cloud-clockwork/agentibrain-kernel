@@ -1,5 +1,6 @@
 import importlib
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -39,11 +40,15 @@ def _context(monkeypatch, vault, tmp_path, name, semantic="fixture", **env):
         monkeypatch.setenv(key, value)
     client = _client(monkeypatch, vault, db, TOKENS)
     store = _loaded(db, fixture)
+    _sources(monkeypatch, fixture, semantic)
+    return client, store, fixture
+
+
+def _sources(monkeypatch, fixture, semantic):
     ctx = importlib.import_module("app.context")
     sources = {"fixture": _source(fixture["semantic"]), "failing": _failing, None: None}
     monkeypatch.setattr(ctx, "semantic_source", sources[semantic])
     monkeypatch.setattr(ctx, "heat_source", _source(fixture["heat"]))
-    return client, store, fixture
 
 
 def _ask(client, fixture, **changes):
@@ -71,7 +76,8 @@ def test_a_cold_incident_lesson_outranks_an_unrelated_hot_arc(monkeypatch, vault
     assert _rank().context_relevance_at_k(context["items"], fixture["relevant"], 3) == 1.0
     incident = context["items"][ids.index(fixture["cold_incident"])]
     assert incident["components"]["heat"] == 0.0
-    assert incident["confidence"] == "direct"
+    assert incident["evidence"] == "direct"
+    assert incident["confidence"] is None and incident["approval"] is None
     assert any(reason.startswith("matches query terms") for reason in incident["reasons"])
 
 
@@ -95,12 +101,14 @@ def test_an_uncertain_inferred_edge_is_labelled_and_never_outranks_direct_eviden
     client, _, fixture = _context(monkeypatch, vault, tmp_path, name)
     items = _ask(client, fixture).json()["context"]["items"]
     neighbor = next(item for item in items if item["id"] == fixture["inferred_neighbor"])
+    assert neighbor["evidence"] == "graph"
     assert neighbor["confidence"] == "inferred"
+    assert neighbor["approval"] == "accepted"
     assert neighbor["authority"] == "recalled_evidence"
     assert neighbor["components"]["lexical"] == neighbor["components"]["task"] == 0.0
     assert [step["type"] for step in neighbor["path"]] == ["has_lesson"]
     assert neighbor["path"][0]["confidence"] == "inferred"
-    direct = [item["score"] for item in items if item["confidence"] == "direct"]
+    direct = [item["score"] for item in items if item["evidence"] == "direct"]
     assert neighbor["score"] < min(direct)
 
 
@@ -119,6 +127,7 @@ def test_heat_alone_cannot_inject_unrelated_memory_and_the_store_is_unchanged(
     context = response.json()["context"]
     assert context["sources"]["semantic"] == "not_configured"
     assert context["excluded"] == {"heat_only": 1, "no_task_evidence": 0}
+    assert _rank().context_relevance_at_k(context["items"], fixture["relevant"], 3) == 1.0
 
 
 def test_a_heat_only_candidate_is_excluded_by_the_pure_policy():
@@ -136,9 +145,11 @@ def test_a_heat_only_candidate_is_excluded_by_the_pure_policy():
 
 
 def test_another_projects_token_cannot_read_this_projects_ranking(monkeypatch, vault, tmp_path):
-    client, _, fixture = _context(monkeypatch, vault, tmp_path, "first")
+    client, store, fixture = _context(monkeypatch, vault, tmp_path, "first")
+    before = store.snapshot()
     denied = _ask(client, fixture, project_id="beta")
     assert denied.status_code == 403
+    assert store.snapshot() == before
     assert denied.json()["detail"]["reason"] == "project_grant"
     assert FIXTURE["first"]["out_of_scope"] not in denied.text
 
@@ -158,6 +169,7 @@ def test_a_failed_semantic_source_returns_a_labelled_reduced_result(
     assert fixture["hot_arc"] not in _ids(context)
     assert "embeddings unreachable" not in json.dumps(context)
     assert store.snapshot() == before
+    assert _rank().context_relevance_at_k(context["items"], fixture["relevant"], 3) == 1.0
 
 
 def test_a_retry_replays_the_same_ranking_without_a_second_effect(monkeypatch, vault, tmp_path):
@@ -186,8 +198,12 @@ def test_a_graph_timeout_is_a_labelled_reduced_result(monkeypatch, vault, tmp_pa
     assert context["items"] == []
 
 
-def _timeout(_self, _limit):
+def _timeout(*_args):
     raise TimeoutError
+
+
+def _locked(*_args):
+    raise sqlite3.OperationalError("database is locked")
 
 
 def test_restoring_the_previous_policy_revision_keeps_the_source_store(
@@ -208,9 +224,15 @@ def test_restoring_the_previous_policy_revision_keeps_the_source_store(
 
 
 def test_an_unknown_policy_revision_is_refused(monkeypatch, vault, tmp_path):
-    client, _, fixture = _context(monkeypatch, vault, tmp_path, "first", BRAIN_RANKING_POLICY="9")
+    client, store, fixture = _context(
+        monkeypatch, vault, tmp_path, "first", BRAIN_RANKING_POLICY="9"
+    )
+    before = store.snapshot()
     response = _ask(client, fixture)
     assert response.status_code == 503
+    assert store.snapshot() == before
+    monkeypatch.setenv("BRAIN_RANKING_POLICY", "2")
+    assert _ask(client, fixture).json()["context"]["policy_revision"] == "2"
     assert "BRAIN_RANKING_POLICY" in response.text
 
 
@@ -231,3 +253,45 @@ def test_relevance_at_k_counts_relevant_items_in_the_top_k():
     assert rank.context_relevance_at_k(items, ["a", "b"], 3) == 1.0
     assert rank.context_relevance_at_k(items, [], 3) == 0.0
     assert rank.context_relevance_at_k(items, ["a"], 0) == 0.0
+
+
+def test_a_malformed_optional_source_answer_is_labelled_unavailable(monkeypatch, vault, tmp_path):
+    client, _, fixture = _context(monkeypatch, vault, tmp_path, "first")
+    ctx = importlib.import_module("app.context")
+    monkeypatch.setattr(ctx, "heat_source", lambda _query, ids: dict.fromkeys(ids, "hot"))
+    context = _ask(client, fixture).json()["context"]
+    assert context["sources"]["heat"] == "unavailable"
+    assert context["reduced"] is True
+    assert "heat" not in context["score_basis"]
+    assert all(item["components"]["heat"] is None for item in context["items"])
+
+
+def test_a_graph_store_error_is_a_labelled_reduced_result(monkeypatch, vault, tmp_path):
+    client, _, fixture = _context(monkeypatch, vault, tmp_path, "first")
+    monkeypatch.setattr(importlib.import_module("app.graph").GraphReadView, "entities", _locked)
+    context = _ask(client, fixture).json()["context"]
+    assert context["sources"] == {"graph": "unavailable"}
+    assert context["reduced"] is True
+    assert "locked" not in json.dumps(context)
+
+
+def test_a_partial_edge_read_marks_the_result_reduced(monkeypatch, vault, tmp_path):
+    client, _, fixture = _context(monkeypatch, vault, tmp_path, "first")
+    monkeypatch.setattr(_rank(), "EDGE_BUDGET", 1)
+    context = _ask(client, fixture).json()["context"]
+    assert context["sources"]["graph"] == "partial"
+    assert context["reduced"] is True
+
+
+@pytest.mark.parametrize("name", SETS)
+def test_a_restarted_process_ranks_the_same_request_identically(monkeypatch, vault, tmp_path, name):
+    client, store, fixture = _context(monkeypatch, vault, tmp_path, name)
+    first = _ask(client, fixture).json()
+    before = store.snapshot()
+    restarted = _client(monkeypatch, vault, tmp_path / f"{name}.db", TOKENS)
+    _sources(monkeypatch, fixture, "fixture")
+    after = _ask(restarted, fixture).json()
+    assert after["replayed"] is False
+    assert after["operation_id"] == first["operation_id"]
+    assert after["context"] == first["context"]
+    assert store.snapshot() == before
