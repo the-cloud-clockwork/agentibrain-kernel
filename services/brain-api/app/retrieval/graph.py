@@ -161,6 +161,29 @@ def _state(
     return Traversal(request, owner, store, time.monotonic() + 60)
 
 
+def _response(
+    state: Traversal, reason: str | None, initial_count: int, enabled: bool, validated: bool
+) -> dict:
+    nodes = state.nodes if validated else []
+    if not enabled:
+        nodes = [node for node in nodes if not node["path"]]
+        if reason != "timeout":
+            reason = "disabled"
+    elif reason is None and state.depth_limited:
+        reason = "depth_cap"
+    continuation = _save(state) if reason == "timeout" else None
+    return {
+        "nodes": nodes,
+        "partial": reason not in (None, "disabled"),
+        "reason": reason,
+        "continuation": continuation,
+        "continuation_expires_in_seconds": 60 if continuation else None,
+        "remaining_continuations": 3 - state.resumes if continuation else 0,
+        "graph_nodes_expanded_per_request": max(0, len(nodes) - initial_count),
+        "edges_examined": state.edges,
+    }
+
+
 def expand(store: GraphStore, request: ExpansionRequest, grant: frozenset[str], actor: str) -> dict:
     state = _state(store, request, grant, actor)
     enabled = os.getenv("BRAIN_GRAPH_EXPANSION", "false").lower() == "true"
@@ -169,12 +192,14 @@ def expand(store: GraphStore, request: ExpansionRequest, grant: frozenset[str], 
     )
     initial_count = len(state.nodes)
     reason = None
+    validated = False
     try:
         with store.read_view(state.deadline) as view:
             if state.revision is None:
                 _start(view, state, grant)
             elif state.revision != view.revision:
                 raise HTTPException(409, "graph changed; restart scoped seed retrieval")
+            validated = True
             while enabled and state.queue:
                 if time.monotonic() >= state.deadline:
                     raise TimeoutError
@@ -187,19 +212,4 @@ def expand(store: GraphStore, request: ExpansionRequest, grant: frozenset[str], 
                 _step(view, state, grant)
     except TimeoutError:
         reason = "timeout"
-    if not enabled and reason != "timeout":
-        state.nodes = [node for node in state.nodes if not node["path"]]
-        reason = "disabled"
-    elif reason is None and state.depth_limited:
-        reason = "depth_cap"
-    continuation = _save(state) if reason == "timeout" else None
-    return {
-        "nodes": state.nodes,
-        "partial": reason not in (None, "disabled"),
-        "reason": reason,
-        "continuation": continuation,
-        "continuation_expires_in_seconds": 60 if continuation else None,
-        "remaining_continuations": 3 - state.resumes if continuation else 0,
-        "graph_nodes_expanded_per_request": len(state.nodes) - initial_count,
-        "edges_examined": state.edges,
-    }
+    return _response(state, reason, initial_count, enabled, validated)
