@@ -53,8 +53,9 @@ def _kb_search(monkeypatch, obsidian, artifact):
     async def fake_vault(query, limit):
         return list(obsidian)
 
-    async def fake_embed(query, limit, min_score, producer=""):
+    async def fake_embed(query, limit, min_score, producer="", project=""):
         fake_embed.producer = producer
+        fake_embed.project = project
         return list(artifact)
 
     fake_embed.producer = None
@@ -142,15 +143,29 @@ def test_producer_is_only_sent_when_requested(monkeypatch):
     assert fake_embed.producer == "brain-lesson"
 
 
+def test_project_reaches_semantic_search_and_skips_the_vault(monkeypatch):
+    search, _kbmod, fake_embed = _kb_search(
+        monkeypatch, [_obs("mentions-repo.md", 30)], [_art("a", 0.5)]
+    )
+
+    out = json.loads(asyncio.run(search(query="q", limit=10, project="github.com/o/r")))
+
+    assert fake_embed.project == "github.com/o/r"
+    assert [r["ref"] for r in out["results"]] == ["a"]
+    assert out["sources_searched"] == ["artifact"]
+
+    out = json.loads(asyncio.run(search(query="q", limit=10)))
+    assert fake_embed.project == ""
+    assert out["sources_searched"] == ["artifact", "obsidian"]
+
+
 def test_rank_one_tie_resolves_to_semantic(monkeypatch):
     """Rank 1 of each source ties; the tiebreak must be deliberate.
 
     Leaving it to the order tasks were appended in makes the top result an
     implementation detail of asyncio.gather.
     """
-    search, _kbmod, _ = _kb_search(
-        monkeypatch, [_obs("keyword.md", 40)], [_art("semantic", 0.2)]
-    )
+    search, _kbmod, _ = _kb_search(monkeypatch, [_obs("keyword.md", 40)], [_art("semantic", 0.2)])
 
     out = json.loads(asyncio.run(search(query="q", limit=10)))
 

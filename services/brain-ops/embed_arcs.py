@@ -242,7 +242,6 @@ def arc_id(md: Path, fm: dict | None = None) -> str:
 
 
 def arc_projects(fm: dict) -> list[str]:
-    """The canonical project an arc is grouped under, for the exact project filter."""
     project = str(fm.get("project") or "").strip()
     return [] if project.lower() in UNATTRIBUTED_PROJECTS else [project]
 

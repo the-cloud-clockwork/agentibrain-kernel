@@ -109,6 +109,19 @@ components:
           type: string
           enum: [nuclear, critical, warning, info, resolved]
         source: { type: string }
+        attrs:
+          type: object
+          additionalProperties: true
+          properties:
+            project_id:
+              type: string
+              description: Canonical project, host/owner/repo; checked against a worker token's grant.
+            scope:
+              type: string
+              enum: [fleet]
+              description: >-
+                On a signal, shares it with every project: the next tick serves
+                it in each project feed's fleet_warnings.
 
 security:
   - bearerAuth: []

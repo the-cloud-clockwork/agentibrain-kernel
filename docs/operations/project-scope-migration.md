@@ -23,7 +23,10 @@ project from a folder name.
 
 1. `extract.py` reads Claude transcripts (`--projects-dir`, `EXTRACT_PROJECTS_DIR`)
    and Codex rollouts (`--codex-dir`, `EXTRACT_CODEX_DIR`, skipped when absent).
-   Compose mounts `CODEX_SESSIONS_HOST` (default `~/.codex/sessions`) read only.
+   Compose mounts `CODEX_SESSIONS_HOST` (default `~/.codex/sessions`) read only,
+   the same sanctioned transcript exception to the no shared filesystem rule
+   as the Claude projects mount, until the session source of SV2-ING-01
+   replaces both.
 2. `cluster.py` groups sessions by canonical project and task and writes the
    project on each arc.
 3. `POST /marker` stores project provenance on lessons, decisions, milestones

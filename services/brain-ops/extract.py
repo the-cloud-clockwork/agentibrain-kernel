@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Deterministic session extractor for the brain-clusters skill.
 
-Scans ~/.claude/projects/*/<session>.jsonl files and Codex rollout files under
-~/.codex/sessions, filters by time window and project substring, and emits a structured JSON bundle that the AI side of the
+Scans ~/.claude/projects/*/<session>.jsonl files and Codex rollout files
+under ~/.codex/sessions, filters by time window and project substring, and
+emits a structured JSON bundle that the AI side of the
 skill consumes to produce semantic cluster markdown files.
 
 Usage:
@@ -126,7 +127,6 @@ def _git(cwd: str, *args: str) -> str:
 
 
 def checkout_identity(cwd: str) -> dict:
-    """Project id and linked worktree of a session folder, resolved through the git common dir."""
     if not cwd or not Path(cwd).is_dir():
         return {"project_id": None, "worktree": ""}
     common = _git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
@@ -349,7 +349,6 @@ def process_codex_session(jsonl_path: Path, since: datetime, until: datetime) ->
 
 
 def codex_candidates(root: Path, since: datetime) -> list[Path]:
-    """Codex rollout files modified inside the window; none when the folder is absent."""
     if not root.is_dir():
         return []
     found = []

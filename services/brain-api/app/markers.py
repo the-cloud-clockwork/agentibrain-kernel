@@ -423,7 +423,6 @@ def _build_milestone_entry(
 
 
 def _fleet_scoped(attrs: dict[str, Any]) -> bool:
-    """A signal its writer shared with every project; brain-ops serves it as a fleet warning."""
     return str(attrs.get("scope") or "").strip().lower() == "fleet"
 
 

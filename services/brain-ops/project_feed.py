@@ -216,6 +216,8 @@ def _posted_fleet_signals(vault: Path) -> list[dict]:
         severity = str(fm.get("severity", "")).strip().lower()
         if str(fm.get("scope", "")).strip().lower() != "fleet" or severity not in ALARM_SEVERITIES:
             continue
+        if "true" in (str(fm.get("_resolved", "")), str(fm.get("_mitigated", ""))):
+            continue
         content = body.strip()
         found.append(
             {
