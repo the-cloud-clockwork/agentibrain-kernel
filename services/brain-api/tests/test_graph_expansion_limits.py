@@ -100,6 +100,21 @@ def test_proposed_edges_and_hidden_intermediates_never_expand(monkeypatch, vault
     assert [n["id"] for n in data["nodes"]] == ["session:seed", "arc:bridge", "lesson:answer"]
 
 
+def test_a_slow_runner_cannot_empty_an_expansion(monkeypatch, vault, tmp_path):
+    client = _setup(monkeypatch, vault, tmp_path)
+    graph = importlib.import_module("app.graph")
+    original = graph.GraphReadView.get_entity
+
+    def slow(view, ident):
+        time.sleep(0.15)
+        return original(view, ident)
+
+    monkeypatch.setattr(graph.GraphReadView, "get_entity", slow)
+    data = _expand(client).json()
+    assert data["partial"] is False
+    assert [n["id"] for n in data["nodes"]] == ["session:seed", "arc:bridge", "lesson:answer"]
+
+
 def _timeout(monkeypatch, client):
     retrieval = importlib.import_module("app.retrieval.graph")
     graph = importlib.import_module("app.graph")
