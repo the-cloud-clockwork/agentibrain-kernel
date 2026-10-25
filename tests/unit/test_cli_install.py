@@ -131,7 +131,7 @@ def test_uninstall_downs_stack_before_unlinking_profile(tmp_path, monkeypatch):
     monkeypatch.setattr(
         cli.bootstrap, "compose_down", lambda settings: events.append("down") or Done()
     )
-    monkeypatch.setattr(cli, "_remove_other_stacks", lambda keep: events.append("other-stacks"))
+    monkeypatch.setattr(cli.bootstrap, "_kernel_containers", lambda: [])
     monkeypatch.setattr(cli, "_agentihooks_bin", lambda: "/usr/bin/agentihooks")
     monkeypatch.setattr(
         cli.subprocess,
