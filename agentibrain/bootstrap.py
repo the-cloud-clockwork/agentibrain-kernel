@@ -13,6 +13,7 @@ import socket
 import subprocess
 import tempfile
 import time
+from collections import Counter
 from importlib import resources
 from pathlib import Path
 
@@ -147,6 +148,11 @@ def render_compose(settings: BrainSettings) -> str:
         ollama_chat_model=settings.ollama_chat_model,
         ollama_embed_model=settings.ollama_embed_model,
         brain_api_port=settings.port_brain_api,
+        postgres_port=settings.port_postgres,
+        redis_port=settings.port_redis,
+        mcp_port=settings.port_mcp,
+        ollama_port=settings.port_ollama,
+        compose_project=settings.compose_project,
         service_env_defaults=SERVICE_ENV_DEFAULTS,
     )
 
@@ -626,6 +632,99 @@ def free_port(start: int, taken: set[int]) -> int:
     return port
 
 
+brain_instance_resource_conflicts: Counter[str] = Counter()
+
+
+def _project_workdirs(project: str) -> set[str]:
+    """Working dirs of every container compose labels with ``project``."""
+    if not shutil.which("docker"):
+        return set()
+    proc = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "-a",
+            "--filter",
+            f"label=com.docker.compose.project={project}",
+            "--format",
+            '{{.Label "com.docker.compose.project.working_dir"}}',
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return set()
+    return {ln for ln in proc.stdout.splitlines() if ln}
+
+
+def _vault_projects(vault: str) -> set[str]:
+    """Compose projects whose brain-api is labelled with ``vault`` as its bind mount."""
+    if not shutil.which("docker"):
+        return set()
+    proc = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "-a",
+            "--filter",
+            f"label=agentibrain.vault={vault}",
+            "--format",
+            '{{.Label "com.docker.compose.project"}}',
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return set()
+    return {ln for ln in proc.stdout.splitlines() if ln}
+
+
+def instance_ports(settings: BrainSettings) -> dict[str, int]:
+    ports = {
+        "PORT_BRAIN_API": settings.port_brain_api,
+        "PORT_POSTGRES": settings.port_postgres,
+        "PORT_REDIS": settings.port_redis,
+        "PORT_MCP": settings.port_mcp,
+    }
+    if settings.ollama:
+        ports["PORT_OLLAMA"] = settings.port_ollama
+    return ports
+
+
+def instance_conflicts(settings: BrainSettings) -> list[tuple[str, str]]:
+    """``(kind, detail)`` for every resource a named brain would take from something else.
+
+    A port this brain's own project publishes is not a conflict; a stack with the
+    same project name running from another config dir would share its containers
+    and volumes, so it is one.
+    """
+    project = settings.compose_project
+    cfg_dir = settings.config_dir.expanduser().resolve()
+    conflicts = [
+        ("project", f"compose project {project} already runs from {workdir}")
+        for workdir in sorted(_project_workdirs(project))
+        if Path(workdir).resolve() != cfg_dir
+    ]
+    vault = str(settings.vault_path.expanduser().resolve())
+    conflicts += [
+        ("volume", f"vault {vault} is mounted by compose project {other}")
+        for other in sorted(_vault_projects(vault) - {project})
+    ]
+    services = yaml.safe_load(render_compose(settings))["services"]
+    # A bare prefix would let brain "a" claim containers of brain "a-b".
+    own = re.compile(rf"{re.escape(project)}-({'|'.join(map(re.escape, services))})-\d+")
+    held = _published_ports()
+    for var, port in instance_ports(settings).items():
+        holder = held.get(port)
+        if holder and own.fullmatch(holder):
+            continue
+        if holder or not _port_bindable(port):
+            conflicts.append(("port", f"{var} {port} is held by {holder or 'a host process'}"))
+    return conflicts
+
+
 def set_env_values(env_path: Path, values: dict[str, str]) -> None:
     """Assign each key, replacing its active line when present, appending otherwise."""
     lines = env_path.read_text().splitlines() if env_path.exists() else []
@@ -692,9 +791,11 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
     a command run from anywhere drives what is actually up. The
     AGENTIBRAIN_REPO pin (written by local/bootstrap.sh into
     ~/.agentibrain/.env) covers every other cwd; the ~/.agentibrain stack
-    comes last.
+    comes last. A named brain skips all of that and resolves only its config_dir.
     """
     cfg_dir = settings.config_dir.expanduser()
+    if settings.compose_project:
+        return ("home", cfg_dir) if (cfg_dir / "compose.yml").is_file() else None
 
     start = (cwd or Path.cwd()).resolve()
     for candidate in (start, *start.parents):

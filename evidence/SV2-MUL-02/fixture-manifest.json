@@ -1,0 +1,51 @@
+{
+  "package": "SV2-MUL-02",
+  "tested_commit": "62b77eb1ffd2a45683c735245ed29af2f755ee78",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40233314886",
+  "verification": "CI unit fixtures: two generated compose projects (personal and swarm) rendered into temporary config roots; docker host view and compose invocations faked at the agentibrain.bootstrap seam. Mocked: no docker daemon or deployed brain was contacted.",
+  "input_hashes": {
+    "agentibrain/templates/compose/compose.yml.j2": "58e6567c7f03f974b8738b5024bab32d4a07bb7d639b3cb9408053256e45ff17"
+  },
+  "test_source_hashes": {
+    "tests/unit/test_compose_instances.py": "14f850703f58ab116a7717db3007fc91085c02e3a280fec2bcd31ef8b2e716ed"
+  },
+  "fixture_dimensions": {
+    "instances": [
+      "personal",
+      "swarm",
+      "a and a-b prefix pair",
+      "same id from two roots",
+      "default"
+    ],
+    "port_layouts": {
+      "conflicting": [
+        18103,
+        15432,
+        16379,
+        18104
+      ],
+      "distinct_swarm": [
+        28103,
+        25432,
+        26379,
+        28104
+      ],
+      "second_run": [
+        [
+          38103,
+          35432,
+          36379,
+          38104
+        ],
+        [
+          48103,
+          45432,
+          46379,
+          48104
+        ]
+      ]
+    },
+    "independent_runs": 2
+  },
+  "source_material": "Generated compose files and scratch vault paths per run; no operator vault, docker host or credentials."
+}

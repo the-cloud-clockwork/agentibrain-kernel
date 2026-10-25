@@ -1,0 +1,51 @@
+{
+  "package": "SV2-MUL-02",
+  "repository": "agentibrain-kernel",
+  "gate": "G7",
+  "state": "committed and verified in CI on the pull request head; not observed on a running docker host or deployed brain",
+  "evidence_kind": "mocked docker host and compose invocations in CI; rendered compose parsed as YAML",
+  "tested_commit": "62b77eb1ffd2a45683c735245ed29af2f755ee78",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/165",
+  "fixture": {
+    "path": "tests/unit/test_compose_instances.py",
+    "manifest": "fixture-manifest.json"
+  },
+  "runs": {
+    "red": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40232664141",
+    "green": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40233314886"
+  },
+  "cases": {
+    "T-SV2-MUL-02-A": "passed",
+    "T-SV2-MUL-02-B": "passed",
+    "T-SV2-MUL-02-C": "passed"
+  },
+  "measurement": {
+    "brain_instance_resource_conflicts": "counted per kind (port, project, volume) in agentibrain.bootstrap.brain_instance_resource_conflicts by the CLI on each refusal",
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ]
+  },
+  "interfaces": [
+    "BrainSettings.compose_project: None for the default brain, agentibrain-<brain_id> otherwise",
+    "BrainSettings.port_postgres, port_redis, port_mcp, port_ollama (PORT_* or BRAIN_PORT_*) rendered as published ports",
+    "compose.yml.j2: top-level name and no container_name for named brains; brain-api label agentibrain.vault",
+    "find_deployment: a named brain resolves only its config root",
+    "instance_ports and instance_conflicts(settings) -> [(port|project|volume, detail)]",
+    "CLI up, build, fix, install start: a named brain re-renders its compose and refuses on conflicts; down and uninstall never stop another stack"
+  ],
+  "compatibility": "The default brain renders byte for byte as before apart from its configurable ports and the vault label, keeps its fixed names, directory derived project and volumes, and keeps replacing other legacy stacks.",
+  "rollback": "Select the default brain explicitly (unset BRAIN_ID) to return to the single default compose path; named brains' config roots and project volumes are left in place. Rehearsed in CI by the default brain tests; not rehearsed on a docker host.",
+  "limitations": [
+    "The default brain does not see named brains' ports; such a clash fails as Docker's bind error, never by stopping a stack. Owned by SV2-MUL-03.",
+    "A stack rendered before this change carries no vault label, so a shared vault with it goes unseen until it is re-rendered. Storage isolation beyond compose is SV2-MUL-04.",
+    "fix moves PORT_* only for root compose stacks; a named brain's ports are set in its .env and take effect on the next up.",
+    "Conflict checks run against the live docker host at start time; a port taken between the check and compose up still fails as a Docker error."
+  ],
+  "case_files": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ]
+}

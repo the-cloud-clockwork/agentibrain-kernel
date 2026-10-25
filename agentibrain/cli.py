@@ -79,6 +79,25 @@ def _remove_other_stacks(keep: Path | None) -> None:
         console.print(f"[yellow]removed stack[/yellow] {project}")
 
 
+def _make_room(settings: BrainSettings, keep: Path | None) -> None:
+    if settings.compose_project is None:
+        _remove_other_stacks(keep)
+        return
+    if keep is None:
+        return
+    # Re-render so PORT_* edits in the brain's .env reach the literal ports compose publishes.
+    bootstrap.write_compose(settings, bootstrap.render_compose(settings))
+    conflicts = bootstrap.instance_conflicts(settings)
+    for kind, detail in conflicts:
+        bootstrap.brain_instance_resource_conflicts[kind] += 1
+        console.print(f"[red]{kind} conflict:[/red] {escape(detail)}")
+    if conflicts:
+        console.print(
+            f"[red]refusing to start {settings.compose_project}; no other stack was touched[/red]"
+        )
+        sys.exit(1)
+
+
 def _root_compose_command(settings: BrainSettings, args: list[str]) -> list[str]:
     if settings.ollama:
         return ["-f", "compose.yml", "-f", "local/compose.ollama.yml", *args]
@@ -89,7 +108,7 @@ def _root_compose_command(settings: BrainSettings, args: list[str]) -> list[str]
 def up_cmd() -> None:
     """Start the brain stack wherever it lives (docker compose up -d)."""
     mode, compose_dir, settings = _find_deployment_or_exit()
-    _remove_other_stacks(compose_dir)
+    _make_room(settings, compose_dir)
     if mode == "home":
         proc = bootstrap.compose_up(settings)
         if proc.returncode != 0:
@@ -116,7 +135,7 @@ def build_cmd(services: tuple[str, ...]) -> None:
     shows the resulting ps.
     """
     mode, compose_dir, settings = _find_deployment_or_exit()
-    _remove_other_stacks(compose_dir)
+    _make_room(settings, compose_dir)
     console.print(f"[bold]build + up[/bold] @ {compose_dir}")
     args = ["up", "-d", "--build", *services]
     if mode == "root-compose":
@@ -162,7 +181,7 @@ def down_cmd() -> None:
         console.print(f"[red]compose down failed[/red]\n{proc.stderr}")
         sys.exit(proc.returncode)
     console.print(proc.stdout or "[green]compose down ok[/green]")
-    _remove_other_stacks(None)
+    _make_room(settings, None)
 
 
 @main.command("fix")
@@ -178,7 +197,7 @@ def fix_cmd(dry_run: bool) -> None:
     mode, compose_dir, settings = _find_deployment_or_exit()
     env_path = bootstrap.deployment_env_path(settings, (mode, compose_dir))
     if not dry_run:
-        _remove_other_stacks(compose_dir)
+        _make_room(settings, compose_dir)
 
     console.print("[bold]1. ports[/bold]")
     compose_text = (compose_dir / "compose.yml").read_text()
@@ -266,7 +285,7 @@ def uninstall_cmd(name: str, no_unlink: bool, dry_run: bool) -> None:
                 console.print(f"[red]compose down failed[/red]\n{proc.stderr}")
                 sys.exit(proc.returncode)
             console.print(proc.stdout or "[green]compose down ok[/green]")
-            _remove_other_stacks(None)
+            _make_room(settings, None)
 
     if no_unlink:
         console.print("[yellow]profile link kept (--no-unlink)[/yellow]")
@@ -1096,7 +1115,7 @@ def _start_stack(settings: BrainSettings) -> None:
     if mode == "root-compose" and bootstrap.link_checkout_env(settings, compose_dir):
         brain_env = settings.config_dir.expanduser() / ".env"
         console.print(f"  [green]✓[/green] linked {compose_dir / '.env'} → {brain_env}")
-    _remove_other_stacks(compose_dir)
+    _make_room(settings, compose_dir)
     if mode == "home":
         proc = bootstrap.compose_up(settings)
         if proc.returncode != 0:
