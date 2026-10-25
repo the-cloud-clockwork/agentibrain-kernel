@@ -248,7 +248,7 @@ class GraphStore:
         with self._lock:
             return self._read_entity(ident)
 
-    def put_detail(self, payload: dict, build) -> tuple[str, dict]:
+    def put_detail(self, payload: dict, build: Callable[[dict], dict]) -> tuple[str, dict]:
         with self._lock, self._transaction():
             stored = self._conn.execute(
                 "SELECT document FROM knowledge_details WHERE entity_id = ? AND revision = ?",
