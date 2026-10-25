@@ -244,18 +244,15 @@ class GraphStore:
         try:
             self._conn.set_progress_handler(lambda: time.monotonic() >= deadline, 100)
             self._conn.execute("BEGIN")
-            try:
-                yield GraphReadView(self._conn)
-            except sqlite3.OperationalError as exc:
-                if "interrupted" not in str(exc):
-                    raise
-                raise TimeoutError from exc
-            finally:
-                self._conn.set_progress_handler(None, 0)
-                if self._conn.in_transaction:
-                    self._conn.execute("ROLLBACK")
+            yield GraphReadView(self._conn)
+        except sqlite3.OperationalError as exc:
+            if "interrupted" not in str(exc):
+                raise
+            raise TimeoutError from exc
         finally:
             self._conn.set_progress_handler(None, 0)
+            if self._conn.in_transaction:
+                self._conn.execute("ROLLBACK")
             self._lock.release()
 
     def put_entity(self, record: dict) -> str:
