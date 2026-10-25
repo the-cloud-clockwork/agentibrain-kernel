@@ -248,6 +248,81 @@ class GraphStore:
         with self._lock:
             return self._read_entity(ident)
 
+    def put_detail(self, payload: dict, build: Callable[[dict], dict]) -> tuple[str, dict]:
+        with self._lock, self._transaction():
+            stored = self._conn.execute(
+                "SELECT document FROM knowledge_details WHERE entity_id = ? AND revision = ?",
+                (payload["entity_id"], payload["revision"]),
+            ).fetchone()
+            entity = self._read_entity(payload["entity_id"])
+            if stored is not None:
+                previous = json.loads(stored["document"])
+                candidate = build(previous["entity"])
+                if candidate != previous:
+                    raise GraphRejection("revision_conflict", "detail revision is immutable")
+                return "replayed", previous
+            if entity is None or entity["revision"] != payload["revision"]:
+                raise GraphRejection("revision_conflict", "publish the matching graph entity first")
+            if entity["type"] not in {"arc", "lesson", "decision", "evidence"}:
+                raise GraphRejection("invalid_entity", "this entity type has no detail contract")
+            value = build(entity)
+            self._conn.execute(
+                "INSERT INTO knowledge_details VALUES (?, ?, ?)",
+                (entity["id"], entity["revision"], json.dumps(value, sort_keys=True)),
+            )
+            return "created", value
+
+    def read_detail(self, ident: str, revision: int | None, visible: Visible) -> dict | None:
+        with self._lock:
+            entity = self._read_entity(ident)
+            if entity is None or not visible(entity):
+                return None
+            selected_revision = entity["revision"] if revision is None else revision
+            row = self._conn.execute(
+                "SELECT document FROM knowledge_details WHERE entity_id = ? AND revision = ?",
+                (ident, selected_revision),
+            ).fetchone()
+            if row is None:
+                return None
+            value = json.loads(row["document"])
+            return value if visible(value["entity"]) else None
+
+    def neighbor_page(self, ident: str, after: str, limit: int, visible: Visible) -> dict | None:
+        with self._lock:
+            entity = self._read_entity(ident)
+            if entity is None or not visible(entity):
+                return None
+            rows = self._conn.execute(
+                "SELECT id, source, target, type, revision, status, confidence FROM graph_relations"
+                " WHERE (source = ? OR target = ?) AND id > ? ORDER BY id",
+                (ident, ident, after),
+            )
+            selected = []
+            for row in rows:
+                other = row["target"] if row["source"] == ident else row["source"]
+                neighbor = self._read_entity(other)
+                if neighbor is None or not visible(neighbor):
+                    continue
+                selected.append(
+                    {
+                        "relation_id": row["id"],
+                        "source": row["source"],
+                        "target": row["target"],
+                        "type": row["type"],
+                        "revision": row["revision"],
+                        "status": row["status"],
+                        "confidence": row["confidence"],
+                    }
+                )
+                if len(selected) > limit:
+                    break
+            return {
+                "entity_id": ident,
+                "view": "current_graph",
+                "relations": selected[:limit],
+                "next_after": selected[limit - 1]["relation_id"] if len(selected) > limit else None,
+            }
+
     @contextmanager
     def read_view(self, deadline: float) -> Iterator[GraphReadView]:
         remaining = max(0.0, deadline - time.monotonic())

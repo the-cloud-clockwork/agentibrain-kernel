@@ -1,0 +1,21 @@
+{
+  "package": "SV2-GRF-05",
+  "tested_commit": "e00afa37808bd34054f896ba7c5c7cc6f456465d",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40191816684",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40191816684/job/121164213497",
+  "verification": "CI fixture HTTP with real SQLite; grants and transport are fixture-local, not production.",
+  "case": "T-SV2-GRF-05-B",
+  "outcome": "passed",
+  "assertions": [
+    "Preview-only and malformed publications are rejected without replacing accepted bytes.",
+    "Workers cannot publish canonical detail; current restrictions hide historical bodies.",
+    "Missing source references are unavailable, never success labels.",
+    "Invalid pagination, unknown revisions and hash mismatches are refused.",
+    "MCP full reads call only the authoritative endpoint; legacy previews explicitly say complete false."
+  ],
+  "measurement": {
+    "knowledge_reference_resolution_failures": {
+      "intentional_missing_source_range": 1
+    }
+  }
+}

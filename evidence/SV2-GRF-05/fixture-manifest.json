@@ -1,0 +1,32 @@
+{
+  "package": "SV2-GRF-05",
+  "tested_commit": "e00afa37808bd34054f896ba7c5c7cc6f456465d",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40191816684",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40191816684/job/121164213497",
+  "verification": "CI fixture HTTP with real SQLite; grants and transport are fixture-local, not production.",
+  "input_hashes": {
+    "long_arc_first_section": "f69bef63c44c83cf10949f8cd5d80de6169e89d959fb9087a81bf24200486ef3",
+    "long_arc_second_section": "11d9c0c1c39b7517dd5881ddafca79aeeaf15ebd31c1a8bfac06ac45bf027d86",
+    "later_revision": "83e91e5a2cc2cf107b1082be42d4317f726acdc4621f9ce1ca24bd23b9512514",
+    "source_records": "058053d87c818d699cde0f00d670bca0e1c6ad857caa9758ea6a556d7c64fcee"
+  },
+  "test_source_hashes": {
+    "services/brain-api/tests/test_arc_detail.py": "9ae7e85771ac7c5032379e9a0675c04cb9bb56d1b781560af20f8729c3995a2a",
+    "services/mcp/tests/test_arc_detail.py": "d19b081198317b23491ac3b6eba1813614ea7ff6a99275b2cf223df20f9a2e57"
+  },
+  "fixture_dimensions": {
+    "brain": "hive-a",
+    "authorized_project": "alpha",
+    "excluded_project": "beta",
+    "revisions": [
+      1,
+      2,
+      3
+    ],
+    "section_page_limit": 1,
+    "reference_page_limit": 1,
+    "neighbor_page_limit": 1,
+    "source_offsets": "zero based half open Unicode character offsets"
+  },
+  "source_material": "Fixture-provided canonical evidence only; no live archives or private vault content."
+}
