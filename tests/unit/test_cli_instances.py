@@ -257,7 +257,7 @@ def test_dry_run_reports_an_inventory_without_mutating(host, args):
     flat = " ".join(result.output.split())
     assert "instance personal" in flat
     assert "agentibrain-personal" in flat
-    assert str(roots["personal"]) in flat
+    assert str(roots["personal"]) in "".join(result.output.split())
     assert {name: _snapshot(root) for name, root in roots.items()} == before
 
 

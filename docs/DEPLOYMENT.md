@@ -151,6 +151,27 @@ default stacks; it does not see named brains' ports, so such a clash surfaces as
 Docker's own bind error. Rollback to a single brain: select the default brain
 explicitly and leave named brains' config roots and volumes in place.
 
+### Selecting a brain for lifecycle commands
+
+`agentibrain --instance <id> <command>` (or `AGENTIBRAIN_INSTANCE=<id>`) acts on
+one brain only. Its config root is `AGENTIBRAIN_HOME` when that root holds the
+brain, otherwise `~/.agentibrain` for `default` and `~/.agentibrain-<id>` for a
+named brain; a root whose `.env` names another brain is refused untouched.
+
+- `down` and `uninstall` stop only the selected stack. Without `--instance`,
+  more than one legacy stack on the host is ambiguous and refuses.
+- The default brain still replaces other legacy stacks on `up`, `build`, `fix`
+  and `install`, but only those with ownership evidence: a container with a
+  fixed kernel name whose compose working dir holds a kernel compose file. Any
+  other `agentibrain_*` container is left alone.
+- `up`, `build`, `down` and `uninstall` take `--dry-run`, which prints the
+  instance, its compose project and every stack it would start, stop or replace.
+- `install` and `uninstall` default the agentihooks profile alias to `brain`
+  for the default brain and `brain-<id>` for a named one. A rerun of an
+  interrupted `install --instance <id>` completes that instance and keeps its
+  bearer and identity.
+- Rollback: run `--dry-run` first and select `--instance default` explicitly.
+
 ## Image strategy
 
 Each kernel service has its own image, tagged per branch:
