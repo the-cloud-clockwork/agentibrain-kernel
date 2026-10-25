@@ -27,8 +27,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+import knowledge_index
 import markers
-
 
 STATE_FILENAME = ".brain-arc-embed.state.json"
 STATE_GENERATION_ENV = "EMBEDDING_STATE_GENERATION"
@@ -144,7 +144,7 @@ def build_embed_text(fm: dict, body: str) -> str:
     return text[:MAX_TEXT_CHARS]
 
 
-def load_state(state_path: Path) -> dict[str, float]:
+def load_state(state_path: Path) -> dict:
     if not state_path.exists():
         return {}
     generation = os.environ.get(STATE_GENERATION_ENV, "")
@@ -161,7 +161,7 @@ def load_state(state_path: Path) -> dict[str, float]:
         return {}
 
 
-def save_state(state_path: Path, state: dict[str, float]) -> None:
+def save_state(state_path: Path, state: dict) -> None:
     # Atomic: write a sibling temp then os.replace. The 1-min drain embed and
     # the 2h cron embed both write this file and collide at HH:07; a plain
     # truncate+write there can interleave into corrupt JSON (load_state then
@@ -259,6 +259,25 @@ def scan_arcs(vault: Path):
                 if arc_id not in seen_ids:
                     seen_ids.add(arc_id)
                     yield md
+
+
+def _index_knowledge_stage(args: argparse.Namespace, vault: Path, state_path: Path) -> dict:
+    knowledge_state_path = state_path.with_name(knowledge_index.STATE_FILENAME)
+    # A read-only vault moves state to /tmp; the report then has nowhere it belongs.
+    report = vault / knowledge_index.REPORT_PATH if state_path.parent == vault else None
+    return knowledge_index.index_knowledge(
+        knowledge_index.IndexRun(
+            vault=vault,
+            api_url=args.api_url,
+            api_key=args.api_key,
+            load=lambda: {} if args.force_all else load_state(knowledge_state_path),
+            save=lambda s: save_state(knowledge_state_path, s),
+            lock_path=state_path.with_name(knowledge_index.LOCK_FILENAME),
+            report_path=report,
+            dry_run=args.dry_run,
+            prune=args.prune,
+        )
+    )
 
 
 def main() -> int:
@@ -469,6 +488,10 @@ def main() -> int:
             stats["lesson_prune_error"] = str(e)
             stats["errors"] += 1
             print(f"WARN: lesson prune failed: {e}", file=sys.stderr)
+
+    knowledge = _index_knowledge_stage(args, vault, state_path)
+    stats["errors"] += knowledge.pop("errors")
+    stats.update(knowledge)
 
     # Reaper: delete pgvector rows whose cluster_id no longer maps to an
     # arc file on disk (graduated, renamed, or removed).

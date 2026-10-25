@@ -1,0 +1,94 @@
+{
+  "package": "SV2-BRP-03",
+  "repository": "agentibrain-kernel",
+  "gate": "G5",
+  "state": "code accepted in CI; live evidence pending gate G5",
+  "evidence_kind": "mocked fixture for brain-ops, real pgvector service in CI for embeddings",
+  "tested_commit": "5b729ba9a0225ee4f5825f0ddffc5261693b02f6",
+  "fixture": {
+    "path": "services/brain-ops/tests/fixtures/sv2_brp03_knowledge.json",
+    "sha256": "c26086c8eacc277cbe6d1ad2a29adab96f950a11f92ccb2561af73b9c7f05b09",
+    "contents": "two independent sets (alpha swarm brain, beta personal brain): a long multi-project daily log (30 and 34 filler entries across two projects) ending in a late lesson, a superseded decision with its replacement, and an unattributed historical entry in an older log"
+  },
+  "runs": {
+    "red": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40157224814",
+    "red_commit": "e7b26ec12dc98a163b34185756e77e3f180629d2",
+    "red_note": "tests-only head on dev code: brain-ops step 20 failed, 188 passed on 3.10, 3.11, 3.12 and macos; the job stops there, so the later embeddings step did not run",
+    "green": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40158509897",
+    "green_commit": "5b729ba9a0225ee4f5825f0ddffc5261693b02f6",
+    "green_note": "brain-ops 216 passed, embeddings 172 passed with no skips, tick cycle end to end 41 passed"
+  },
+  "cases": {
+    "T-SV2-BRP-03-A": [
+      "services/brain-ops/tests/test_knowledge_index.py::test_a_late_lesson_in_a_long_daily_log_is_its_own_item_under_its_project (alpha, beta)",
+      "::test_every_entry_of_a_multi_project_log_keeps_its_own_project (alpha, beta)",
+      "::test_a_superseded_decision_stays_inspectable_and_qualified (alpha, beta)",
+      "::test_an_unattributed_historical_entry_stays_unknown_and_is_reported (alpha, beta)",
+      "::test_a_status_change_updates_metadata_without_reembedding (alpha, beta)",
+      "::test_an_unchanged_rerun_writes_nothing (alpha, beta)",
+      "services/embeddings/tests/test_knowledge_scope.py::test_a_late_lesson_from_the_indexer_is_found_under_its_project (alpha, beta; real pgvector)",
+      "::test_a_metadata_update_leaves_the_embedding_and_text_alone (real pgvector)",
+      "::test_the_project_filter_has_its_own_index (real pgvector)",
+      "tests/test_tick_cycle.py::test_completed_tick_serves_text_and_semantic_reads (live brain-api and embeddings: brain-knowledge row served)"
+    ],
+    "T-SV2-BRP-03-B": [
+      "services/embeddings/tests/test_knowledge_scope.py::test_a_substring_of_another_repository_never_passes_the_project_filter (alpha, beta; real pgvector; table snapshot unchanged; corrected exact request returns the item)",
+      "::test_the_brain_filter_keeps_another_brain_out (real pgvector)",
+      "::test_metadata_update_reports_a_missing_key (404 body echoes only the requested key)",
+      "::test_metadata_update_requires_a_producer",
+      "services/brain-ops/tests/test_knowledge_index.py::test_content_naming_another_project_does_not_join_that_project (alpha, beta)",
+      "::test_an_unattributed_entry_is_never_attributed_from_its_folder_or_text (alpha, beta)"
+    ],
+    "T-SV2-BRP-03-C": [
+      "services/brain-ops/tests/test_knowledge_index.py::test_a_failed_reindex_keeps_the_active_items_and_resumes_once (alpha, beta)",
+      "::test_a_failed_write_never_prunes_the_knowledge_producer (alpha, beta)",
+      "::test_a_scan_read_error_never_prunes_the_knowledge_producer (alpha, beta)",
+      "::test_an_empty_scan_keeps_the_index_state (alpha, beta)",
+      "::test_an_overlapping_run_writes_nothing (alpha, beta)",
+      "::test_a_removed_entry_is_pruned_only_after_a_clean_scan (alpha, beta)",
+      "::test_duplicate_item_keys_are_counted_in_the_report (alpha, beta)",
+      "tests/test_tick_cycle.py::test_index_failure_is_never_completed_and_retry_resumes_once (live: one row per producer after retry)"
+    ]
+  },
+  "measurement": {
+    "name": "knowledge_items_unindexed",
+    "fixture_value": 0,
+    "reported_by": "embed_arcs stats JSON and brain-feed/knowledge-scope-report.json; None when a run skipped on the lock"
+  },
+  "interfaces": {
+    "brain-knowledge producer": "one row per lesson log entry and per decision file; key lesson:<marker_id>, lesson:<log stem>:<content revision> for entries without a marker id, decision:<marker_id or ADR id>",
+    "metadata": [
+      "kind",
+      "project_id",
+      "projects",
+      "brain",
+      "scope (project or unattributed)",
+      "arcs",
+      "status (current or superseded)",
+      "superseded_by",
+      "revision",
+      "source {path, entry_ts, marker_id, session_id}"
+    ],
+    "POST /search": "optional project_id (exact containment on metadata projects, GIN index idx_ce_projects) and brain (exact match)",
+    "POST /metadata": "{key, producer, metadata} replaces that producer's metadata for the key without re-embedding; 404 when absent; 422 without producer",
+    "embed_arcs": "runs the knowledge stage in the same run; state .brain-knowledge-embed.state.json, lock .brain-knowledge-embed.lock",
+    "scope report": "brain-feed/knowledge-scope-report.json lists unattributed items with key, kind, path and entry ts, plus scanned, unindexed, read error and duplicate key counts"
+  },
+  "rollback": {
+    "action": "the brain-lesson whole-log producer and every existing producer are unchanged, so the last accepted index stays active; the indexer never writes the vault except its state, lock and report; removing the knowledge stage leaves brain-knowledge rows that one prune or delete by producer clears",
+    "rehearsal": "test_a_failed_reindex_keeps_the_active_items_and_resumes_once and test_a_failed_write_never_prunes_the_knowledge_producer show earlier rows survive a failed run; the unchanged brain-lesson assertions in test_tick_cycle show the old index still serves (unit level and CI end to end, mocked vault content)"
+  },
+  "limitations": [
+    "flock gives exclusion on one host and across hosts only where the NFS vault mount honours it",
+    "a lesson entry without a marker id gets a new key when edited; its old row stays searchable until the next --prune run, which compose and the chart pass",
+    "the disclosure check covers the /metadata 404 body; /search error bodies are not asserted",
+    "MCP and feed callers do not pass project_id or brain yet; that wiring belongs to later SV2-BRP packages",
+    "the brain-lesson whole-log rows remain as the rollback path and still appear in unfiltered searches",
+    "no metrics sink exists in the kernel; the measurement is a stats field and the report file"
+  ],
+  "case_files": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ]
+}

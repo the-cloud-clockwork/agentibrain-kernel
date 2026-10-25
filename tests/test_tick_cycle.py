@@ -289,7 +289,7 @@ def test_completed_tick_serves_text_and_semantic_reads(brain: dict) -> None:
     assert any(p.startswith("left/reference/lessons-") for p in text), text
     assert any(not p.startswith("raw/") and "lessons-" not in p for p in text), text
     producers = {hit["producer"] for hit in _semantic_hits(brain, token)}
-    assert {"brain-arc", "brain-lesson"} <= producers, producers
+    assert {"brain-arc", "brain-lesson", "brain-knowledge"} <= producers, producers
     raw_hits = _semantic_hits(brain, f"{token}rawstage")
     assert [h["producer"] for h in raw_hits] == ["brain-raw"], raw_hits
 
@@ -321,7 +321,7 @@ def test_index_failure_is_never_completed_and_retry_resumes_once(brain: dict) ->
     assert _lesson_entries(brain["vault"], token) == 1
     rows = _rows(brain, token)
     assert len(rows) == len(set(rows)), rows
-    assert sorted(r[2] for r in rows) == ["brain-arc", "brain-lesson"], rows
+    assert sorted(r[2] for r in rows) == ["brain-arc", "brain-knowledge", "brain-lesson"], rows
 
 
 def test_exhausted_index_retries_fail_the_request(brain: dict) -> None:

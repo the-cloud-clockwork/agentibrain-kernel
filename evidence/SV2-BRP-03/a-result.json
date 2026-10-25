@@ -1,0 +1,27 @@
+{
+  "case": "T-SV2-BRP-03-A",
+  "evidence_kind": "mocked fixture, with real pgvector for embeddings DB tests",
+  "tested_commit": "5b729ba9a0225ee4f5825f0ddffc5261693b02f6",
+  "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40158509897",
+  "fixture": {
+    "path": "services/brain-ops/tests/fixtures/sv2_brp03_knowledge.json",
+    "sha256": "c26086c8eacc277cbe6d1ad2a29adab96f950a11f92ccb2561af73b9c7f05b09",
+    "contents": "two independent sets (alpha swarm brain, beta personal brain): a long multi-project daily log (30 and 34 filler entries across two projects) ending in a late lesson, a superseded decision with its replacement, and an unattributed historical entry in an older log"
+  },
+  "tests": [
+    "services/brain-ops/tests/test_knowledge_index.py::test_a_late_lesson_in_a_long_daily_log_is_its_own_item_under_its_project (alpha, beta)",
+    "::test_every_entry_of_a_multi_project_log_keeps_its_own_project (alpha, beta)",
+    "::test_a_superseded_decision_stays_inspectable_and_qualified (alpha, beta)",
+    "::test_an_unattributed_historical_entry_stays_unknown_and_is_reported (alpha, beta)",
+    "::test_a_status_change_updates_metadata_without_reembedding (alpha, beta)",
+    "::test_an_unchanged_rerun_writes_nothing (alpha, beta)",
+    "services/embeddings/tests/test_knowledge_scope.py::test_a_late_lesson_from_the_indexer_is_found_under_its_project (alpha, beta; real pgvector)",
+    "::test_a_metadata_update_leaves_the_embedding_and_text_alone (real pgvector)",
+    "::test_the_project_filter_has_its_own_index (real pgvector)",
+    "tests/test_tick_cycle.py::test_completed_tick_serves_text_and_semantic_reads (live brain-api and embeddings: brain-knowledge row served)"
+  ],
+  "measurement": {
+    "knowledge_items_unindexed": 0
+  },
+  "outcome": "passed"
+}
