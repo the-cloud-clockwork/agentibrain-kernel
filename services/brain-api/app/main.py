@@ -694,7 +694,7 @@ def _graph_visible(authorization: str | None):
 
 @app.post("/graph/entity", status_code=201)
 def post_graph_entity(
-    payload: dict = Body(...),
+    payload: dict,
     authorization: str | None = Header(None),
     x_session_title: str | None = Header(None, alias="X-Session-Title"),
     _: None = Depends(require_token),
@@ -726,7 +726,7 @@ def post_graph_entity(
 
 @app.post("/graph/relation", status_code=201)
 def post_graph_relation(
-    payload: dict = Body(...),
+    payload: dict,
     quarantine: bool = Query(False),
     authorization: str | None = Header(None),
     _: None = Depends(require_token),
