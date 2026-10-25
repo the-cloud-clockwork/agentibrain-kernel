@@ -1,0 +1,12 @@
+{
+  "package": "SV2-GRF-02",
+  "description": "Duplicate markers, contradictory directions, a valid multirelation pair and a self loop, plus an unsupported type, a malformed marker and a parent versus sibling conflict.",
+  "files": {
+    "left/arc-a.md": "---\ncluster_id: arc-a\nproject: alpha\nedges: [{\"sibling\": \"arc-s\"}]\n---\n\n# Arc A\n\nprivate body text that must never reach a migration output\n\n## Edges\n\n<!-- @edge type=parent target=arc-p -->\n<!-- @edge type=parent target=`arc-p` -->\n<!-- @edge type=related target=arc-p -->\n<!-- @edge type=related target=arc-a -->\n<!-- @edge type=causes target=arc-p -->\n<!-- @edge type=supersedes target=arc-old -->\n",
+    "left/arc-p.md": "---\ncluster_id: arc-p\nproject: alpha\nedges: []\n---\n\n# Arc P\n\n## Edges\n\n<!-- @edge type=child target=arc-a -->\n<!-- @edge type=related target=arc-a -->\n",
+    "right/arc-x.md": "---\ncluster_id: arc-x\nproject: alpha\n---\n\n# Arc X\n\n<!-- @edge type=parent target=arc-y -->\n",
+    "right/arc-y.md": "---\ncluster_id: arc-y\nproject: alpha\n---\n\n# Arc Y\n\n<!-- @edge type=parent target=arc-x -->\n",
+    "right/arc-s.md": "---\ncluster_id: arc-s\nproject: beta\n---\n\n# Arc S\n\n<!-- @edge type=parent target=arc-a -->\n",
+    "clusters/2026-10-01/arc-old.md": "---\ncluster_id: arc-old\n---\n\n# Arc Old\n\n<!-- @edge type=related -->\n"
+  }
+}

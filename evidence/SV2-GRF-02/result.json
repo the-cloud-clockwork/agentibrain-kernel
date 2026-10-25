@@ -1,0 +1,39 @@
+{
+  "package": "SV2-GRF-02",
+  "repository": "agentibrain-kernel",
+  "gate": "G6",
+  "issue": "https://github.com/the-cloud-clockwork/agentibrain-kernel/issues/147",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/148",
+  "tested_commit": "9300405c10d5b3f624a09058e388c8dfebfa2bd9",
+  "state": "committed and verified in CI on the pull request head; mocked: a fixture vault in a temporary directory, no deployed brain-ops; not yet observed on a deployed vault",
+  "interfaces": [
+    "edge_relations.normalize(assertions, reviews, projects)",
+    "edge_relations.file_assertions(path, ref)",
+    "scripts/graph_migrate.py --vault --out [--dry-run] | --out --rollback",
+    "brain_apply.apply_edges"
+  ],
+  "supported_versions": [
+    "python 3.10",
+    "python 3.11",
+    "python 3.12",
+    "macos smoke"
+  ],
+  "measurement": {
+    "graph_migration_quarantined_edges": 7
+  },
+  "runs": {
+    "red": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40175016341",
+    "green": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40175774579"
+  },
+  "rollback_rehearsal": "TestRecovery restores the pre change projection from previous/ after verifying its manifest; original vault markers are never written",
+  "limitations": [
+    "the projection is a file set; loading it into the SV2-GRF-01 graph store needs arc relation types there",
+    "the tick prompt edge map and scripts/dedupe_edges.py still collapse by type rank; filed as a ledger follow up",
+    "no live vault migration observed"
+  ],
+  "cases": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ]
+}
