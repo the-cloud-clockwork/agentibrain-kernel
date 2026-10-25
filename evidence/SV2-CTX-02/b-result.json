@@ -1,0 +1,29 @@
+{
+  "package": "SV2-CTX-02",
+  "tested_commit": "422a56d79ad6048ee9c8d89e76c3358833b966a9",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40236993433",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40236993433/job/121300563118",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against a fixture SQLite graph; semantic and heat sources are fixture functions, not production.",
+  "case": "T-SV2-CTX-02-B",
+  "outcome": "passed",
+  "tests": [
+    "test_heat_alone_cannot_inject_unrelated_memory_and_the_store_is_unchanged[first]",
+    "test_heat_alone_cannot_inject_unrelated_memory_and_the_store_is_unchanged[second]",
+    "test_a_heat_only_candidate_is_excluded_by_the_pure_policy",
+    "test_another_projects_token_cannot_read_this_projects_ranking",
+    "test_an_unknown_policy_revision_is_refused"
+  ],
+  "assertions": [
+    "A heat-only candidate is never returned and is counted in excluded.heat_only.",
+    "The response text names neither the hot arc nor the out-of-scope project entity.",
+    "A project outside the token grant is refused 403 with reason project_grant; the graph snapshot is unchanged.",
+    "An unknown BRAIN_RANKING_POLICY is refused 503 with the store unchanged; a corrected setting needs a new request."
+  ],
+  "measurement": {
+    "context_relevance_at_k": {
+      "k": 3,
+      "first": 1.0,
+      "second": 1.0
+    }
+  }
+}

@@ -560,6 +560,17 @@ class GraphReadView:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def entities(self, project: str, types: frozenset[str], limit: int) -> list[dict]:
+        kinds = sorted(types)
+        rows = self._execute(
+            "SELECT id, type, revision, projects, vault_ref, title FROM graph_entities"
+            f" WHERE type IN ({', '.join('?' * len(kinds))})"
+            " AND EXISTS (SELECT 1 FROM json_each(projects) WHERE value = ?)"
+            " ORDER BY id LIMIT ?",
+            (*kinds, project, limit),
+        ).fetchall()
+        return [{**dict(row), "projects": json.loads(row["projects"])} for row in rows]
+
 
 _stores: dict[str, GraphStore] = {}
 _stores_lock = threading.Lock()

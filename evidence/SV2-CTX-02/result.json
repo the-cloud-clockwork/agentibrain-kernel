@@ -1,0 +1,63 @@
+{
+  "package": "SV2-CTX-02",
+  "tested_commit": "422a56d79ad6048ee9c8d89e76c3358833b966a9",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40236993433",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40236993433/job/121300563118",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against a fixture SQLite graph; semantic and heat sources are fixture functions, not production.",
+  "dependency": [
+    "SV2-CTX-01"
+  ],
+  "integration_gate": "G6",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/166",
+  "issue": "https://github.com/the-cloud-clockwork/agentibrain-kernel/issues/163",
+  "interfaces": [
+    "POST /v2/context response field context",
+    "app.retrieval.rank: Policy, Task, Sources, rank, retrieve, context_relevance_at_k",
+    "GraphReadView.entities(project, types, limit)",
+    "BRAIN_CONTEXT_RANKING, BRAIN_RANKING_POLICY"
+  ],
+  "supported_versions": {
+    "context_request": [
+      "2.0"
+    ],
+    "ranking_policy": [
+      "1",
+      "2"
+    ],
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ]
+  },
+  "state": {
+    "observed": "All pull request checks pass on the tested commit.",
+    "accepted": "The SV2-CTX-02 fixture cases pass in the full brain-api suite on three Python versions.",
+    "committed": "422a56d79ad6048ee9c8d89e76c3358833b966a9",
+    "externally_verified": "None; mocked fixture evidence only. G6 rollout must validate deployed behavior."
+  },
+  "cases": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ],
+  "rollback_rehearsal": "test_restoring_the_previous_policy_revision_keeps_the_source_store switches BRAIN_RANKING_POLICY from 2 to 1 and asserts the graph snapshot is unchanged; graph tables and vault archives are authoritative and never rebuilt by rollback.",
+  "limitations": [
+    "No semantic or heat source is wired in production; both report not_configured until a later package connects the embeddings and arc heat sources.",
+    "Lexical evidence reads graph entity titles only.",
+    "Graph evidence is one hop over accepted relations among scoped candidates."
+  ],
+  "measurement": {
+    "context_relevance_at_k": {
+      "k": 3,
+      "first": 1.0,
+      "second": 1.0
+    }
+  },
+  "commands": [
+    {
+      "invocation": "python -m pytest -q services/brain-api/tests (3.12)",
+      "output": "321 passed, 2 warnings in 61.45s"
+    }
+  ]
+}
