@@ -200,9 +200,12 @@ def test_up_replaces_every_other_stack(tmp_path, docker_shim):
     """Wherever `up` runs, every agentibrain stack but its target is downed first."""
     path, record = docker_shim
     home, repo = _home_with_repo(tmp_path)
+    for owned in (tmp_path / "other", home / ".agentibrain"):
+        owned.mkdir(exist_ok=True)
+        (owned / "compose.yml").write_text(MARKER_COMPOSE)
     (tmp_path / "docker-ps.txt").write_text(
         f"agentibrain_brain_api\tother-checkout\t{tmp_path / 'other'}\n"
-        f"agentibrain_minio\tagentibrain\t{home / '.agentibrain'}\n"
+        f"agentibrain_postgres\tagentibrain\t{home / '.agentibrain'}\n"
         f"agentibrain_redis\trepo\t{repo}\n"
     )
     r = _run_cli(["up"], home, cwd=repo, path=path)

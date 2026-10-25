@@ -144,7 +144,6 @@ def test_uninstall_downs_stack_before_unlinking_profile(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert events == [
         "down",
-        "other-stacks",
         ["/usr/bin/agentihooks", "link-profile", "unlink", "brain"],
     ]
 

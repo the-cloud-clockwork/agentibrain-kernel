@@ -190,3 +190,24 @@ class BrainSettings(BaseSettings):
             "endpoint": self.brain_url,
             "policy_revision": self.policy_revision,
         }
+
+
+def root_brain_id(root: Path) -> str | None:
+    """The brain a config root holds, from its .env BRAIN_ID; None for an unclaimed root."""
+    env_path = root / ".env"
+    if not env_path.is_file():
+        return DEFAULT_BRAIN_ID if (root / "config.yaml").is_file() else None
+    for line in env_path.read_text().splitlines():
+        if line.startswith("BRAIN_ID="):
+            return line.split("=", 1)[1].strip() or DEFAULT_BRAIN_ID
+    return DEFAULT_BRAIN_ID
+
+
+def instance_root(brain_id: str) -> Path:
+    """Config root of an explicitly selected brain: AGENTIBRAIN_HOME when it holds that
+    brain, else ~/.agentibrain for the default brain and ~/.agentibrain-<id> for a named one."""
+    home = config_dir()
+    if root_brain_id(home) == brain_id:
+        return home
+    suffix = "" if brain_id == DEFAULT_BRAIN_ID else f"-{brain_id}"
+    return Path.home() / f".agentibrain{suffix}"

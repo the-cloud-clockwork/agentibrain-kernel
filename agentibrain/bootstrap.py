@@ -549,21 +549,54 @@ def _kernel_containers() -> list[list[str]]:
 
 
 def remove_other_stacks(keep: Path | None) -> list[tuple[str, subprocess.CompletedProcess]]:
-    """`down` every compose project holding agentibrain_* containers except the
-    one running from ``keep``. Both compose files hardcode the container names,
-    so a stack can only replace another. Runs by project name from an empty
-    dir: a compose file in cwd would otherwise be loaded under that name.
-    Volumes survive.
+    """`down` every owned legacy stack except the one running from ``keep``.
+
+    Both compose files hardcode the container names, so a legacy stack can only
+    replace another. Only projects with ownership evidence (legacy_stacks) are
+    touched. Runs by project name from an empty dir: a compose file in cwd would
+    otherwise be loaded under that name. Volumes survive.
     """
-    projects = {project: workdir for _, project, workdir in _kernel_containers() if project}
     results = []
-    for project, workdir in projects.items():
-        if keep is not None and workdir and Path(workdir).resolve() == keep.resolve():
+    for project, workdir in legacy_stacks()[0].items():
+        if keep is not None and workdir.resolve() == keep.resolve():
             continue
         with tempfile.TemporaryDirectory() as empty:
             proc = _docker_compose(["-p", project, "down", "--remove-orphans"], Path(empty))
         results.append((project, proc))
     return results
+
+
+LEGACY_CONTAINER_NAMES = frozenset(
+    re.findall(
+        r"container_name: (agentibrain_\w+)", (_templates_dir() / COMPOSE_TEMPLATE).read_text()
+    )
+)
+
+brain_cross_instance_mutation_rejections: Counter[str] = Counter()
+
+
+def _is_kernel_compose(workdir: str) -> bool:
+    compose = Path(workdir) / "compose.yml"
+    try:
+        return compose.is_file() and COMPOSE_MARKER in compose.read_text()
+    except OSError:
+        return False
+
+
+def legacy_stacks() -> tuple[dict[str, Path], list[list[str]]]:
+    """Owned legacy compose projects (project to working dir) and the unowned containers.
+
+    A project is owned when one of its containers carries a fixed legacy kernel
+    name and its compose working dir holds a kernel compose file. Any other
+    ``agentibrain_*`` container is a lookalike and is never stopped.
+    """
+    owned: dict[str, Path] = {}
+    candidates = _kernel_containers()
+    for name, project, workdir in candidates:
+        if name in LEGACY_CONTAINER_NAMES and project and workdir and _is_kernel_compose(workdir):
+            owned[project] = Path(workdir)
+    unowned = [c for c in candidates if c[1] not in owned]
+    return owned, unowned
 
 
 _PORT_VAR = re.compile(r"\$\{(PORT_[A-Z0-9_]+):-(\d+)\}")
