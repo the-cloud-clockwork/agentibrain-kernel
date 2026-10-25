@@ -156,6 +156,13 @@ def _read_json(path: Path) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def _mtime(path: Path) -> float | None:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
 def _age_seconds(stamp: Any, now: datetime) -> int | None:
     try:
         when = datetime.fromisoformat(str(stamp))
@@ -216,7 +223,7 @@ def project_feed_payload(
     failures = 0
     snapshot_path = feed_dir / PROJECT_SNAPSHOT_DIR / f"{key}.json"
     snapshot = _read_json(snapshot_path)
-    checked = snapshot_path.stat().st_mtime if snapshot is not None else None
+    checked = _mtime(snapshot_path) if snapshot is not None else None
     if snapshot is not None and snapshot.get("project_id") != project_id:
         snapshot, failures = None, failures + 1
     intent_record = _read_json(feed_dir / PROJECT_INTENT_DIR / f"{key}.json")

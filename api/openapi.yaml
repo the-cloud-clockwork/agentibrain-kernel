@@ -318,7 +318,14 @@ paths:
                         type: object
                         properties:
                           state: { type: string, enum: [fresh, stale, missing] }
-                          generated_at: { type: string, nullable: true }
+                          generated_at:
+                            type: string
+                            nullable: true
+                            description: When the current revision was first produced.
+                          checked_at:
+                            type: string
+                            nullable: true
+                            description: When a tick last confirmed the revision; age and state count from here.
                           age_seconds: { type: integer, nullable: true }
                       arcs: { type: array, items: { type: object } }
                       lessons: { type: array, items: { type: object } }
