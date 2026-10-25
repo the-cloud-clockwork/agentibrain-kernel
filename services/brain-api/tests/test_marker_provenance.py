@@ -47,6 +47,8 @@ ROUTER = "router-bearer"
 def _load(path: str, name: str):
     spec = importlib.util.spec_from_file_location(name, ROOT / path)
     module = importlib.util.module_from_spec(spec)
+    # Dataclasses resolve their module through sys.modules while the class body runs.
+    importlib.sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -247,7 +249,9 @@ def test_a_marker_claiming_another_project_is_refused_and_writes_nothing(
 ):
     client = _scoped_client(monkeypatch, vault, "hive-a@github.com/acme/alpha=worker-alpha")
     marker = json.loads(json.dumps(FIXTURE["second"]["markers"][marker_index]))
-    marker["content"] = f"Filed for github.com/acme/alpha by alpha. {marker['content']}"
+    marker["content"] = (
+        f"Filed for github.com/acme/alpha by alpha, about github.com/acme/beta. {marker['content']}"
+    )
     marker["attrs"]["source"] = "alpha"
     before = _vault_digest(vault)
 
@@ -348,3 +352,77 @@ def test_concurrent_duplicate_writes_from_separate_processes_leave_one_marker(
     if marker["type"] in ("signal", "decision"):
         folder = (vault / results[0]["vault_path"]).parent
         assert sum(marker_id in p.read_text(encoding="utf-8") for p in folder.glob("*.md")) == 1
+
+
+def test_a_marker_naming_a_foreign_project_without_its_id_is_refused(vault: Path, monkeypatch):
+    client = _scoped_client(monkeypatch, vault, "hive-a@github.com/acme/alpha=worker-alpha")
+    (vault / "left" / "projects" / "beta").mkdir(parents=True)
+    marker = json.loads(json.dumps(FIXTURE["first"]["markers"][2]))
+    del marker["attrs"]["project_id"]
+    marker["attrs"]["project"] = "beta"
+    before = _vault_digest(vault)
+
+    assert _post(client, marker, token="worker-alpha").status_code == 403
+    assert _vault_digest(vault) == before
+
+
+def test_a_granted_worker_cannot_route_a_legacy_milestone_into_a_foreign_project(
+    vault: Path, monkeypatch
+):
+    client = _scoped_client(monkeypatch, vault, "hive-a@github.com/acme/alpha=worker-alpha")
+    (vault / "left" / "projects" / "beta").mkdir(parents=True)
+    body = {"type": "milestone", "content": "Legacy milestone.", "attrs": {"source": "beta"}}
+
+    data = client.post("/marker", json=body, headers={"Authorization": "Bearer worker-alpha"})
+
+    assert data.status_code == 201
+    assert data.json()["vault_path"].startswith("daily/")
+
+
+@pytest.mark.parametrize("marker_index", [0, 1, 2, 3])
+def test_a_write_interrupted_before_it_is_recorded_lands_once_on_retry(
+    marker_index, vault: Path, client, monkeypatch
+):
+    import app.main as main
+    import app.markers as markers
+
+    marker = FIXTURE["first"]["markers"][marker_index]
+    record = markers._record
+
+    def die_before_commit(registry, entry):
+        if "state" not in entry:
+            raise OSError("process killed")
+        record(registry, entry)
+
+    monkeypatch.setattr(markers, "_record", die_before_commit)
+    assert _post(client, marker).status_code == 503
+    monkeypatch.setattr(markers, "_record", record)
+    main._idempotency_cache.clear()
+
+    again = _post(client, marker).json()
+
+    assert again["action"] == "replayed"
+    stored = (vault / again["vault_path"]).read_text(encoding="utf-8")
+    assert stored.count(again["marker_id"]) == 1
+    if marker["type"] in ("signal", "decision"):
+        folder = (vault / again["vault_path"]).parent
+        holders = [p for p in folder.glob("*.md") if again["marker_id"] in p.read_text("utf-8")]
+        assert len(holders) == 1
+    readback = _readback(client, again["marker_id"]).json()
+    assert readback["provenance"]["task"] == "t-alpha-1"
+
+
+def test_a_lesson_log_written_before_provenance_still_dedups_and_reads_back(vault: Path, client):
+    marker = FIXTURE["first"]["markers"][0]
+    log = vault / "left" / "reference" / f"lessons-{marker['ts'][:10]}.md"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(
+        f"## {marker['ts']} — old-agent — `sess-old`\n\n{marker['content']}\n", encoding="utf-8"
+    )
+
+    data = _post(client, marker).json()
+
+    assert data["action"] == "duplicate"
+    record = _readback(client, data["marker_id"]).json()
+    assert record["vault_path"] == str(log.relative_to(vault))
+    assert record["provenance"] == {}

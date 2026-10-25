@@ -59,11 +59,7 @@ def test_marker_milestone_daily_fallback(vault: Path, client):
 
 def test_marker_milestone_routes_to_project_when_present(vault: Path, client):
     (vault / "left" / "projects" / "phase-7").mkdir(parents=True)
-    body = {
-        "type": "milestone",
-        "content": "Stream shipped.",
-        "attrs": {"source": "engineer@1", "project": "phase-7"},
-    }
+    body = {"type": "milestone", "content": "Stream shipped.", "attrs": {"source": "phase-7"}}
     resp = client.post("/marker", json=body)
     data = resp.json()
     assert data["vault_path"] == "left/projects/phase-7/BLOCKS.md"

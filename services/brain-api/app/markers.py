@@ -277,7 +277,7 @@ def _first_marker_id(text: str) -> str:
 
 @contextlib.contextmanager
 def _registry_lock(root: Path) -> Iterator[Path]:
-    """Exclusive across processes and replicas sharing the vault, not only threads."""
+    """Exclusive across threads and processes; across hosts only where the mount honours flock."""
     registry = root / MARKER_REGISTRY_DIR
     registry.mkdir(parents=True, exist_ok=True)
     with open(registry / ".lock", "a+") as handle:
@@ -308,7 +308,7 @@ def read_marker(marker_id: str, vault_root: Path | None = None) -> dict | None:
     """A recorded marker with the provenance read back from its vault file."""
     root = Path(vault_root) if vault_root else VAULT_ROOT
     entry = _registry_entry(root / MARKER_REGISTRY_DIR, marker_id)
-    if entry is None:
+    if entry is None or entry.get("state") == "pending":
         return None
     canonical = entry.get("canonical_marker_id") or marker_id
     try:
@@ -529,24 +529,36 @@ def _write_lesson(root, content, attrs, stamps, provenance) -> tuple[Path, str, 
     return target, action, kept
 
 
-def _milestone_project(attrs: dict[str, Any]) -> str:
+def milestone_project(attrs: dict[str, Any]) -> str:
     project = str(attrs.get("project") or "").strip()
     if project:
         return project
     project_id = str(attrs.get("project_id") or "").strip()
-    return "" if project_id in ("", "unknown") else project_id.rsplit("/", 1)[-1]
+    if project_id and project_id != "unknown":
+        return project_id.rsplit("/", 1)[-1]
+    # A client older than project attribution only ever named the project in source.
+    return str(attrs.get("source") or "").strip()
 
 
-def _write_milestone(root, content, attrs, stamps, provenance) -> tuple[Path, str, str]:
-    date_part, _, ts_iso = stamps
-    rel = f"daily/{date_part}.md"
-    project = _milestone_project(attrs)
-    if project:
+def granted_names(grant: frozenset[str]) -> set[str]:
+    return {project_id.rsplit("/", 1)[-1] for project_id in grant}
+
+
+def _milestone_target(root, attrs, stamps, grant: frozenset[str]) -> Path:
+    rel = f"daily/{stamps[0]}.md"
+    project = milestone_project(attrs)
+    if project and (not grant or project in granted_names(grant)):
         project_slug = _slugify(project, max_len=80)
         if (root / "left" / "projects" / project_slug).is_dir():
             rel = f"left/projects/{project_slug}/BLOCKS.md"
-    target = _resolve_inside_vault(rel, root)
-    _append(target, _build_milestone_entry(content, attrs, ts_iso, provenance))
+    return _resolve_inside_vault(rel, root)
+
+
+def _write_milestone(
+    root, content, attrs, stamps, provenance, grant: frozenset[str] = frozenset()
+) -> tuple[Path, str, str]:
+    target = _milestone_target(root, attrs, stamps, grant)
+    _append(target, _build_milestone_entry(content, attrs, stamps[2], provenance))
     return target, "appended", ""
 
 
@@ -588,6 +600,52 @@ def _write_decision(root, content, attrs, stamps, provenance) -> tuple[Path, str
     return target, "created", ""
 
 
+def _written_candidates(root, marker_type, attrs, stamps, grant) -> list[Path]:
+    if marker_type == "lesson":
+        return [root / "left" / "reference" / f"lessons-{stamps[0]}.md"]
+    if marker_type == "milestone":
+        return [_milestone_target(root, attrs, stamps, grant)]
+    if marker_type == "signal":
+        folder = root / "amygdala"
+        names = sorted(
+            (p for p in folder.glob("*.md") if _SIGNAL_FILENAME_RE.match(p.name)),
+            key=lambda p: p.name,
+            reverse=True,
+        )
+        return names[:SIGNAL_DEDUP_SCAN_MAX]
+    return sorted((root / "left" / "decisions").glob("ADR-*.md"), reverse=True)
+
+
+def _already_written(root, marker_type, marker_id, attrs, stamps, grant) -> Path | None:
+    """A file holding this marker id from an attempt that died between pending and recorded."""
+    for path in _written_candidates(root, marker_type, attrs, stamps, grant):
+        try:
+            if marker_id in path.read_text(encoding="utf-8"):
+                return path
+        except OSError:
+            continue
+    return None
+
+
+def _committed_entry(registry, root, marker_type, marker_id, attrs, stamps, grant) -> dict | None:
+    """The recorded write of this marker id, completing one a crash left pending."""
+    recorded = _registry_entry(registry, marker_id)
+    if recorded is None or recorded.get("state") != "pending":
+        return recorded
+    orphan = _already_written(root, marker_type, marker_id, attrs, stamps, grant)
+    if orphan is None:
+        return None
+    recorded = {
+        "marker_id": marker_id,
+        "canonical_marker_id": marker_id,
+        "marker_type": marker_type,
+        "vault_path": str(orphan.relative_to(root)),
+        "action": "recovered",
+    }
+    _record(registry, recorded)
+    return recorded
+
+
 _WRITERS = {
     "lesson": _write_lesson,
     "milestone": _write_milestone,
@@ -603,12 +661,15 @@ def write_marker(
     vault_root: Path | None = None,
     marker_id: str | None = None,
     brain: str = "",
+    grant: frozenset[str] = frozenset(),
 ) -> dict:
     """Route a single marker to its vault destination, at most once per marker id.
 
     Returns {vault_path, action, marker_type, written_bytes, marker_id,
-    marker_provenance_loss_total}; a marker id already recorded returns
-    action "replayed" with the original vault path and writes nothing.
+    marker_provenance_loss_total}; a marker id already recorded, or already
+    in the vault from an attempt that died before recording it, returns
+    action "replayed" with the original vault path and writes nothing. A
+    non-empty grant limits milestone routing to the granted projects.
     """
     if marker_type not in _VALID_TYPES:
         raise MarkerError(f"invalid marker type: {marker_type!r}")
@@ -627,7 +688,7 @@ def write_marker(
     provenance, lost = marker_provenance(attrs, marker_id, brain)
 
     with _registry_lock(root) as registry:
-        recorded = _registry_entry(registry, marker_id)
+        recorded = _committed_entry(registry, root, marker_type, marker_id, attrs, stamps, grant)
         if recorded is not None:
             return {
                 "vault_path": recorded["vault_path"],
@@ -637,7 +698,11 @@ def write_marker(
                 "marker_id": marker_id,
                 "marker_provenance_loss_total": 0,
             }
-        target, action, kept = _WRITERS[marker_type](root, content, attrs, stamps, provenance)
+        _record(registry, {"marker_id": marker_id, "marker_type": marker_type, "state": "pending"})
+        extra = {"grant": grant} if marker_type == "milestone" else {}
+        target, action, kept = _WRITERS[marker_type](
+            root, content, attrs, stamps, provenance, **extra
+        )
         vault_path = str(target.relative_to(root))
         _record(
             registry,

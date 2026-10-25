@@ -50,7 +50,14 @@ from starlette.concurrency import run_in_threadpool
 
 from . import pipeline, scope, vault_reader
 from .feed import VAULT_ROOT, feed_payload
-from .markers import MarkerError, claimed_projects, marker_id_for, read_marker, write_marker
+from .markers import (
+    MarkerError,
+    claimed_projects,
+    granted_names,
+    marker_id_for,
+    read_marker,
+    write_marker,
+)
 from .router import IngestResult, ingest_message
 from .signal import read_signal
 from .tick_trigger import enqueue_tick, get_tick_status
@@ -77,9 +84,9 @@ _idempotency_cache: dict[str, tuple[float, dict]] = {}
 _idempotency_lock = threading.Lock()
 # This lock also serializes `write_marker` itself, not just the cache — the
 # signal dedup inside it is a scan-then-write, which is only race-free because
-# the whole thing happens under here. It also holds across processes and
-# replicas, because write_marker takes the
-# marker registry's file lock in the vault around the same scan-then-write.
+# the whole thing happens under here. Across processes on one host it also
+# holds, because write_marker takes the marker registry's flock in the vault;
+# across hosts only as far as the vault mount honours flock.
 _feed_cache: dict[str, Any] = {"ts": 0.0, "payload": None}
 
 
@@ -573,7 +580,9 @@ def post_marker(
     if not isinstance(attrs, dict):
         raise HTTPException(status_code=400, detail="attrs must be an object")
     grant = _caller_grant(authorization)
-    if not scope.admits(grant, claimed_projects(attrs), unattributed=True):
+    named = str(attrs.get("project") or "").strip()
+    foreign_name = bool(grant and named and named not in granted_names(grant))
+    if foreign_name or not scope.admits(grant, claimed_projects(attrs), unattributed=True):
         scope.record_denial(
             scope.worker_brain(_bearer(authorization)) or "", "POST /marker", x_session_title or ""
         )
@@ -600,6 +609,7 @@ def post_marker(
                 attrs,
                 marker_id=marker_id_for(idem_key),
                 brain=scope.BRAIN_ID,
+                grant=grant,
             )
         except MarkerError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
