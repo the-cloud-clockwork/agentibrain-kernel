@@ -1,0 +1,25 @@
+{
+  "case": "T-SV2-BRP-03-C",
+  "evidence_kind": "mocked fixture, with real pgvector for embeddings DB tests",
+  "tested_commit": "5b729ba9a0225ee4f5825f0ddffc5261693b02f6",
+  "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40158509897",
+  "fixture": {
+    "path": "services/brain-ops/tests/fixtures/sv2_brp03_knowledge.json",
+    "sha256": "c26086c8eacc277cbe6d1ad2a29adab96f950a11f92ccb2561af73b9c7f05b09",
+    "contents": "two independent sets (alpha swarm brain, beta personal brain): a long multi-project daily log (30 and 34 filler entries across two projects) ending in a late lesson, a superseded decision with its replacement, and an unattributed historical entry in an older log"
+  },
+  "tests": [
+    "services/brain-ops/tests/test_knowledge_index.py::test_a_failed_reindex_keeps_the_active_items_and_resumes_once (alpha, beta)",
+    "::test_a_failed_write_never_prunes_the_knowledge_producer (alpha, beta)",
+    "::test_a_scan_read_error_never_prunes_the_knowledge_producer (alpha, beta)",
+    "::test_an_empty_scan_keeps_the_index_state (alpha, beta)",
+    "::test_an_overlapping_run_writes_nothing (alpha, beta)",
+    "::test_a_removed_entry_is_pruned_only_after_a_clean_scan (alpha, beta)",
+    "::test_duplicate_item_keys_are_counted_in_the_report (alpha, beta)",
+    "tests/test_tick_cycle.py::test_index_failure_is_never_completed_and_retry_resumes_once (live: one row per producer after retry)"
+  ],
+  "measurement": {
+    "knowledge_items_unindexed": "2 after the planted outage, 0 after the resumed run"
+  },
+  "outcome": "passed"
+}

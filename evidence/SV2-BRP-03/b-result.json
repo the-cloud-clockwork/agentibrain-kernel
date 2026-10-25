@@ -1,0 +1,23 @@
+{
+  "case": "T-SV2-BRP-03-B",
+  "evidence_kind": "mocked fixture, with real pgvector for embeddings DB tests",
+  "tested_commit": "5b729ba9a0225ee4f5825f0ddffc5261693b02f6",
+  "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40158509897",
+  "fixture": {
+    "path": "services/brain-ops/tests/fixtures/sv2_brp03_knowledge.json",
+    "sha256": "c26086c8eacc277cbe6d1ad2a29adab96f950a11f92ccb2561af73b9c7f05b09",
+    "contents": "two independent sets (alpha swarm brain, beta personal brain): a long multi-project daily log (30 and 34 filler entries across two projects) ending in a late lesson, a superseded decision with its replacement, and an unattributed historical entry in an older log"
+  },
+  "tests": [
+    "services/embeddings/tests/test_knowledge_scope.py::test_a_substring_of_another_repository_never_passes_the_project_filter (alpha, beta; real pgvector; table snapshot unchanged; corrected exact request returns the item)",
+    "::test_the_brain_filter_keeps_another_brain_out (real pgvector)",
+    "::test_metadata_update_reports_a_missing_key (404 body echoes only the requested key)",
+    "::test_metadata_update_requires_a_producer",
+    "services/brain-ops/tests/test_knowledge_index.py::test_content_naming_another_project_does_not_join_that_project (alpha, beta)",
+    "::test_an_unattributed_entry_is_never_attributed_from_its_folder_or_text (alpha, beta)"
+  ],
+  "measurement": {
+    "knowledge_items_unindexed": 0
+  },
+  "outcome": "passed"
+}
