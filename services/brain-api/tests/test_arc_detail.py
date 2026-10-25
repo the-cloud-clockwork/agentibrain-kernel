@@ -92,6 +92,26 @@ def test_historical_revision_replay_and_restriction(monkeypatch, vault, tmp_path
     assert "long body" not in response.text
 
 
+def test_graph_rebuild_and_process_reopen_preserve_detail(monkeypatch, vault, tmp_path):
+    from app import graph
+
+    db = tmp_path / "reopen.db"
+    client = _client(monkeypatch, vault, db, "hive-a@alpha=worker")
+    _publish(client)
+    _publish(client, 2, [{"id": "new", "content": "second revision"}])
+    before = _read(client, revision=1).json()
+    store = graph.active_store()
+    canonical = store.snapshot()
+    assert store.rebuild(canonical)["entities"] == 1
+    assert _read(client, revision=1).json() == before
+    store._conn.close()
+    graph._stores.pop(str(db))
+    client = _client(monkeypatch, vault, db, "hive-a@alpha=worker")
+    assert graph.active_store() is not store
+    assert _read(client, revision=1).json() == before
+    assert _read(client).json()["revision"] == 2
+
+
 def test_missing_source_range_and_reference_boundary(monkeypatch, vault, tmp_path):
     client = _client(monkeypatch, vault, tmp_path / "sources.db", "hive-a@alpha=worker")
     lesson = _entity("lesson:attached")
