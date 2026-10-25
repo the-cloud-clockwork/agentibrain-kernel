@@ -54,5 +54,11 @@
     "a-result.json",
     "b-result.json",
     "c-result.json"
-  ]
+  ],
+  "outcomes": {
+    "observed": "CI on a mocked docker host, runs named in runs",
+    "accepted": "not claimed; accepted only when the master or operator accepts the package",
+    "committed": "tested_commit on the pull request branch; merge into dev pending",
+    "externally_verified": "not claimed; no docker host or deployed brain was observed"
+  }
 }
