@@ -29,6 +29,7 @@ if str(_BRAIN_OPS) not in sys.path:
     sys.path.insert(0, str(_BRAIN_OPS))
 
 session_source = importlib.import_module("session_source")
+cluster_module = importlib.import_module("cluster")
 
 FIXTURE = json.loads((_HERE / "fixtures" / "sv2_ing01_feed.json").read_text(encoding="utf-8"))
 TOKEN = "fixture-feed-token"
@@ -51,7 +52,7 @@ class Feed:
         self.page_override: dict = {}
 
     def leak(self) -> None:
-        self.changes.insert(1, self.fixture["outside_change"])
+        self.changes.insert(2, self.fixture["outside_change"])
 
     def _visible(self, change: dict, projects: set[str]) -> bool:
         records = self.fixture["sessions"][change["session_uid"]]["records"]
@@ -169,11 +170,7 @@ def stub_sessions(out_dir: Path) -> list[str]:
     for stub in out_dir.glob("*.md"):
         if stub.name.startswith("_"):
             continue
-        found += [
-            line.strip()[2:]
-            for line in stub.read_text().splitlines()
-            if line.startswith("  - ") and ":" in line
-        ]
+        found += sorted(cluster_module.recorded_sessions(stub))
     return sorted(found)
 
 
@@ -359,7 +356,7 @@ def test_interrupted_batch_resumes_from_committed_cursor_without_duplicate_arcs(
     store = session_source.Store(tmp_path / "state")
     out_dir = tmp_path / "clusters" / "2026-10-20"
     first = run(url, FIXTURE, store, limit=3, max_pages=1)
-    cluster(first, out_dir, tmp_path)
+    cluster(first, tmp_path / "clusters" / "2026-10-19", tmp_path)
     store.commit(first["source"]["stage_id"])
     committed_cursor = store.load()["cursor"]
 
