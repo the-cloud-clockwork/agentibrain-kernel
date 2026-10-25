@@ -143,6 +143,16 @@ class BrainSettings(BaseSettings):
         validation_alias=AliasChoices("PORT_BRAIN_API", "BRAIN_PORT_BRAIN_API"),
         description="Published brain-api port (compose PORT_BRAIN_API).",
     )
+    port_postgres: int = Field(
+        default=5432, validation_alias=AliasChoices("PORT_POSTGRES", "BRAIN_PORT_POSTGRES")
+    )
+    port_redis: int = Field(
+        default=6379, validation_alias=AliasChoices("PORT_REDIS", "BRAIN_PORT_REDIS")
+    )
+    port_mcp: int = Field(default=8104, validation_alias=AliasChoices("PORT_MCP", "BRAIN_PORT_MCP"))
+    port_ollama: int = Field(
+        default=11434, validation_alias=AliasChoices("PORT_OLLAMA", "BRAIN_PORT_OLLAMA")
+    )
     brain_url: str = Field(
         default="",
         description=(
@@ -161,6 +171,11 @@ class BrainSettings(BaseSettings):
         if not self.brain_url:
             self.brain_url = f"http://localhost:{self.port_brain_api}"
         return self
+
+    @property
+    def compose_project(self) -> str | None:
+        """Compose project of a named brain; the default brain keeps its legacy fixed names."""
+        return None if self.brain_id == DEFAULT_BRAIN_ID else f"agentibrain-{self.brain_id}"
 
     def require_s3(self) -> None:
         """Raise if mode='s3' but bucket is missing."""

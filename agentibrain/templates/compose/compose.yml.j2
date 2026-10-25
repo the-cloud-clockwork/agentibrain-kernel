@@ -9,11 +9,12 @@
 # extraction and marker drain; both are host integrations, so a packaged
 # deployment leaves them out and tick-cron skips those passes.
 
-services:
+{% if compose_project %}name: {{ compose_project }}
+{% endif %}services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: agentibrain_postgres
-    restart: unless-stopped
+{% if not compose_project %}    container_name: agentibrain_postgres
+{% endif %}    restart: unless-stopped
     environment:
       POSTGRES_USER: agentibrain
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentibrain}
@@ -31,8 +32,8 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: agentibrain_redis
-    restart: unless-stopped
+{% if not compose_project %}    container_name: agentibrain_redis
+{% endif %}    restart: unless-stopped
     volumes:
       - agentibrain_redis_data:/data
     ports:
@@ -47,8 +48,8 @@ services:
 {% if ollama %}
   ollama:
     image: ollama/ollama:latest
-    container_name: agentibrain_ollama
-    restart: unless-stopped
+{% if not compose_project %}    container_name: agentibrain_ollama
+{% endif %}    restart: unless-stopped
     volumes:
       - agentibrain_ollama_data:/root/.ollama
     ports:
@@ -63,8 +64,8 @@ services:
 
   ollama-init:
     image: ollama/ollama:latest
-    container_name: agentibrain_ollama_init
-    depends_on:
+{% if not compose_project %}    container_name: agentibrain_ollama_init
+{% endif %}    depends_on:
       ollama: { condition: service_healthy }
     environment:
       OLLAMA_HOST: http://ollama:11434
@@ -80,8 +81,8 @@ services:
 {% endif %}
   embeddings:
     image: {{ embeddings_image | default("ghcr.io/the-cloud-clockwork/agentibrain-embeddings:dev") }}
-    container_name: agentibrain_embeddings
-    restart: unless-stopped
+{% if not compose_project %}    container_name: agentibrain_embeddings
+{% endif %}    restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
     environment:
@@ -112,8 +113,8 @@ services:
 
   brain-api:
     image: {{ brain_api_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-api:dev") }}
-    container_name: agentibrain_brain_api
-    restart: unless-stopped
+{% if not compose_project %}    container_name: agentibrain_brain_api
+{% endif %}    restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
       embeddings: { condition: service_started }
@@ -161,8 +162,8 @@ services:
 
   tick-cron:
     image: {{ brain_ops_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev") }}
-    container_name: agentibrain_tick_cron
-    restart: unless-stopped
+{% if not compose_project %}    container_name: agentibrain_tick_cron
+{% endif %}    restart: unless-stopped
     depends_on:
       redis: { condition: service_healthy }
       brain-api: { condition: service_healthy }
@@ -230,8 +231,8 @@ services:
 
   tick-drain:
     image: {{ brain_ops_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev") }}
-    container_name: agentibrain_tick_drain
-    restart: unless-stopped
+{% if not compose_project %}    container_name: agentibrain_tick_drain
+{% endif %}    restart: unless-stopped
     depends_on:
       brain-api: { condition: service_healthy }
     entrypoint: ["/bin/sh", "-c"]
@@ -348,8 +349,8 @@ services:
 
   amygdala:
     image: {{ brain_ops_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev") }}
-    container_name: agentibrain_amygdala
-    restart: unless-stopped
+{% if not compose_project %}    container_name: agentibrain_amygdala
+{% endif %}    restart: unless-stopped
     depends_on:
       redis: { condition: service_healthy }
     # The DB override lives in amygdala.py (--db / AMYGDALA_DB), not in a shell
@@ -378,8 +379,8 @@ services:
 
   mcp:
     image: {{ mcp_image | default("ghcr.io/the-cloud-clockwork/agentibrain-mcp:dev") }}
-    container_name: agentibrain_mcp
-    restart: unless-stopped
+{% if not compose_project %}    container_name: agentibrain_mcp
+{% endif %}    restart: unless-stopped
     depends_on:
       brain-api: { condition: service_healthy }
     environment:

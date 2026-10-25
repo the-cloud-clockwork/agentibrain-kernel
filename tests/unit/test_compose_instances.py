@@ -32,7 +32,7 @@ def _instance(root: Path, brain_id: str, ports: tuple[int, ...]) -> BrainSetting
         vault_path=root / f"{brain_id}-vault",
         kb_router_token="fixture-bearer-never-printed",
         _env_file=None,
-        **dict(zip(PORTS, ports)),
+        **dict(zip(PORTS, ports, strict=True)),
     )
     bootstrap.write_compose(settings, bootstrap.render_compose(settings))
     return settings
@@ -128,7 +128,9 @@ def test_service_urls_stay_on_the_project_network(tmp_path):
 
 
 def test_the_default_brain_keeps_its_legacy_names(tmp_path):
-    settings = BrainSettings(config_dir=tmp_path / "default", vault_path=tmp_path / "v", _env_file=None)
+    settings = BrainSettings(
+        config_dir=tmp_path / "default", vault_path=tmp_path / "v", _env_file=None
+    )
     data = yaml.safe_load(bootstrap.render_compose(settings))
     assert settings.compose_project is None
     assert "name" not in data
@@ -229,7 +231,9 @@ def test_restarting_one_brain_leaves_the_other_serving(tmp_path, monkeypatch):
 
 def test_the_default_brain_still_replaces_only_legacy_stacks(tmp_path, monkeypatch):
     host = FakeHost(monkeypatch)
-    settings = BrainSettings(config_dir=tmp_path / "default", vault_path=tmp_path / "v", _env_file=None)
+    settings = BrainSettings(
+        config_dir=tmp_path / "default", vault_path=tmp_path / "v", _env_file=None
+    )
     bootstrap.write_compose(settings, bootstrap.render_compose(settings))
     monkeypatch.setattr(bootstrap, "_kernel_containers", lambda: [])
 
