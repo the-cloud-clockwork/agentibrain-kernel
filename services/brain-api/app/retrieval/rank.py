@@ -248,8 +248,8 @@ def retrieve(
         return _unavailable("unavailable", active)
     result = rank(task, labelled, edges, active, sources)
     result["sources"]["graph"] = "ok" if edges_complete else "partial"
-    result["reduced"] = result["reduced"] or not edges_complete
     result["scan_limited"] = len(nodes) >= SCAN_LIMIT
+    result["reduced"] = result["reduced"] or not edges_complete or result["scan_limited"]
     return result
 
 

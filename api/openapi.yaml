@@ -714,9 +714,12 @@ paths:
             retry returns the same operation_id. Query and intent text never change
             scope. Unless BRAIN_CONTEXT_RANKING=false, context holds the ranked
             items under policy_revision (BRAIN_RANKING_POLICY), each with
-            components, reasons, path, confidence and knowledge_status; heat-only
-            candidates are counted in excluded; a failed optional source is listed
-            as unavailable with reduced=true and left out of score_basis.
+            components, reasons, path, knowledge_status, evidence (direct or
+            graph), and confidence and approval taken from its accepted graph
+            relation (null when the item has none); heat-only candidates are
+            counted in excluded; a failed optional source, a partial edge read or
+            a scan_limited candidate set sets reduced=true, and a failed source is
+            listed as unavailable and left out of score_basis.
         "403": {description: Request names another brain, or a project outside the token grant; recorded as a denial.}
         "409": {description: A newer task revision was already accepted for this task.}
         "413": {description: Request body exceeds the size limit.}

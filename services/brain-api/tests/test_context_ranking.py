@@ -283,6 +283,14 @@ def test_a_partial_edge_read_marks_the_result_reduced(monkeypatch, vault, tmp_pa
     assert context["reduced"] is True
 
 
+def test_a_truncated_candidate_scan_marks_the_result_reduced(monkeypatch, vault, tmp_path):
+    client, _, fixture = _context(monkeypatch, vault, tmp_path, "first")
+    monkeypatch.setattr(_rank(), "SCAN_LIMIT", 2)
+    context = _ask(client, fixture).json()["context"]
+    assert context["scan_limited"] is True
+    assert context["reduced"] is True
+
+
 @pytest.mark.parametrize("name", SETS)
 def test_a_restarted_process_ranks_the_same_request_identically(monkeypatch, vault, tmp_path, name):
     client, store, fixture = _context(monkeypatch, vault, tmp_path, name)
