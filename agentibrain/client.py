@@ -8,14 +8,23 @@ Phase 5 / Phase 7 implementation. Stubs for now.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass
 
 import httpx
 
-from agentibrain.config import DEFAULT_BRAIN_ID
+from agentibrain.config import BRAIN_ID_PATTERN, DEFAULT_BRAIN_ID
 
 brain_instance_binding_failures: Counter[tuple[str, str]] = Counter()
+
+
+def _label(observed: object) -> str:
+    if observed is None:
+        return "None"
+    if isinstance(observed, str) and re.fullmatch(BRAIN_ID_PATTERN, observed):
+        return observed
+    return "invalid"
 
 
 class BrainBindingError(RuntimeError):
@@ -48,10 +57,10 @@ class BrainClient:
             body = {}
         observed = body.get("brain_id") if isinstance(body, dict) else None
         if observed != self.expected_brain_id:
-            brain_instance_binding_failures[(self.expected_brain_id, str(observed))] += 1
+            label = _label(observed)
+            brain_instance_binding_failures[(self.expected_brain_id, label)] += 1
             raise BrainBindingError(
-                f"expected brain {self.expected_brain_id}, "
-                f"{self.base_url} answered {observed or 'no brain identity'}"
+                f"expected brain {self.expected_brain_id}, {self.base_url} answered {label}"
             )
         return body
 

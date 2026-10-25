@@ -136,8 +136,10 @@ def test_a_client_reaches_the_brain_it_expects(tmp_path):
     assert sum(client.brain_instance_binding_failures.values()) == 0
 
 
-@pytest.mark.parametrize("answered", ["personal", None])
-def test_a_different_or_silent_brain_fails_binding_before_credentials(answered):
+@pytest.mark.parametrize(
+    ("answered", "label"), [("personal", "personal"), (None, "None"), ("x/" * 300, "invalid")]
+)
+def test_a_different_or_silent_brain_fails_binding_before_credentials(answered, label):
     seen: list[httpx.Request] = []
     brain = BrainClient(
         "http://brain.local",
@@ -152,7 +154,8 @@ def test_a_different_or_silent_brain_fails_binding_before_credentials(answered):
     assert [r.url.path for r in seen] == ["/instance"]
     assert all("authorization" not in r.headers for r in seen)
     assert "fixture-bearer" not in str(refused.value)
-    assert client.brain_instance_binding_failures == {("swarm", str(answered)): 1}
+    assert str(refused.value).endswith(f"answered {label}")
+    assert client.brain_instance_binding_failures == {("swarm", label): 1}
 
 
 def test_a_non_json_answer_fails_binding():
@@ -196,6 +199,7 @@ def test_an_interrupted_migration_leaves_the_legacy_config_readable(tmp_path, mo
     monkeypatch.undo()
 
     assert (root / "config.yaml").read_bytes() == before
+    assert sorted(p.name for p in root.iterdir()) == [".env", "config.yaml"]
     assert _load(root).brain_id == "default"
     bootstrap.write_config(_load(root))
     assert yaml.safe_load((root / "config.yaml").read_text())["brain_id"] == "default"
@@ -214,6 +218,16 @@ def test_a_named_instance_does_not_rewrite_another_instances_files(tmp_path):
     assert "BRAIN_ID=personal" in (personal / ".env").read_text().splitlines()
     shutil.rmtree(personal)
     assert swarm.exists()
+
+
+def test_the_env_file_carries_the_policy_revision_the_brain_serves(tmp_path):
+    root = _install(tmp_path, "swarm")
+
+    bootstrap.write_env_file(_load(root), "fixture-bearer")
+
+    lines = (root / ".env").read_text().splitlines()
+    assert "BRAIN_ID=swarm" in lines
+    assert "BRAIN_POLICY_REVISION=3" in lines
 
 
 def test_the_default_brain_writes_no_brain_id_to_the_env_file(tmp_path):
