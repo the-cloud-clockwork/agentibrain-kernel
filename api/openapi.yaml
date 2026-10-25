@@ -675,3 +675,33 @@ paths:
             a fresh scan. Full entity sections use the separate pinned detail API.
         "404": {description: Entity unavailable in caller scope or graph unconfigured.}
         "422": {description: Invalid page bound.}
+  /v2/context:
+    post:
+      summary: Accept an authenticated task-context request (schema_version 2.0).
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        description: Body schema is schemas/context-v2.json; at most BRAIN_CONTEXT_MAX_BODY_BYTES (65536).
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200":
+          description: |
+            schema_version, operation_id, brain_id (this instance), scope derived
+            from the credential grant and this brain, the accepted request with its
+            lane and purpose, authority=recalled_evidence and replayed. An identical
+            retry returns the same operation_id. Query and intent text never change
+            scope.
+        "403": {description: Request names another brain, or a project outside the token grant; recorded as a denial.}
+        "409": {description: A newer task revision was already accepted for this task.}
+        "413": {description: Request body exceeds the size limit.}
+        "422": {description: Unsupported schema_version (checked before validation) or invalid fields.}
+        "503": {description: BRAIN_TASK_CONTEXT=false or BRAIN_ID unset; the feed stays available.}
+  /v2/context/stats:
+    get:
+      summary: context_request_validation_failures by reason (router tokens only).
+      security: [{bearerAuth: []}]
+      responses:
+        "200": {description: "context_request_validation_failures: reason to count."}
+        "403": {description: Not a router token.}

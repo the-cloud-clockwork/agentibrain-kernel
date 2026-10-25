@@ -1,0 +1,171 @@
+{
+  "$defs": {
+    "Budget": {
+      "additionalProperties": false,
+      "properties": {
+        "max_tokens": {
+          "default": 3000,
+          "maximum": 12000,
+          "minimum": 1,
+          "title": "Max Tokens",
+          "type": "integer"
+        },
+        "max_graph_depth": {
+          "default": 2,
+          "maximum": 4,
+          "minimum": 0,
+          "title": "Max Graph Depth",
+          "type": "integer"
+        },
+        "max_items": {
+          "default": 12,
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        }
+      },
+      "title": "Budget",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "2.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "brain_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Brain Id",
+      "type": "string"
+    },
+    "project_id": {
+      "maxLength": 512,
+      "minLength": 1,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "execution_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "task_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Task Id",
+      "type": "string"
+    },
+    "task_revision": {
+      "minimum": 1,
+      "title": "Task Revision",
+      "type": "integer"
+    },
+    "phase": {
+      "default": "",
+      "maxLength": 64,
+      "title": "Phase",
+      "type": "string"
+    },
+    "lane": {
+      "enum": [
+        "eng",
+        "ci",
+        "plan",
+        "master"
+      ],
+      "title": "Lane",
+      "type": "string"
+    },
+    "purpose": {
+      "enum": [
+        "task_start",
+        "pre_write",
+        "error_recovery",
+        "architecture_decision",
+        "completion"
+      ],
+      "title": "Purpose",
+      "type": "string"
+    },
+    "intent": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Intent",
+      "type": "string"
+    },
+    "query": {
+      "default": "",
+      "maxLength": 2000,
+      "title": "Query",
+      "type": "string"
+    },
+    "errors": {
+      "items": {
+        "maxLength": 1000,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 8,
+      "title": "Errors",
+      "type": "array"
+    },
+    "subsystems": {
+      "items": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 16,
+      "title": "Subsystems",
+      "type": "array"
+    },
+    "operation_class": {
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Operation Class",
+      "type": "string"
+    },
+    "budget": {
+      "$ref": "#/$defs/Budget"
+    },
+    "known_context_revision": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Known Context Revision"
+    }
+  },
+  "required": [
+    "schema_version",
+    "request_id",
+    "brain_id",
+    "project_id",
+    "execution_id",
+    "task_id",
+    "task_revision",
+    "lane",
+    "purpose",
+    "intent",
+    "operation_class"
+  ],
+  "title": "ContextRequest",
+  "type": "object"
+}

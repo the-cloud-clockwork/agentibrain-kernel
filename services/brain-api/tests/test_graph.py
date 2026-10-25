@@ -24,6 +24,7 @@ _MODULES = [
     "app.pipeline",
     "app.scope",
     "app.graph",
+    "app.context",
     "app.main",
 ]
 

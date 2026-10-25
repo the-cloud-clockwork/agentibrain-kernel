@@ -15,6 +15,8 @@ Endpoints:
   POST /graph/relation                 — store a typed relation (bad ones rejected or quarantined)
   GET  /graph/entity/{id}              — an entity and its relations inside the caller scope
   GET  /graph/stats                    — graph_invalid_relations_total and quarantine size
+  POST /v2/context                     — authenticated task-context request
+  GET  /v2/context/stats               — context_request_validation_failures (router tokens only)
   POST /tick                           — request a manual agentibrain tick
   GET  /tick/{job_id}                  — look up tick status
   GET  /vault/list                     — list vault files
@@ -53,7 +55,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from . import arcs, graph, pipeline, provenance, scope, vault_reader
+from . import arcs, context, graph, pipeline, provenance, scope, vault_reader
 from .feed import VAULT_ROOT, feed_payload, project_feed_payload
 from .markers import (
     MarkerError,
@@ -845,6 +847,33 @@ def read_knowledge_detail(
             store, value["references"], visible, query.reference_offset, query.reference_limit
         ),
     }
+
+
+@app.post("/v2/context")
+async def post_context(
+    request: Request,
+    authorization: str | None = Header(None),
+    x_session_title: str | None = Header(None, alias="X-Session-Title"),
+    _: None = Depends(require_token),
+) -> dict:
+    """Accept a task-context request inside the scope its credential grants."""
+    if not context.enabled():
+        raise HTTPException(status_code=503, detail="task-context requests are disabled")
+    body = await context.read_bounded(request.stream())
+    return context.accept(
+        body,
+        _caller_grant(authorization),
+        lambda: scope.record_denial(
+            scope.worker_brain(_bearer(authorization)) or "",
+            "POST /v2/context",
+            x_session_title or "",
+        ),
+    )
+
+
+@app.get("/v2/context/stats")
+def get_context_stats(_: None = Depends(require_router_token)) -> dict:
+    return {"context_request_validation_failures": context.failures()}
 
 
 @app.get("/graph/stats")
