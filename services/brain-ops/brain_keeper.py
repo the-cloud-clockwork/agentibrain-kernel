@@ -28,7 +28,6 @@ import brain_verifier
 import lesson_reconcile
 import markers
 import project_feed
-import redact
 import signal_resolution
 
 # ── Heat computation ──────────────────────────────────────────────────
