@@ -1,0 +1,45 @@
+{
+  "package": "SV2-CTX-02",
+  "tested_commit": "422a56d79ad6048ee9c8d89e76c3358833b966a9",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40236993433",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40236993433/job/121300563118",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against a fixture SQLite graph; semantic and heat sources are fixture functions, not production.",
+  "input_hashes": {
+    "first": "281e67596ea1f3c16dcd58a167b772a4a663bf2856f8b08b67fde6615e25e3fa",
+    "second": "44cbe7a89a927b327f61accac31a9abd97c65f7fbe9942e2ff57833033979097"
+  },
+  "input_hash_method": "sha256 of sort_keys JSON of each fixture set",
+  "file_hashes": {
+    "services/brain-api/tests/fixtures/sv2_ctx02_ranking.json": "784bdc2013ac4c8da112f516c6fcca395466c7392f6a4e4d9dce258555f56501",
+    "services/brain-api/tests/test_context_ranking.py": "b021afbe4f3342949dbdcc755c1b5979fb3a0e6a054f6806eae2377831a7ea85"
+  },
+  "fixture_dimensions": {
+    "first": {
+      "cold_incident": "lesson:lost-ack-incident",
+      "hot_unrelated_arc": "arc:dashboard-colours",
+      "current_decision": "decision:ack-after-commit",
+      "superseded_decision": "decision:ack-before-commit",
+      "inferred_neighbor": "lesson:cache-warmup",
+      "out_of_scope": "lesson:beta-lost-ack",
+      "relevant": [
+        "lesson:lost-ack-incident",
+        "decision:ack-after-commit",
+        "arc:ingestion-outage"
+      ]
+    },
+    "second": {
+      "cold_incident": "lesson:shard-timeout-incident",
+      "hot_unrelated_arc": "arc:logo-artwork",
+      "current_decision": "decision:shard-ten-minutes",
+      "superseded_decision": "decision:shard-five-minutes",
+      "inferred_neighbor": "lesson:pin-node-image",
+      "out_of_scope": "lesson:beta-shard",
+      "relevant": [
+        "lesson:shard-timeout-incident",
+        "decision:shard-ten-minutes",
+        "arc:queue-capacity"
+      ]
+    }
+  },
+  "source_material": "Fixture entities and relations only; no live brain, vault content or credentials."
+}

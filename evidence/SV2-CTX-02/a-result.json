@@ -1,0 +1,30 @@
+{
+  "package": "SV2-CTX-02",
+  "tested_commit": "422a56d79ad6048ee9c8d89e76c3358833b966a9",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40236993433",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40236993433/job/121300563118",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against a fixture SQLite graph; semantic and heat sources are fixture functions, not production.",
+  "case": "T-SV2-CTX-02-A",
+  "outcome": "passed",
+  "tests": [
+    "test_a_cold_incident_lesson_outranks_an_unrelated_hot_arc[first]",
+    "test_a_cold_incident_lesson_outranks_an_unrelated_hot_arc[second]",
+    "test_the_current_decision_ranks_above_the_decision_it_supersedes[first]",
+    "test_the_current_decision_ranks_above_the_decision_it_supersedes[second]",
+    "test_an_uncertain_inferred_edge_is_labelled_and_never_outranks_direct_evidence[first]",
+    "test_an_uncertain_inferred_edge_is_labelled_and_never_outranks_direct_evidence[second]"
+  ],
+  "assertions": [
+    "The cold incident lesson (heat 0.0) is ranked and the hot unrelated arc (heat 0.95) is excluded as heat_only on both fixtures.",
+    "The current decision outranks the decision it supersedes and carries knowledge status current.",
+    "The neighbor reached only by an accepted inferred has_lesson relation carries evidence graph, confidence inferred, approval accepted and scores below every direct item.",
+    "Every item and the context carry authority recalled_evidence with components and reasons."
+  ],
+  "measurement": {
+    "context_relevance_at_k": {
+      "k": 3,
+      "first": 1.0,
+      "second": 1.0
+    }
+  }
+}

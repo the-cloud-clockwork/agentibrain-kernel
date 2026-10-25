@@ -1,0 +1,37 @@
+{
+  "package": "SV2-CTX-02",
+  "tested_commit": "422a56d79ad6048ee9c8d89e76c3358833b966a9",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40236993433",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40236993433/job/121300563118",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against a fixture SQLite graph; semantic and heat sources are fixture functions, not production.",
+  "case": "T-SV2-CTX-02-C",
+  "outcome": "passed",
+  "tests": [
+    "test_a_failed_semantic_source_returns_a_labelled_reduced_result[first]",
+    "test_a_failed_semantic_source_returns_a_labelled_reduced_result[second]",
+    "test_a_malformed_optional_source_answer_is_labelled_unavailable",
+    "test_a_graph_timeout_is_a_labelled_reduced_result",
+    "test_a_graph_store_error_is_a_labelled_reduced_result",
+    "test_a_partial_edge_read_marks_the_result_reduced",
+    "test_a_truncated_candidate_scan_marks_the_result_reduced",
+    "test_a_missing_graph_is_labelled_rather_than_scored",
+    "test_a_retry_replays_the_same_ranking_without_a_second_effect",
+    "test_a_restarted_process_ranks_the_same_request_identically[first]",
+    "test_a_restarted_process_ranks_the_same_request_identically[second]",
+    "test_restoring_the_previous_policy_revision_keeps_the_source_store",
+    "test_disabling_ranking_restores_the_accepted_request_response"
+  ],
+  "assertions": [
+    "A failed or malformed optional source is labelled unavailable, sets reduced, is left out of score_basis and its component is null; no composite is invented.",
+    "Graph timeout, store error, partial edge read and truncated scan each produce a labelled reduced result.",
+    "An identical retry replays the stored ranking; after a restart the same request yields the same operation id and ranking with the store unchanged.",
+    "BRAIN_RANKING_POLICY=1 restores the previous revision as a new operation without writing the graph store; BRAIN_CONTEXT_RANKING=false restores the SV2-CTX-01 response and operation id."
+  ],
+  "measurement": {
+    "context_relevance_at_k": {
+      "k": 3,
+      "first": 1.0,
+      "second": 1.0
+    }
+  }
+}
