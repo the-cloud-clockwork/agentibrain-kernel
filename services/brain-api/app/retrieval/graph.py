@@ -68,14 +68,16 @@ def _node(entity: dict, path: list[dict]) -> dict:
 
 
 def _start(view: GraphReadView, state: Traversal, grant: frozenset[str]) -> None:
+    nodes, queue, seen = [], deque(), set()
     for ident in state.request.seed_ids:
         entity = view.get_entity(ident)
         if not _visible(entity, grant, state.request.project):
             raise HTTPException(404, "seed not found")
-        if ident not in state.seen:
-            state.seen.add(ident)
-            state.nodes.append(_node(entity, []))
-            state.queue.append(Frontier(ident, []))
+        if ident not in seen:
+            seen.add(ident)
+            nodes.append(_node(entity, []))
+            queue.append(Frontier(ident, []))
+    state.nodes, state.queue, state.seen = nodes, queue, seen
     state.revision = view.revision
 
 
