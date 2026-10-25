@@ -1,4 +1,4 @@
-"""SV2-BRP-03: exact project filter and metadata-only updates.
+"""Exact project filter and metadata-only updates.
 
 The DB-backed tests use EMBED_TEST_POSTGRES_URL (pgvector in CI) and skip when
 it is unset; they drop and recreate content_embeddings, so never point them at
@@ -63,8 +63,10 @@ def test_search_without_a_project_filter_is_unchanged(client, monkeypatch):
 def test_metadata_update_reports_a_missing_key(client, monkeypatch):
     import db
 
-    monkeypatch.setattr(db, "update_metadata", lambda key, metadata: 0)
-    resp = client.post("/metadata", json={"key": "nope", "metadata": {"status": "current"}})
+    monkeypatch.setattr(db, "update_metadata", lambda key, producer, metadata: 0)
+    resp = client.post(
+        "/metadata", json={"key": "nope", "producer": "p", "metadata": {"status": "current"}}
+    )
 
     assert resp.status_code == 404
 
@@ -73,12 +75,22 @@ def test_metadata_update_returns_the_rows_it_changed(client, monkeypatch):
     import db
 
     calls = []
-    monkeypatch.setattr(db, "update_metadata", lambda key, metadata: calls.append(key) or 2)
-    resp = client.post("/metadata", json={"key": "k", "metadata": {"status": "superseded"}})
+    monkeypatch.setattr(
+        db, "update_metadata", lambda key, producer, metadata: calls.append((key, producer)) or 2
+    )
+    resp = client.post(
+        "/metadata", json={"key": "k", "producer": "p", "metadata": {"status": "superseded"}}
+    )
 
     assert resp.status_code == 200
     assert resp.json() == {"key": "k", "rows_updated": 2}
-    assert calls == ["k"]
+    assert calls == [("k", "p")]
+
+
+def test_metadata_update_requires_a_producer(client):
+    resp = client.post("/metadata", json={"key": "k", "metadata": {}})
+
+    assert resp.status_code == 422
 
 
 psycopg = pytest.importorskip("psycopg")
@@ -185,9 +197,9 @@ def test_a_metadata_update_leaves_the_embedding_and_text_alone(fresh_db):
         ).fetchone()
     untouched = [row for row in _snapshot(db) if row[0] == "other"]
 
-    changed = db.update_metadata(
-        "adr", {"project_id": "org/repo", "projects": ["org/repo"], "status": "superseded"}
-    )
+    meta = {"project_id": "org/repo", "projects": ["org/repo"], "status": "superseded"}
+    assert db.update_metadata("adr", "brain-arc", meta) == 0
+    changed = db.update_metadata("adr", "brain-knowledge", meta)
 
     assert changed == 1
     with db.get_pool().connection() as conn:
@@ -198,4 +210,4 @@ def test_a_metadata_update_leaves_the_embedding_and_text_alone(fresh_db):
     assert after[:2] == before
     assert after[2]["status"] == "superseded"
     assert [row for row in _snapshot(db) if row[0] == "other"] == untouched
-    assert db.update_metadata("missing", {"status": "current"}) == 0
+    assert db.update_metadata("missing", "brain-knowledge", {"status": "current"}) == 0

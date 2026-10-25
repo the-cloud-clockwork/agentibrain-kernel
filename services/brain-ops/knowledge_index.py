@@ -108,11 +108,11 @@ def lesson_items(rel: str, text: str) -> list[KnowledgeItem]:
     return items
 
 
-def decision_item(rel: str, text: str) -> KnowledgeItem | None:
+def decision_items(rel: str, text: str) -> list[KnowledgeItem]:
     fm, body = markers.parse_frontmatter(text)
     body = body.strip()
     if not body:
-        return None
+        return []
     marker_id = str(fm.get("marker_id") or "")
     superseded_by = str(fm.get("superseded_by") or "")
     superseded = superseded_by or str(fm.get("status") or "").lower() == "superseded"
@@ -124,30 +124,32 @@ def decision_item(rel: str, text: str) -> KnowledgeItem | None:
         "session_id": str(fm.get("session_id") or ""),
     }
     key = f"decision:{marker_id or fm.get('id') or Path(rel).stem}"
-    return KnowledgeItem(key, "decision", body, _metadata("decision", fm, body, source, status))
+    return [KnowledgeItem(key, "decision", body, _metadata("decision", fm, body, source, status))]
+
+
+def _read_sources(vault: Path, paths: list[Path], parse, items: list, errors: list) -> None:
+    for path in paths:
+        rel = str(path.relative_to(vault))
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            print(f"WARN: cannot read {path}: {exc}", file=sys.stderr)
+            errors.append(rel)
+            continue
+        items.extend(parse(rel, text))
 
 
 def scan_items(vault: Path) -> tuple[list[KnowledgeItem], list[str]]:
-    """Every knowledge item in the vault, and the files that could not be read."""
     items: list[KnowledgeItem] = []
     errors: list[str] = []
-    sources = [
-        (lesson_items, sorted((vault / "left" / "reference").glob("lessons-*.md"))),
-        (decision_item, sorted((vault / "left" / "decisions").glob("*.md"))),
+    logs = [
+        p
+        for p in sorted((vault / "left" / "reference").glob("lessons-*.md"))
+        if markers.LESSON_LOG_RE.match(p.name)
     ]
-    for parse, paths in sources:
-        for path in paths:
-            if parse is lesson_items and not markers.LESSON_LOG_RE.match(path.name):
-                continue
-            rel = str(path.relative_to(vault))
-            try:
-                text = path.read_text(encoding="utf-8")
-            except OSError as exc:
-                print(f"WARN: cannot read {path}: {exc}", file=sys.stderr)
-                errors.append(rel)
-                continue
-            found = parse(rel, text)
-            items.extend(found if isinstance(found, list) else [found] if found else [])
+    _read_sources(vault, logs, lesson_items, items, errors)
+    decisions = sorted((vault / "left" / "decisions").glob("*.md"))
+    _read_sources(vault, decisions, decision_items, items, errors)
     unique = {}
     for item in items:
         unique.setdefault(item.key, item)
@@ -172,7 +174,12 @@ def _metadata_hash(metadata: dict) -> str:
 def _write(api_url: str, api_key: str, item: KnowledgeItem, content_known: bool) -> str:
     if content_known:
         try:
-            _post(api_url, api_key, "/metadata", {"key": item.key, "metadata": item.metadata})
+            _post(
+                api_url,
+                api_key,
+                "/metadata",
+                {"key": item.key, "producer": PRODUCER, "metadata": item.metadata},
+            )
             return "metadata"
         except urllib.error.HTTPError as exc:
             if exc.code != 404:

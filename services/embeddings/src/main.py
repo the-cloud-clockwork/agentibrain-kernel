@@ -33,6 +33,7 @@ class SearchRequest(BaseModel):
 
 class MetadataRequest(BaseModel):
     key: str
+    producer: str
     metadata: dict
 
 
@@ -216,7 +217,7 @@ async def update_metadata(
 ):
     """Replace a key's metadata without re-embedding its content."""
     try:
-        rows = db.update_metadata(req.key, req.metadata)
+        rows = db.update_metadata(req.key, req.producer, req.metadata)
     except Exception as e:
         log.error(f"metadata_update_failed key={req.key} error={e}")
         raise HTTPException(500, f"Metadata update failed: {e}") from e

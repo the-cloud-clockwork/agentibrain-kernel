@@ -10,7 +10,7 @@ PROTECTED = [
     ("post", "/embed", {"key": "k", "content": "text", "producer": "p"}),
     ("post", "/search", {"query": "text"}),
     ("post", "/prune", {"producer": "p", "keep_keys": []}),
-    ("post", "/metadata", {"key": "k", "metadata": {}}),
+    ("post", "/metadata", {"key": "k", "producer": "p", "metadata": {}}),
     ("get", "/stats", None),
     ("get", "/by-key/k", None),
     ("get", "/health/deep", None),
@@ -30,7 +30,7 @@ def client(monkeypatch):
     monkeypatch.setattr(db, "upsert_chunks", lambda **_k: 1)
     monkeypatch.setattr(db, "search", lambda **_k: [{"key": "secret-row"}])
     monkeypatch.setattr(db, "prune", lambda **_k: {"deleted": 0, "kept": 0, "scanned": 0})
-    monkeypatch.setattr(db, "update_metadata", lambda _k, _m: 1)
+    monkeypatch.setattr(db, "update_metadata", lambda _k, _p, _m: 1)
     monkeypatch.setattr(
         db, "get_producer_stats", lambda: {"producers": [], "total_rows": 0, "total_keys": 0}
     )

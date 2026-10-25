@@ -171,13 +171,13 @@ def upsert_chunks(
     return len(chunks)
 
 
-def update_metadata(key: str, metadata: dict) -> int:
+def update_metadata(key: str, producer: str, metadata: dict) -> int:
     """Replace the metadata of every chunk of `key`, leaving content and vectors alone."""
     pool = get_pool()
     with pool.connection() as conn:
         cur = conn.execute(
-            "UPDATE content_embeddings SET metadata = %s WHERE key = %s",
-            (Jsonb(_without_nul(metadata)), _without_nul(key)),
+            "UPDATE content_embeddings SET metadata = %s WHERE key = %s AND producer = %s",
+            (Jsonb(_without_nul(metadata)), _without_nul(key), _without_nul(producer)),
         )
         conn.commit()
         return cur.rowcount

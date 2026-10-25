@@ -1,4 +1,4 @@
-"""SV2-BRP-03: every lesson entry and decision is its own scoped knowledge item.
+"""Every lesson entry and decision is its own scoped knowledge item.
 
 The fixture is a long multi-project daily log with a late lesson, a superseded
 decision and an unattributed historical entry, in two independent sets. The
@@ -187,7 +187,7 @@ class FakeEmbeddings:
             return _Response({"chunks_stored": 1})
         if path == "metadata":
             row = self.rows.get(body["key"])
-            if row is None:
+            if row is None or row["producer"] != body["producer"]:
                 raise urllib.error.HTTPError(req.full_url, 404, "missing", {}, None)
             row["metadata"] = body["metadata"]
             return _Response({"key": body["key"], "rows_updated": 1})
@@ -243,7 +243,7 @@ def vault(tmp_path: Path, fx: dict) -> Path:
     return root
 
 
-# ── T-SV2-BRP-03-A ───────────────────────────────────────────────────
+# ── Indexing ─────────────────────────────────────────────────────────
 
 
 def test_a_late_lesson_in_a_long_daily_log_is_its_own_item_under_its_project(
@@ -376,7 +376,7 @@ def test_an_unchanged_rerun_writes_nothing(monkeypatch, vault: Path):
     assert stats["knowledge_skipped_unchanged"] == stats["knowledge_scanned"]
 
 
-# ── T-SV2-BRP-03-B ───────────────────────────────────────────────────
+# ── Rejection ────────────────────────────────────────────────────────
 
 
 def test_content_naming_another_project_does_not_join_that_project(
@@ -407,7 +407,7 @@ def test_an_unattributed_entry_is_never_attributed_from_its_folder_or_text(
     assert unknown[0]["metadata"]["projects"] == []
 
 
-# ── T-SV2-BRP-03-C ───────────────────────────────────────────────────
+# ── Recovery ─────────────────────────────────────────────────────────
 
 
 def test_a_failed_reindex_keeps_the_active_items_and_resumes_once(
