@@ -136,6 +136,11 @@ def _contents(feed: dict) -> str:
     return json.dumps({k: feed[k] for k in ("arcs", "lessons", "decisions", "signals")})
 
 
+def _decision_bodies(feed: dict) -> list[str]:
+    """A decision item carries its whole ADR document; the marker text is its last paragraph."""
+    return [entry["content"].rsplit("\n\n", 1)[-1] for entry in feed["decisions"]]
+
+
 def _mcp_tools(brain: Brain, monkeypatch) -> dict:
     monkeypatch.setenv("EMBEDDINGS_URL", brain.embeddings["url"])
     monkeypatch.setenv("EMBEDDINGS_API_KEY", EMBED_BEARER)
@@ -191,7 +196,7 @@ def test_two_projects_get_their_own_memory_from_checkout_and_worktree_sessions(
         assert feed["arcs"], feed
         assert {a["projects"][0] for a in feed["arcs"]} == {project.project_id}
         assert [entry["content"] for entry in feed["lessons"]] == [_lesson(project)]
-        assert [entry["content"] for entry in feed["decisions"]] == [_decision(project)]
+        assert _decision_bodies(feed) == [_decision(project)]
         assert other.word not in text and fx.unattributed_lesson not in text
         assert feed["intent"]["label"] == "inferred"
         assert feed["intent"]["state"] == "fresh"
@@ -327,7 +332,7 @@ def test_replay_and_restart_keep_scope_without_duplicates(brain: Brain) -> None:
 
     alpha_feed, beta_feed = _feed(brain, alpha), _feed(brain, beta)
     assert sorted(e["content"] for e in alpha_feed["lessons"]) == sorted([_lesson(alpha), late])
-    assert [e["content"] for e in alpha_feed["decisions"]] == [_decision(alpha)]
+    assert _decision_bodies(alpha_feed) == [_decision(alpha)]
     assert _contents(beta_feed) == _contents(first["beta"])
     assert beta_feed["intent"]["text"] == first["beta"]["intent"]["text"]
     assert len(brain.search(beta.word, project_id=beta.project_id)) == rows_before["beta"]
