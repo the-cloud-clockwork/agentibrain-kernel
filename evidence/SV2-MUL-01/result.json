@@ -1,0 +1,50 @@
+{
+  "package": "SV2-MUL-01",
+  "repository": "agentibrain-kernel",
+  "gate": "G7",
+  "state": "committed and verified in CI on the pull request head; not observed on a deployed brain",
+  "evidence_kind": "mocked transport and fixture configuration in CI; brain-api exercised in process",
+  "tested_commit": "17995c86e6c058cf1acfec3bba1cb1444267cf1f",
+  "fixture": {
+    "path": "tests/fixtures/brain_instances",
+    "manifest": "fixture-manifest.json"
+  },
+  "runs": {
+    "red": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40215730344",
+    "green": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40216726711"
+  },
+  "cases": {
+    "T-SV2-MUL-01-A": "passed",
+    "T-SV2-MUL-01-B": "passed",
+    "T-SV2-MUL-01-C": "passed"
+  },
+  "measurement": {
+    "brain_instance_binding_failures": "counted per expected and observed label in agentibrain.client.brain_instance_binding_failures",
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ]
+  },
+  "interfaces": [
+    "BrainSettings.brain_id (BRAIN_ID, default when unset or empty, pattern excludes project ids), policy_revision (BRAIN_POLICY_REVISION), config_dir, brain_url",
+    "BrainSettings.instance_record() matching schemas/brain-instance-v2.json",
+    "brain-api GET /instance, unauthenticated: schema, brain_id, policy_revision; refuses to start on a BRAIN_ID outside the pattern",
+    "BrainClient.verify_instance() and BrainBindingError; health() verifies before sending the bearer",
+    "write_env_file writes BRAIN_ID (named brains only) and BRAIN_POLICY_REVISION when absent; compose passes both to every service",
+    "write_config rewrites config.yaml atomically and never stores identity"
+  ],
+  "compatibility": "An unnamed installation keeps answering and binding as default with no migration. A brain-api older than this change has no /instance and is refused, so brain-api deploys before verifying clients.",
+  "rollback": "Unset BRAIN_ID and the brain answers default again through the same absence mapping; clients that expect another name refuse it rather than send credentials. Rehearsed in CI by the default fixture and the empty BRAIN_ID test; not rehearsed on a deployed brain.",
+  "limitations": [
+    "Only health() sends credentials today; future authenticated client calls must go through verify_instance",
+    "Identity keys in an existing .env are never rewritten by install; changing them is an operator edit and a restart",
+    "The brain id pattern is duplicated in brain-api because its image does not ship the agentibrain package",
+    "Compose name collisions, scoped lifecycle commands and storage isolation belong to SV2-MUL-02 to SV2-MUL-04"
+  ],
+  "case_files": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ]
+}

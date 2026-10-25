@@ -1,0 +1,21 @@
+{
+  "package": "SV2-MUL-01",
+  "tested_commit": "17995c86e6c058cf1acfec3bba1cb1444267cf1f",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40216726711",
+  "verification": "CI unit fixtures: pydantic settings over temporary config roots, httpx MockTransport and the real brain-api app through the Starlette test client; no deployed brain was contacted.",
+  "case": "T-SV2-MUL-01-B",
+  "outcome": "passed",
+  "assertions": [
+    "A client expecting swarm that reaches personal, a brain without /instance, a non JSON answer or a hostile 600 character id raises BrainBindingError after one unauthenticated request.",
+    "The bearer never appears in a request or in the error text; unknown ids are labelled invalid.",
+    "The vault listing of the refused brain is unchanged by the refused call.",
+    "A project id such as github.com/org/repo is rejected as a brain id by the client settings and by brain-api at start."
+  ],
+  "measurement": {
+    "brain_instance_binding_failures": {
+      "different_brain": 1,
+      "absent_endpoint": 1,
+      "invalid_id": 1
+    }
+  }
+}

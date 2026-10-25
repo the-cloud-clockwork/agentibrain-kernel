@@ -1,0 +1,19 @@
+{
+  "package": "SV2-MUL-01",
+  "tested_commit": "17995c86e6c058cf1acfec3bba1cb1444267cf1f",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40216726711",
+  "verification": "CI unit fixtures: pydantic settings over temporary config roots, httpx MockTransport and the real brain-api app through the Starlette test client; no deployed brain was contacted.",
+  "case": "T-SV2-MUL-01-C",
+  "outcome": "passed",
+  "assertions": [
+    "A legacy unnamed installation loads as brain default with policy revision 1 and keeps its vault path, vault content and .env bytes after config rewrite.",
+    "A second rewrite is byte identical, so replay has no duplicate effect.",
+    "A crash at the config replace leaves the legacy config.yaml unchanged and no staged file behind; the next rewrite succeeds.",
+    "An environment BRAIN_ID and BRAIN_POLICY_REVISION outrank the instance .env after a config rewrite."
+  ],
+  "measurement": {
+    "brain_instance_binding_failures": {
+      "recovery_runs": 0
+    }
+  }
+}

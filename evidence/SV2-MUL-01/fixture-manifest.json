@@ -1,0 +1,27 @@
+{
+  "package": "SV2-MUL-01",
+  "tested_commit": "17995c86e6c058cf1acfec3bba1cb1444267cf1f",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40216726711",
+  "verification": "CI unit fixtures: pydantic settings over temporary config roots, httpx MockTransport and the real brain-api app through the Starlette test client; no deployed brain was contacted.",
+  "input_hashes": {
+    "tests/fixtures/brain_instances/default/config.yaml": "426aab77dc453ccc6c8511f7af56013407429f3b2091025a5af27567b30a3f7c",
+    "tests/fixtures/brain_instances/default/env.fixture": "25e07eef4d25c9fa5d537e6b2ce25c1fda652348208fd77dcfc4133ba772d8bc",
+    "tests/fixtures/brain_instances/personal/config.yaml": "1a1743b9de32731b767ec048f2fee384ecd3fd09a5654756c6c8190912838103",
+    "tests/fixtures/brain_instances/personal/env.fixture": "e03de82c6a7eb0458b2cd80bcb250453c0309021eeb8c018ec6e32bbde37780d",
+    "tests/fixtures/brain_instances/swarm/config.yaml": "c04fa56240922dd9899d3dbbeb67c0ffb620f026149b779d4e6cd9ab1ac69e4f",
+    "tests/fixtures/brain_instances/swarm/env.fixture": "eca5a9bd088b7e886b12e469dd87d6d3a38faa0f16a3232880c2a830d176f9ae"
+  },
+  "test_source_hashes": {
+    "tests/unit/test_brain_instance.py": "f80fec6b85519d4ee3e23bcfb8f05e35b4f9c704435a6ba79b567f481147a2e0",
+    "services/brain-api/tests/test_instance.py": "8e0220b7215941b3d5cf6977d36316a363f594d353ccfd3ad8728fa2a8239cd6"
+  },
+  "fixture_dimensions": {
+    "instances": [
+      "default (legacy config.yaml, no brain id)",
+      "personal (policy revision 1)",
+      "swarm (policy revision 3)"
+    ],
+    "independent_runs": 2
+  },
+  "source_material": "Fixture-provided configuration and a scratch vault per run; no operator vault or credentials."
+}
