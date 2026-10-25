@@ -684,15 +684,16 @@ def instance_conflicts(settings: BrainSettings) -> list[tuple[str, str]]:
         for workdir in sorted(_project_workdirs(project))
         if Path(workdir).resolve() != cfg_dir
     ]
+    services = yaml.safe_load(render_compose(settings))["services"]
+    # A bare prefix would let brain "a" claim containers of brain "a-b".
+    own = re.compile(rf"{re.escape(project)}-({'|'.join(map(re.escape, services))})-\d+")
     held = _published_ports()
     for var, port in instance_ports(settings).items():
         holder = held.get(port)
-        if holder and holder.startswith(f"{project}-"):
+        if holder and own.fullmatch(holder):
             continue
         if holder or not _port_bindable(port):
             conflicts.append(("port", f"{var} {port} is held by {holder or 'a host process'}"))
-    for kind, _ in conflicts:
-        brain_instance_resource_conflicts[kind] += 1
     return conflicts
 
 
@@ -762,7 +763,7 @@ def find_deployment(settings: BrainSettings, cwd: Path | None = None) -> tuple[s
     a command run from anywhere drives what is actually up. The
     AGENTIBRAIN_REPO pin (written by local/bootstrap.sh into
     ~/.agentibrain/.env) covers every other cwd; the ~/.agentibrain stack
-    comes last.
+    comes last. A named brain skips all of that and resolves only its config_dir.
     """
     cfg_dir = settings.config_dir.expanduser()
     if settings.compose_project:

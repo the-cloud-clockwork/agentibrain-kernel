@@ -178,10 +178,14 @@ def test_conflicting_ports_refuse_without_touching_the_other_stack(tmp_path, mon
 
     result = _cli(monkeypatch, pair["swarm"], "up")
 
-    assert result.exit_code != 0
-    assert "18103" in result.output
-    assert "agentibrain-personal-brain-api-1" in result.output
+    assert result.exit_code == 1
     assert "fixture-bearer-never-printed" not in result.output
+    assert bootstrap.instance_conflicts(pair["swarm"]) == [
+        ("port", "PORT_BRAIN_API 18103 is held by agentibrain-personal-brain-api-1"),
+        ("port", "PORT_POSTGRES 15432 is held by agentibrain-personal-postgres-1"),
+        ("port", "PORT_REDIS 16379 is held by agentibrain-personal-redis-1"),
+        ("port", "PORT_MCP 18104 is held by agentibrain-personal-mcp-1"),
+    ]
     assert host.calls == []
     assert host.removed == []
     assert host.held == held_before
@@ -200,6 +204,18 @@ def test_the_same_project_from_another_config_root_is_refused(tmp_path, monkeypa
     assert str(first.config_dir) in conflicts[0][1]
     assert _cli(monkeypatch, second, "up").exit_code != 0
     assert host.calls == []
+
+
+def test_a_brain_whose_name_extends_another_is_not_its_own(tmp_path, monkeypatch):
+    host = FakeHost(monkeypatch)
+    longer = _instance(tmp_path, "a-b", DISTINCT["personal"])
+    shorter = _instance(tmp_path, "a", DISTINCT["personal"])
+    host.start(longer)
+
+    conflicts = bootstrap.instance_conflicts(shorter)
+
+    assert ("port", "PORT_BRAIN_API 18103 is held by agentibrain-a-b-brain-api-1") in conflicts
+    assert len(conflicts) == len(PORTS)
 
 
 def test_corrected_ports_need_a_new_request(tmp_path, monkeypatch):

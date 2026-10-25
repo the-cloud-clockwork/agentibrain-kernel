@@ -80,7 +80,6 @@ def _remove_other_stacks(keep: Path | None) -> None:
 
 
 def _make_room(settings: BrainSettings, keep: Path | None) -> None:
-    """The default brain replaces legacy stacks; a named brain refuses rather than stop one."""
     if settings.compose_project is None:
         _remove_other_stacks(keep)
         return
@@ -88,6 +87,7 @@ def _make_room(settings: BrainSettings, keep: Path | None) -> None:
         return
     conflicts = bootstrap.instance_conflicts(settings)
     for kind, detail in conflicts:
+        bootstrap.brain_instance_resource_conflicts[kind] += 1
         console.print(f"[red]{kind} conflict:[/red] {escape(detail)}")
     if conflicts:
         console.print(
