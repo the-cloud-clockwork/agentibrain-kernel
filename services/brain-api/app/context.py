@@ -19,7 +19,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from . import graph, scope
-from .retrieval import rank
+from .retrieval import packing, rank
 
 SCHEMA_VERSION = "2.0"
 MAX_BODY_BYTES = int(os.getenv("BRAIN_CONTEXT_MAX_BODY_BYTES", "65536"))
@@ -71,6 +71,10 @@ heat_source: rank.Source | None = None
 
 def enabled() -> bool:
     return os.getenv("BRAIN_TASK_CONTEXT", "true").lower() != "false"
+
+
+def packing_enabled() -> bool:
+    return os.getenv("BRAIN_CONTEXT_PACKING", "true").lower() != "false"
 
 
 def ranking_policy() -> rank.Policy | None:
@@ -194,20 +198,29 @@ def accept(
     active = ranking_policy()
     if active is None:
         return _admit(request, trusted, operation_id(request, trusted))
-    identity = {**trusted, "ranking_policy": active.revision}
+    conservative = not packing_enabled()
+    identity = {
+        **trusted,
+        "ranking_policy": active.revision,
+        "packing": "conservative" if conservative else "full",
+    }
     return _admit(
         request,
         trusted,
         operation_id(request, identity),
-        lambda: rank.retrieve(
-            graph.active_store(),
-            request.project_id,
-            rank.Task(
-                f"{request.intent} {request.query}",
-                (*request.subsystems, *request.errors),
-                request.budget.max_items,
+        lambda: packing.pack(
+            rank.retrieve(
+                graph.active_store(),
+                request.project_id,
+                rank.Task(
+                    f"{request.intent} {request.query}",
+                    (*request.subsystems, *request.errors),
+                    request.budget.max_items,
+                ),
+                active,
+                rank.Sources(semantic_source, heat_source),
             ),
-            active,
-            rank.Sources(semantic_source, heat_source),
+            request.budget.max_tokens,
+            conservative,
         ),
     )

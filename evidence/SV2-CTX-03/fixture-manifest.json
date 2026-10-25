@@ -1,0 +1,49 @@
+{
+  "package": "SV2-CTX-03",
+  "tested_commit": "d15845631464711b5a7e8e197835328e47542f4a",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244156006",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244156006/job/121322089661",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against a fixture SQLite graph with a fixture semantic source; the packer itself is the production module.",
+  "input_hashes": {
+    "first": "0eec0c9ee3512ce7159c75f9d4ea82e9142584ff672835a8b74ac05f6e8cccc9",
+    "second": "bd7aea330f7c8cdc1475f3aedb2c7235de4593b513114c9af694a13b9c842910"
+  },
+  "input_hash_method": "sha256 of sort_keys JSON of each fixture set",
+  "file_hashes": {
+    "services/brain-api/tests/fixtures/sv2_ctx03_packing.json": "bb3a1f60d79ceed07c55974787745cf71968c1b21d718ca9bc2f71285ca52a4d",
+    "services/brain-api/tests/test_context_packing.py": "1258ffdce821ed4a215219b3c4abb1ea99447fc787f44fd0d5a2f0edad4e9a9e",
+    "schemas/context-pack-v2.json": "16fba1b96ee966458d6c704a1c019ba63c91b19120679475bfc9141463c8a8f6",
+    "services/brain-api/app/retrieval/packing.py": "39de133419d2ed8b9bd82daed4574f5eb8a9dbd5f1d44001328d4f4ca71d2a0d"
+  },
+  "fixture_dimensions": {
+    "first": {
+      "oversized_arc": "arc:ingestion-rewrite-saga",
+      "oversized_title_chars": 19620,
+      "duplicate_lessons": [
+        "lesson:ack-after-commit",
+        "lesson:ack-after-commit-copy"
+      ],
+      "conflicting_decisions": [
+        "decision:ack-per-batch",
+        "decision:ack-per-event"
+      ],
+      "budget": 700,
+      "smaller_budget": 300
+    },
+    "second": {
+      "oversized_arc": "arc:shard-capacity-saga",
+      "oversized_title_chars": 19021,
+      "duplicate_lessons": [
+        "lesson:shard-pin-image",
+        "lesson:shard-pin-image-copy"
+      ],
+      "conflicting_decisions": [
+        "decision:shard-ten-minutes",
+        "decision:shard-twenty-minutes"
+      ],
+      "budget": 700,
+      "smaller_budget": 300
+    }
+  },
+  "source_material": "Fixture entities and relations only; no live brain, vault content or credentials."
+}

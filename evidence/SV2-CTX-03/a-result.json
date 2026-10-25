@@ -1,0 +1,54 @@
+{
+  "package": "SV2-CTX-03",
+  "tested_commit": "d15845631464711b5a7e8e197835328e47542f4a",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244156006",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244156006/job/121322089661",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against a fixture SQLite graph with a fixture semantic source; the packer itself is the production module.",
+  "case": "T-SV2-CTX-03-A",
+  "outcome": "passed",
+  "tests": [
+    "test_a_the_pack_fits_its_budget_with_complete_items_and_references[first]",
+    "test_a_the_pack_fits_its_budget_with_complete_items_and_references[second]"
+  ],
+  "assertions": [
+    "The packed items fit max_tokens; context_pack_tokens is the summed estimate of the packed items.",
+    "Every packed item is complete, keeps its stored title whole, carries authority recalled_evidence and a reference naming its entity id and revision.",
+    "The small lesson is packed; the duplicate lesson folds into it and both ids appear in supporting_source_ids; the dropped copy is omitted as duplicate.",
+    "The oversized arc is omitted over_budget with its reference and token cost; truncated is true.",
+    "Both conflicting decisions are named in unresolved_conflicts; category_tokens match the declared shares.",
+    "The graph store snapshot is unchanged; the second fixture repeats every assertion independently."
+  ],
+  "measurement": {
+    "context_pack_tokens": {
+      "first": {
+        "budget": 700,
+        "smaller_budget": 300,
+        "asserted": "context_pack_tokens equals the summed token estimate of the packed items and is at most the budget at 1, 2, 50, the smaller and the full budget"
+      },
+      "second": {
+        "budget": 700,
+        "smaller_budget": 300,
+        "asserted": "context_pack_tokens equals the summed token estimate of the packed items and is at most the budget at 1, 2, 50, the smaller and the full budget"
+      }
+    },
+    "omitted_items": {
+      "first": {
+        "asserted_minimum": 2,
+        "asserted_members": [
+          "arc:ingestion-rewrite-saga",
+          "lesson:ack-after-commit-copy"
+        ],
+        "asserted": "omitted_items equals the length of omitted"
+      },
+      "second": {
+        "asserted_minimum": 2,
+        "asserted_members": [
+          "arc:shard-capacity-saga",
+          "lesson:shard-pin-image-copy"
+        ],
+        "asserted": "omitted_items equals the length of omitted"
+      }
+    },
+    "gap": "Exact per-run token totals are not printed by the suite; the record holds the asserted bounds. Local runs are banned on the workstation."
+  }
+}

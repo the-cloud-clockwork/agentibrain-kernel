@@ -1,0 +1,109 @@
+{
+  "package": "SV2-CTX-03",
+  "tested_commit": "d15845631464711b5a7e8e197835328e47542f4a",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244156006",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244156006/job/121322089661",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against a fixture SQLite graph with a fixture semantic source; the packer itself is the production module.",
+  "dependency": [
+    "SV2-CTX-02"
+  ],
+  "integration_gate": "G6",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/171",
+  "issue": "https://github.com/the-cloud-clockwork/agentibrain-kernel/issues/170",
+  "interfaces": [
+    "POST /v2/context response context.items (packed) and context.pack",
+    "app.retrieval.packing: pack, tokens, category_budgets, knowledge_revision",
+    "schemas/context-pack-v2.json",
+    "BRAIN_CONTEXT_PACKING"
+  ],
+  "supported_versions": {
+    "context_request": [
+      "2.0"
+    ],
+    "context_pack": [
+      "schemas/context-pack-v2.json"
+    ],
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ]
+  },
+  "state": {
+    "observed": "All pull request checks pass on the tested commit.",
+    "accepted": "The SV2-CTX-03 fixture cases pass in the full brain-api suite on three Python versions; the SV2-CTX-02 ranking tests pass unchanged under the default 3000 token budget.",
+    "committed": "d15845631464711b5a7e8e197835328e47542f4a",
+    "externally_verified": "None; mocked fixture evidence only. G6 rollout must validate deployed behavior."
+  },
+  "red": {
+    "commit": "48d2fd2c38bf9fa08377d69d89c33eab18dbd463",
+    "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40243125987",
+    "outcome": "failure in CI: the packing tests failed with ModuleNotFoundError app.retrieval.packing and the endpoint cases failed on a context without pack, on 3.10, 3.11 and 3.12"
+  },
+  "compatibility": "Against the SV2-CTX-02 response every existing context field is unchanged; items keep their ranked fields and gain revision, complete, reference and supporting_source_ids; only over budget items and folded duplicates leave items. test_context_ranking.py is unchanged in this pull request and passes.",
+  "cases": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ],
+  "rollback_rehearsal": "BRAIN_CONTEXT_PACKING=false returns a degraded reference-only pack (test_disabled_packing_falls_back_to_a_degraded_reference_pack); no authoritative object is written or deleted by packing or its rollback.",
+  "limitations": [
+    "Token cost is an estimate of serialized JSON length divided by four, not a model tokenizer count.",
+    "Item text is the graph entity title; full detail sections stay behind the reference.",
+    "Conflicted items form one group packed or omitted together.",
+    "knowledge_revision covers the ranked items for the request, so a different max_items may change it."
+  ],
+  "measurement": {
+    "context_pack_tokens": {
+      "first": {
+        "budget": 700,
+        "smaller_budget": 300,
+        "asserted": "context_pack_tokens equals the summed token estimate of the packed items and is at most the budget at 1, 2, 50, the smaller and the full budget"
+      },
+      "second": {
+        "budget": 700,
+        "smaller_budget": 300,
+        "asserted": "context_pack_tokens equals the summed token estimate of the packed items and is at most the budget at 1, 2, 50, the smaller and the full budget"
+      }
+    },
+    "omitted_items": {
+      "first": {
+        "asserted_minimum": 2,
+        "asserted_members": [
+          "arc:ingestion-rewrite-saga",
+          "lesson:ack-after-commit-copy"
+        ],
+        "asserted": "omitted_items equals the length of omitted"
+      },
+      "second": {
+        "asserted_minimum": 2,
+        "asserted_members": [
+          "arc:shard-capacity-saga",
+          "lesson:shard-pin-image-copy"
+        ],
+        "asserted": "omitted_items equals the length of omitted"
+      }
+    },
+    "gap": "Exact per-run token totals are not printed by the suite; the record holds the asserted bounds. Local runs are banned on the workstation."
+  },
+  "commands": [
+    {
+      "source": "CI job lint-test (3.12)",
+      "job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244156006/job/121322089661",
+      "invocation": "python -m pytest -q services/brain-api/tests (run in CI, not locally)",
+      "output": "339 passed, 2 warnings in 68.05s"
+    },
+    {
+      "source": "CI job lint-test (3.11)",
+      "job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244156006/job/121322089697",
+      "invocation": "python -m pytest -q services/brain-api/tests (run in CI, not locally)",
+      "output": "339 passed, 2 warnings in 77.31s"
+    },
+    {
+      "source": "CI job lint-test (3.10)",
+      "job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244156006/job/121322089685",
+      "invocation": "python -m pytest -q services/brain-api/tests (run in CI, not locally)",
+      "output": "339 passed, 2 warnings in 75.89s"
+    }
+  ]
+}

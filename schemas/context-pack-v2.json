@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ContextPack",
+  "description": "The pack field of a POST /v2/context response context (SV2-CTX-03). max_tokens bounds the packed items; the omitted list and this block sit outside it and hold at most one entry per ranked item, itself capped by budget.max_items. Conflicted items are packed together or omitted together. Each packed item keeps its ranked fields and adds complete, reference and, unless conflicted, supporting_source_ids (see $defs.PackedItemFields).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "max_tokens",
+    "category_tokens",
+    "category_spent",
+    "context_pack_tokens",
+    "omitted_items",
+    "omitted",
+    "truncated",
+    "unresolved_conflicts",
+    "knowledge_revision",
+    "degraded",
+    "authority"
+  ],
+  "properties": {
+    "max_tokens": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "category_tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision",
+        "lesson",
+        "arc"
+      ],
+      "properties": {
+        "decision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lesson": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "arc": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "Per-category shares of max_tokens applied in a first pass in rank order; tokens a category leaves unused are released to remaining items, still in rank order, within max_tokens."
+    },
+    "category_spent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision",
+        "lesson",
+        "arc"
+      ],
+      "properties": {
+        "decision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lesson": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "arc": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "Tokens packed per category; may exceed category_tokens when released tokens were used. Sums to context_pack_tokens."
+    },
+    "context_pack_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Estimated tokens of the packed items, never above max_tokens."
+    },
+    "omitted_items": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "omitted": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "type",
+          "reason",
+          "tokens",
+          "reference"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "arc",
+              "lesson",
+              "decision"
+            ]
+          },
+          "reason": {
+            "enum": [
+              "over_budget",
+              "duplicate"
+            ]
+          },
+          "tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reference": {
+            "$ref": "#/$defs/Reference"
+          },
+          "duplicate_of": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Items left out, in rank order. A duplicate is a repeated claim (same type, same title ignoring case, whitespace and ASCII punctuation) folded into the higher ranked item, which lists every supporting_source_ids; conflicted items are never folded."
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "True when any item was omitted over budget. Item text is never cut: an item is packed whole or listed in omitted."
+    },
+    "unresolved_conflicts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "knowledge_revision": {
+      "type": "string",
+      "pattern": "^kr-[0-9a-f]{32}$",
+      "description": "Hash of the ranked items (id, revision, knowledge status, title) for this request before packing. It does not depend on max_tokens, so a smaller retry budget reports the same revision; max_items is part of the ranked scope and a different max_items may report a different revision."
+    },
+    "degraded": {
+      "enum": [
+        null,
+        "packing_disabled"
+      ]
+    },
+    "authority": {
+      "const": "recalled_evidence"
+    }
+  },
+  "$defs": {
+    "Reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entity_id",
+        "revision"
+      ],
+      "properties": {
+        "entity_id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "PackedItemFields": {
+      "type": "object",
+      "properties": {
+        "complete": {
+          "type": "boolean",
+          "description": "True when the item text is whole; false only for degraded reference entries, which carry no text."
+        },
+        "reference": {
+          "$ref": "#/$defs/Reference"
+        },
+        "supporting_source_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "This item id and every repeated claim folded into it, in rank order."
+        }
+      }
+    }
+  }
+}
