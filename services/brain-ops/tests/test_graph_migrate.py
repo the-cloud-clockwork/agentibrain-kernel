@@ -281,7 +281,7 @@ class TestRecovery:
         real_write = graph_migrate._atomic_write
 
         def crash_on_manifest(path: Path, data: bytes) -> None:
-            if path.name == "manifest.json":
+            if path == out / "manifest.json":
                 raise OSError("interrupted")
             real_write(path, data)
 
@@ -300,7 +300,7 @@ class TestRecovery:
         for name in OUTPUTS:
             assert (out / name).read_bytes() == (clean / "graph" / name).read_bytes()
 
-        kept = _entry(out, "contradictory_direction")
+        kept = next(q for q in _load(out, "quarantine.json") if q["id"] == qid)
         assert kept["present"] is False and kept["review"]["relation"] == [
             "arc-x",
             "parent",

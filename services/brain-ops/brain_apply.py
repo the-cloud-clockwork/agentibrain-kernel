@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import re
 import shutil
@@ -35,6 +36,8 @@ import brain_keeper  # for REGION_DIRS — keep prompt + apply scanners aligned
 import markers
 import project_feed
 import redact
+
+edge_relations = importlib.import_module("edge_relations")
 
 # Edge-type priority. Used when collapsing multi-type same-pair collisions.
 # Structural hierarchy first; sibling/peer; directional dependencies; the
@@ -345,47 +348,49 @@ def find_arc_file(vault_root: Path, arc_id: str) -> Path | None:
 def apply_edges(vault_root: Path, edges: list[dict], dry_run: bool) -> int:
     """Insert @edge markers into source arc files.
 
-    Two-pass:
-      1. Group AI-emitted edges by (src_norm, tgt_norm); keep the
-         highest-priority type per pair (so a tick that emits both
-         `child` and `parent` to the same target lands one canonical
-         edge).
-      2. For each chosen edge, reject if ANY edge already targets that
-         arc from the same source on disk — regardless of type. This is
-         the cross-tick guard that prevents multi-type accumulation over
-         time (the bug that produced 295 collisions in the live vault).
+    The tick's edges are normalized together with the edges already on disk
+    in every source and target arc they name (edge_relations.normalize). An
+    edge is written only as the first assertion of its relation: a duplicate
+    is skipped, and a malformed, unsupported or self-loop edge, or one that
+    conflicts with the batch or the vault, is refused with its reason instead
+    of being settled by type rank.
     """
-    applied = 0
-
-    # Pass 1: per-(src,tgt) priority collapse within this tick.
-    chosen: dict[tuple[str, str], dict] = {}
+    files: dict[str, Path | None] = {}
     for edge in edges:
-        src_norm = edge["source"].strip("`")
-        tgt_norm = edge["target"].strip("`")
-        if src_norm == tgt_norm:
-            continue  # self-loop
-        key = (src_norm, tgt_norm)
-        if key not in chosen or _rank(edge["type"]) < _rank(chosen[key]["type"]):
-            chosen[key] = {**edge, "source": src_norm, "target": tgt_norm}
+        for arc in (edge["source"], edge["target"]):
+            arc = edge_relations.norm_id(arc)
+            if arc not in files:
+                files[arc] = find_arc_file(vault_root, arc)
+    existing = []
+    for path in dict.fromkeys(p for p in files.values() if p):
+        existing += edge_relations.file_assertions(path, path.relative_to(vault_root).as_posix())
+    tick = [
+        edge_relations.Assertion(
+            edge_relations.norm_id(e["source"]),
+            e["type"],
+            edge_relations.norm_id(e["target"]),
+            "tick",
+            "tick",
+        )
+        for e in edges
+    ]
+    audit = edge_relations.normalize(existing + tick)["audit"][len(existing) :]
 
-    # Pass 2: write markers, guarded by any-type-to-same-target check.
-    for (src_norm, tgt_norm), edge in chosen.items():
-        src_file = find_arc_file(vault_root, src_norm)
+    applied = 0
+    for edge, decision in zip(tick, audit, strict=True):
+        if decision["decision"] == "merged_duplicate":
+            continue
+        label = f"{edge.source} --{edge.type}--> {edge.target}"
+        if decision["decision"] == "quarantined":
+            print(f"  SKIP edge {label}: {', '.join(decision['reasons'])}", file=sys.stderr)
+            continue
+        src_file = files.get(edge.source)
         if not src_file:
-            print(f"  SKIP edge: source {src_norm} not found", file=sys.stderr)
+            print(f"  SKIP edge: source {edge.source} not found", file=sys.stderr)
             continue
 
         text = src_file.read_text()
-
-        # Cross-tick guard: any existing @edge from this source to this
-        # target (any type) blocks the write. One edge per pair, forever.
-        any_to_target = re.compile(
-            r"<!--\s*@edge\s+type=\w+\s+target=" + re.escape(tgt_norm) + r"\s*-->"
-        )
-        if any_to_target.search(text):
-            continue
-
-        marker = f"<!-- @edge type={edge['type']} target={tgt_norm} -->"
+        marker = f"<!-- @edge type={edge.type} target={edge.target} -->"
 
         # Insert before ## Source sessions (or at end)
         if "## Source sessions" in text:
@@ -398,7 +403,7 @@ def apply_edges(vault_root: Path, edges: list[dict], dry_run: bool) -> int:
         if not dry_run:
             src_file.write_text(text)
         applied += 1
-        print(f"  +edge: {src_norm} --{edge['type']}--> {tgt_norm}")
+        print(f"  +edge: {label}")
 
     return applied
 
