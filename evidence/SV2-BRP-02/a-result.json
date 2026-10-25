@@ -1,0 +1,27 @@
+{
+  "case": "T-SV2-BRP-02-A",
+  "evidence_kind": "mocked fixture",
+  "tested_commit": "8b9eca964afef8645a4e1c95e25ca4705346d4a3",
+  "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40155372020",
+  "fixture": {
+    "path": "services/brain-api/tests/fixtures/sv2_brp02_markers.json",
+    "sha256": "02a98529e568d6a8a473154e4ee540d5d5fd1ae3a286c5caa89c833054a787a5",
+    "contents": "two independent sets (projects alpha and beta) of lesson, decision, milestone and signal markers with explicit project, worktree, branch, swarm, task, execution and source timestamp, delivered directly and through outbox replay"
+  },
+  "tests": [
+    "test_every_marker_type_keeps_its_scope_from_direct_write_to_readback (two independent fixtures)",
+    "test_replayed_markers_keep_scope_and_their_source_timestamp (two independent fixtures)",
+    "test_replay_of_an_unattributed_entry_does_not_turn_its_folder_into_a_project",
+    "test_milestone_routes_by_project_and_not_by_agent_name",
+    "test_milestone_routes_by_the_project_id_repo_when_project_is_absent",
+    "test_brain_ops_parser_reads_back_log_marker_provenance",
+    "test_lesson_dedup_still_matches_content_after_provenance_is_added",
+    "test_unsupported_provenance_values_are_counted_as_lost",
+    "test_a_blank_provenance_value_is_not_counted_as_lost",
+    "test_a_list_of_blank_values_is_not_counted_as_lost"
+  ],
+  "measurement": {
+    "marker_provenance_loss_total": 0
+  },
+  "outcome": "passed"
+}

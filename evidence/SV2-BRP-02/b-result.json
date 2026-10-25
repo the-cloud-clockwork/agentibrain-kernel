@@ -1,0 +1,23 @@
+{
+  "case": "T-SV2-BRP-02-B",
+  "evidence_kind": "mocked fixture",
+  "tested_commit": "8b9eca964afef8645a4e1c95e25ca4705346d4a3",
+  "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40155372020",
+  "fixture": {
+    "path": "services/brain-api/tests/fixtures/sv2_brp02_markers.json",
+    "sha256": "02a98529e568d6a8a473154e4ee540d5d5fd1ae3a286c5caa89c833054a787a5",
+    "contents": "two independent sets (projects alpha and beta) of lesson, decision, milestone and signal markers with explicit project, worktree, branch, swarm, task, execution and source timestamp, delivered directly and through outbox replay"
+  },
+  "tests": [
+    "test_a_marker_claiming_another_project_is_refused_and_writes_nothing (all four types; content names both projects; vault digest unchanged; denial recorded; corrected request accepted)",
+    "test_a_marker_listing_a_foreign_project_in_its_project_set_is_refused",
+    "test_a_marker_naming_a_foreign_project_without_its_id_is_refused",
+    "test_a_granted_worker_cannot_route_a_legacy_milestone_into_a_foreign_project",
+    "test_readback_is_hidden_from_a_worker_outside_the_marker_project",
+    "test_a_worker_token_without_a_project_grant_keeps_writing"
+  ],
+  "measurement": {
+    "refused_writes_mutating_vault": 0
+  },
+  "outcome": "passed"
+}

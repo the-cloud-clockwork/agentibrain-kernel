@@ -1,0 +1,101 @@
+{
+  "package": "SV2-BRP-02",
+  "repository": "agentibrain-kernel",
+  "gate": "G5",
+  "state": "code accepted in CI; live evidence pending gate G5",
+  "evidence_kind": "mocked fixture",
+  "tested_commit": "8b9eca964afef8645a4e1c95e25ca4705346d4a3",
+  "fixture": {
+    "path": "services/brain-api/tests/fixtures/sv2_brp02_markers.json",
+    "sha256": "02a98529e568d6a8a473154e4ee540d5d5fd1ae3a286c5caa89c833054a787a5",
+    "contents": "two independent sets (projects alpha and beta) of lesson, decision, milestone and signal markers with explicit project, worktree, branch, swarm, task, execution and source timestamp, delivered directly and through outbox replay"
+  },
+  "runs": {
+    "red": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40154435798",
+    "red_commit": "2f7c66d53b8a71b65de75c4dc3de7554747660cf",
+    "red_note": "tests-only head on dev code: 24 provenance tests failed, 119 passed",
+    "green": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40155372020",
+    "green_commit": "8b9eca964afef8645a4e1c95e25ca4705346d4a3"
+  },
+  "cases": {
+    "T-SV2-BRP-02-A": [
+      "test_every_marker_type_keeps_its_scope_from_direct_write_to_readback (two independent fixtures)",
+      "test_replayed_markers_keep_scope_and_their_source_timestamp (two independent fixtures)",
+      "test_replay_of_an_unattributed_entry_does_not_turn_its_folder_into_a_project",
+      "test_milestone_routes_by_project_and_not_by_agent_name",
+      "test_milestone_routes_by_the_project_id_repo_when_project_is_absent",
+      "test_brain_ops_parser_reads_back_log_marker_provenance",
+      "test_lesson_dedup_still_matches_content_after_provenance_is_added",
+      "test_unsupported_provenance_values_are_counted_as_lost",
+      "test_a_blank_provenance_value_is_not_counted_as_lost",
+      "test_a_list_of_blank_values_is_not_counted_as_lost"
+    ],
+    "T-SV2-BRP-02-B": [
+      "test_a_marker_claiming_another_project_is_refused_and_writes_nothing (all four types; content names both projects; vault digest unchanged; denial recorded; corrected request accepted)",
+      "test_a_marker_listing_a_foreign_project_in_its_project_set_is_refused",
+      "test_a_marker_naming_a_foreign_project_without_its_id_is_refused",
+      "test_a_granted_worker_cannot_route_a_legacy_milestone_into_a_foreign_project",
+      "test_readback_is_hidden_from_a_worker_outside_the_marker_project",
+      "test_a_worker_token_without_a_project_grant_keeps_writing"
+    ],
+    "T-SV2-BRP-02-C": [
+      "test_a_replay_after_restart_acknowledges_the_canonical_marker (all four types; stale replay cannot overwrite)",
+      "test_concurrent_duplicate_writes_from_separate_processes_leave_one_marker (all four types; 8 writes over 4 processes give 1 write and 7 replays)",
+      "test_a_write_interrupted_before_it_is_recorded_lands_once_on_retry (all four types)",
+      "test_a_retry_after_midnight_finds_the_log_the_dead_attempt_wrote",
+      "test_a_marker_without_an_idempotency_key_is_written_again_after_the_cache_window",
+      "test_a_blank_idempotency_key_does_not_share_one_marker_id",
+      "test_a_lesson_log_written_before_provenance_still_dedups_and_reads_back"
+    ]
+  },
+  "measurement": {
+    "name": "marker_provenance_loss_total",
+    "fixture_value": 0,
+    "reported_by": "POST /marker response field and a brain-api warning log line with marker_type and marker_id"
+  },
+  "interfaces": {
+    "POST /marker": "response adds marker_id and marker_provenance_loss_total; action replayed with idempotent_replay true for a recorded marker id; 403 when a granted worker claims a project outside its grant",
+    "GET /marker/{marker_id}": "marker_type, vault_path, canonical_marker_id and the provenance read back from the vault file; 404 outside the caller grant",
+    "KB_WORKER_TOKENS": "brain_id@projA|projB=token grants a worker token those projects only; brain_id=token unchanged",
+    "provenance_fields": [
+      "marker_id",
+      "brain",
+      "source_ts",
+      "project_id",
+      "projects",
+      "project",
+      "repo",
+      "worktree",
+      "cwd",
+      "remote",
+      "branch",
+      "session_id",
+      "execution",
+      "installation",
+      "harness",
+      "swarm",
+      "task",
+      "task_revision",
+      "lane",
+      "attribution"
+    ],
+    "storage": "frontmatter keys on signal and decision files; an inline @provenance comment on the entry header of lesson and milestone logs; registry brain-feed/markers/<marker_id>.json under a flock",
+    "milestone_routing": "attrs project, then the repo segment of project_id, then source as a compatibility path for clients with no project attribution; a granted worker routes only into granted projects",
+    "replay": "outbox drains map the buffer's folder field to cwd instead of project and keep the source ts"
+  },
+  "rollback": {
+    "action": "old marker readers keep working: lesson and reconcile hashes cover entry bodies only, the header comment and extra frontmatter keys are ignored by existing parsers; deleting brain-feed/markers only drops replay acknowledgements beyond the cache window",
+    "rehearsal": "test_a_lesson_log_written_before_provenance_still_dedups_and_reads_back and the unchanged test_marker suite (unit level, mocked)"
+  },
+  "limitations": [
+    "no metrics sink exists in the kernel; the measurement is a response field and a log line",
+    "signal crash recovery scans the newest SIGNAL_DEDUP_SCAN_MAX signal files, so a retry after more newer signals than that writes a duplicate",
+    "flock gives exclusion across processes on one host and across hosts only where the vault mount honours flock",
+    "a worker token with a project grant may still write unattributed markers, which stay unattributed and are hidden from scoped readback"
+  ],
+  "case_files": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ]
+}
