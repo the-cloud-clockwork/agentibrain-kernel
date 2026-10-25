@@ -82,10 +82,16 @@ class FakeHost:
         monkeypatch.setattr(bootstrap, "run_migrations", lambda settings: [])
         monkeypatch.setattr(bootstrap, "remove_other_stacks", self._remove)
         monkeypatch.setattr(bootstrap, "find_deployment", FIND_DEPLOYMENT)
+        self.vaults: dict[str, set[str]] = {}
+        monkeypatch.setattr(
+            bootstrap, "_vault_projects", lambda vault: set(self.vaults.get(vault, ()))
+        )
 
     def start(self, settings: BrainSettings) -> None:
         self.held.update(_running(settings))
         self.workdirs.setdefault(settings.compose_project, set()).add(str(settings.config_dir))
+        vault = str(settings.vault_path.resolve())
+        self.vaults.setdefault(vault, set()).add(settings.compose_project)
 
     def _compose(self, cmd, cwd):
         self.calls.append((str(cwd), tuple(cmd)))
@@ -216,6 +222,43 @@ def test_a_brain_whose_name_extends_another_is_not_its_own(tmp_path, monkeypatch
 
     assert ("port", "PORT_BRAIN_API 18103 is held by agentibrain-a-b-brain-api-1") in conflicts
     assert len(conflicts) == len(PORTS)
+
+
+def test_a_shared_vault_is_a_volume_conflict(tmp_path, monkeypatch):
+    host = FakeHost(monkeypatch)
+    personal = _instance(tmp_path, "personal", DISTINCT["personal"])
+    swarm = BrainSettings(
+        brain_id="swarm",
+        config_dir=tmp_path / "swarm",
+        vault_path=personal.vault_path,
+        _env_file=None,
+        **dict(zip(PORTS, DISTINCT["swarm"], strict=True)),
+    )
+    bootstrap.write_compose(swarm, bootstrap.render_compose(swarm))
+    host.start(personal)
+    vault = str(personal.vault_path.resolve())
+
+    assert _rendered(swarm)["services"]["brain-api"]["labels"] == {"agentibrain.vault": vault}
+    assert bootstrap.instance_conflicts(swarm) == [
+        ("volume", f"vault {vault} is mounted by compose project agentibrain-personal")
+    ]
+    assert _cli(monkeypatch, swarm, "up").exit_code == 1
+    assert host.calls == []
+
+
+def test_up_publishes_ports_edited_after_install(tmp_path, monkeypatch):
+    FakeHost(monkeypatch)
+    _instance(tmp_path, "swarm", DISTINCT["swarm"])
+    edited = BrainSettings(
+        brain_id="swarm",
+        config_dir=tmp_path / "swarm",
+        vault_path=tmp_path / "swarm-vault",
+        _env_file=None,
+        **dict(zip(PORTS, SECOND_RUN["swarm"], strict=True)),
+    )
+
+    assert _cli(monkeypatch, edited, "up").exit_code == 0
+    assert _host_ports(_rendered(edited)) == set(SECOND_RUN["swarm"])
 
 
 def test_corrected_ports_need_a_new_request(tmp_path, monkeypatch):

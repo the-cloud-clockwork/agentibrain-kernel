@@ -115,6 +115,8 @@
     image: {{ brain_api_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-api:dev") }}
 {% if not compose_project %}    container_name: agentibrain_brain_api
 {% endif %}    restart: unless-stopped
+    labels:
+      agentibrain.vault: "{{ vault_path }}"
     depends_on:
       postgres: { condition: service_healthy }
       embeddings: { condition: service_started }

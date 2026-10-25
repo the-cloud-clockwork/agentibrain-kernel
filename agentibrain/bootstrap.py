@@ -658,6 +658,29 @@ def _project_workdirs(project: str) -> set[str]:
     return {ln for ln in proc.stdout.splitlines() if ln}
 
 
+def _vault_projects(vault: str) -> set[str]:
+    """Compose projects whose brain-api is labelled with ``vault`` as its bind mount."""
+    if not shutil.which("docker"):
+        return set()
+    proc = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "-a",
+            "--filter",
+            f"label=agentibrain.vault={vault}",
+            "--format",
+            '{{.Label "com.docker.compose.project"}}',
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return set()
+    return {ln for ln in proc.stdout.splitlines() if ln}
+
+
 def instance_ports(settings: BrainSettings) -> dict[str, int]:
     ports = {
         "PORT_BRAIN_API": settings.port_brain_api,
@@ -683,6 +706,11 @@ def instance_conflicts(settings: BrainSettings) -> list[tuple[str, str]]:
         ("project", f"compose project {project} already runs from {workdir}")
         for workdir in sorted(_project_workdirs(project))
         if Path(workdir).resolve() != cfg_dir
+    ]
+    vault = str(settings.vault_path.expanduser().resolve())
+    conflicts += [
+        ("volume", f"vault {vault} is mounted by compose project {other}")
+        for other in sorted(_vault_projects(vault) - {project})
     ]
     services = yaml.safe_load(render_compose(settings))["services"]
     # A bare prefix would let brain "a" claim containers of brain "a-b".

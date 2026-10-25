@@ -85,6 +85,8 @@ def _make_room(settings: BrainSettings, keep: Path | None) -> None:
         return
     if keep is None:
         return
+    # Re-render so PORT_* edits in the brain's .env reach the literal ports compose publishes.
+    bootstrap.write_compose(settings, bootstrap.render_compose(settings))
     conflicts = bootstrap.instance_conflicts(settings)
     for kind, detail in conflicts:
         bootstrap.brain_instance_resource_conflicts[kind] += 1
