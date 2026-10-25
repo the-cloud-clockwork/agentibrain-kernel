@@ -24,12 +24,11 @@ from pathlib import Path
 
 # Import sibling module
 sys.path.insert(0, str(Path(__file__).parent))
-import markers
-import redact
 import brain_verifier
 import lesson_reconcile
+import markers
+import project_feed
 import signal_resolution
-
 
 # ── Heat computation ──────────────────────────────────────────────────
 
@@ -544,6 +543,19 @@ def write_lessons_feed(path: Path, vault_root: Path, now: datetime | None = None
     path.write_text("".join(lines), encoding="utf-8")
     stats["written"] = len(top)
     return stats
+
+
+def write_knowledge_feeds(
+    brain_feed_dir: Path, vault_root: Path, arcs: list[markers.DocumentMeta], now: datetime
+) -> dict:
+    """Write lessons.md and every project's own feed snapshot; return the lesson stats."""
+    lesson_stats = write_lessons_feed(brain_feed_dir / "lessons.md", vault_root, now=now)
+    project_feed.write_snapshots(
+        brain_feed_dir,
+        project_feed.build_snapshots(arcs, vault_root, now),
+        project_feed.fleet_warnings(arcs, now),
+    )
+    return lesson_stats
 
 
 def write_inject_feed(path: Path, injects: list[markers.Marker]) -> None:
@@ -1258,7 +1270,7 @@ def tick(
         write_hot_arcs_md(brain_feed_dir / "hot-arcs.md", hot)
         signal_stats = write_signals_feed(brain_feed_dir / "signals.md", all_signals, now=now)
         write_inject_feed(brain_feed_dir / "inject.md", all_injects)
-        lesson_feed_stats = write_lessons_feed(brain_feed_dir / "lessons.md", vault_root, now=now)
+        lesson_feed_stats = write_knowledge_feeds(brain_feed_dir, vault_root, arcs, now=now)
 
     # 6. Update dashboards (skipped in quick_refresh)
     if not dry_run and not quick_refresh:

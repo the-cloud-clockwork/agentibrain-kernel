@@ -38,6 +38,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import brain_keeper
 import markers
+import project_feed
 from brain_apply import _rank
 
 # Prompt-size guards. The AI reasoning model has a finite context window. An
@@ -79,6 +80,45 @@ def _extract_section(arc, heading: str) -> str:
         if capturing and s and not s.startswith("<!--"):
             out.append(s.lstrip("> ").strip())
     return " ".join(out)
+
+
+_CLOSING = "Respond ONLY with the 6 sections above."
+
+
+def with_project_intent(prompt: str, brain_feed_dir: Path) -> str:
+    """Add the per-project intent task, listing the projects the tick marked active."""
+    active = project_feed.active_projects(brain_feed_dir)
+    listed = "\n".join(f"- {p}" for p in active) if active else "(none)"
+    task = f"""### 7. Project Intent
+For EACH active project below, say in one sentence what the operator is doing
+in that project, grounded only in that project's own arcs, signals and
+lessons. Never carry one project's work into another project's line. Skip a
+project the data does not support; its last intent is kept and marked stale.
+
+Active projects:
+{listed}
+
+Format, one per line, project id first:
+`PROJECT_INTENT: <project id> | <one sentence>`
+
+If there are no active projects, say "None."
+
+Respond ONLY with the 7 sections above."""
+    if _CLOSING in prompt:
+        return prompt.replace(_CLOSING, task)
+    return f"{prompt}\n\n{task}\n"
+
+
+def _fit_budget(prompt: str, edge_map: str, arc_table: str) -> str:
+    if len(prompt) > MAX_PROMPT_CHARS:
+        prompt = prompt.replace(
+            edge_map, "  [edge map omitted — exceeded context budget; run vault cleanup]"
+        )
+    if len(prompt) > MAX_PROMPT_CHARS:
+        prompt = prompt.replace(arc_table, "  [arc table omitted — exceeded context budget]\n")
+    if len(prompt) > MAX_PROMPT_CHARS:
+        prompt = prompt[:MAX_PROMPT_CHARS] + "\n\n[prompt hard-truncated to fit context]\n"
+    return prompt
 
 
 def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
@@ -436,16 +476,7 @@ Respond ONLY with the 6 sections above. No preamble. No explanation of what you'
     # under budget; this guarantees the prompt fits the context window on ANY
     # vault state (e.g. before a cleanup has run). Drop the largest variable
     # sections first — edge map, then arc table — before a blunt truncation.
-    if len(prompt) > MAX_PROMPT_CHARS:
-        prompt = prompt.replace(
-            edge_map, "  [edge map omitted — exceeded context budget; run vault cleanup]"
-        )
-    if len(prompt) > MAX_PROMPT_CHARS:
-        prompt = prompt.replace(arc_table, "  [arc table omitted — exceeded context budget]\n")
-    if len(prompt) > MAX_PROMPT_CHARS:
-        prompt = prompt[:MAX_PROMPT_CHARS] + "\n\n[prompt hard-truncated to fit context]\n"
-
-    return prompt, stats
+    return _fit_budget(with_project_intent(prompt, brain_feed_dir), edge_map, arc_table), stats
 
 
 def main() -> int:

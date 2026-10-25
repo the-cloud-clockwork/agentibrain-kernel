@@ -1,0 +1,31 @@
+{
+  "case": "T-SV2-BRP-04-A",
+  "evidence_kind": "mocked fixture: brain-ops code on a temporary vault and brain-api through its HTTP test client; no live tick",
+  "tested_commit": "5b1c54ba685f5480fe83fbc06582dd613e25afb5",
+  "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40161932700",
+  "fixture": {
+    "path": "services/brain-ops/tests/fixtures/sv2_brp04_projects.json",
+    "sha256": "3e12a4696bd000c7f05f5e006c60fffc34677571dc84def1944ca5c0d515b728",
+    "contents": "two independent sets (alpha swarm brain, beta personal brain): a dominant project with 14 and 12 hot active arcs and a quieter project with one cold active task arc at heat 1 and 0, one lesson per project, a decision and a critical signal on the quiet project, one fleet shared warning and one unshared unattributed warning"
+  },
+  "tests": [
+    "services/brain-ops/tests/test_project_feed.py::test_the_quiet_project_keeps_its_cold_active_task_outside_the_fleet_top_ten (alpha, beta)",
+    "services/brain-ops/tests/test_project_feed.py::test_every_item_keeps_its_own_project_from_source_to_snapshot (alpha, beta)",
+    "services/brain-ops/tests/test_project_feed.py::test_only_explicitly_shared_warnings_reach_the_fleet_record (alpha, beta)",
+    "services/brain-ops/tests/test_project_feed.py::test_snapshots_are_written_per_project_with_a_stable_revision (alpha, beta)",
+    "services/brain-ops/tests/test_project_feed.py::test_the_deterministic_tick_writes_project_snapshots (alpha, beta)",
+    "services/brain-ops/tests/test_project_feed.py::test_a_lesson_shared_by_two_projects_names_only_the_serving_project (alpha, beta)",
+    "services/brain-ops/tests/test_project_feed.py::test_a_fleet_warning_on_a_project_arc_stays_out_of_the_project_signals (alpha, beta)",
+    "services/brain-ops/tests/test_project_feed.py::test_the_tick_prompt_asks_for_each_active_project_intent (alpha, beta)",
+    "services/brain-ops/tests/test_project_feed.py::test_each_active_project_gets_its_own_inferred_intent (alpha, beta)",
+    "services/brain-api/tests/test_project_feed.py::test_two_repositories_get_different_feeds_even_outside_the_fleet_top_ten (alpha, beta)",
+    "services/brain-api/tests/test_project_feed.py::test_the_revision_is_stable_until_the_snapshot_changes (alpha, beta)",
+    "services/brain-api/tests/test_project_feed.py::test_the_unscoped_feed_stays_for_legacy_clients (alpha, beta)",
+    "tests/test_tick_cycle_lock.py::test_replayed_deterministic_maintenance_accepts_each_write_once (rerun leaves project snapshots byte identical)"
+  ],
+  "then": "Opening the dominant and the quiet repository returns different feeds; the quiet project's cold active task is served though every fleet wide top ten arc belongs to the dominant project.",
+  "measurement": {
+    "project_feed_cross_scope_failures": 0
+  },
+  "outcome": "passed"
+}

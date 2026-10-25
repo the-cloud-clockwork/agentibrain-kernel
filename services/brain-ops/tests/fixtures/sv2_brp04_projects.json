@@ -1,0 +1,49 @@
+{
+  "description": "Dominant project with many hot arcs and a quieter project with one cold but active task, in two independent sets",
+  "sets": {
+    "alpha": {
+      "brain": "swarm-alpha",
+      "date": "2026-10-20",
+      "dominant": {
+        "project": "github.com/acme/dominant-alpha",
+        "arcs": 14,
+        "heat_floor": 6,
+        "lesson": "Dominant alpha retries the payment queue with jittered backoff.",
+        "signal": "Dominant alpha payment queue backlog is growing."
+      },
+      "quiet": {
+        "project": "github.com/acme/quiet-alpha",
+        "arc": "quiet-alpha-cold-task",
+        "task": "task-quiet-alpha",
+        "heat": 1,
+        "lesson": "Quiet alpha keeps its schema migrations in one folder.",
+        "decision": "Quiet alpha stores invoices in Postgres, not files.",
+        "signal": "Quiet alpha nightly export failed twice."
+      },
+      "fleet_warning": "Alpha fleet: the shared runner pool is at capacity.",
+      "unshared_warning": "Alpha private: an unattributed warning nobody shared."
+    },
+    "beta": {
+      "brain": "personal-beta",
+      "date": "2026-10-21",
+      "dominant": {
+        "project": "gitlab.example/team/dominant-beta",
+        "arcs": 12,
+        "heat_floor": 7,
+        "lesson": "Dominant beta pins its image tags to release builds.",
+        "signal": "Dominant beta cache hit rate dropped below half."
+      },
+      "quiet": {
+        "project": "gitlab.example/team/quiet-beta",
+        "arc": "quiet-beta-cold-task",
+        "task": "task-quiet-beta",
+        "heat": 0,
+        "lesson": "Quiet beta renders reports with a fixed locale.",
+        "decision": "Quiet beta drops the legacy CSV exporter.",
+        "signal": "Quiet beta certificate renewal is overdue."
+      },
+      "fleet_warning": "Beta fleet: the shared object store is read only.",
+      "unshared_warning": "Beta private: an unattributed warning nobody shared."
+    }
+  }
+}

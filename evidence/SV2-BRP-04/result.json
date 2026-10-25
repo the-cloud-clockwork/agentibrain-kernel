@@ -1,0 +1,105 @@
+{
+  "package": "SV2-BRP-04",
+  "repository": "agentibrain-kernel",
+  "gate": "G5",
+  "state": "code accepted in CI; live evidence pending gate G5",
+  "evidence_kind": "mocked fixture",
+  "tested_commit": "5b1c54ba685f5480fe83fbc06582dd613e25afb5",
+  "fixture": {
+    "path": "services/brain-ops/tests/fixtures/sv2_brp04_projects.json",
+    "sha256": "3e12a4696bd000c7f05f5e006c60fffc34677571dc84def1944ca5c0d515b728",
+    "contents": "two independent sets (alpha swarm brain, beta personal brain): a dominant project with 14 and 12 hot active arcs and a quieter project with one cold active task arc at heat 1 and 0, one lesson per project, a decision and a critical signal on the quiet project, one fleet shared warning and one unshared unattributed warning"
+  },
+  "runs": {
+    "red": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40160307420",
+    "red_commit": "8aaf4ea3fe26d91abb75da0a810db05857311ff9",
+    "red_note": "tests only head on dev code: brain-ops collection fails with ModuleNotFoundError project_feed on 3.10, 3.11, 3.12 and macos; the job stops there, so the brain-api step did not run",
+    "green": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40161932700",
+    "green_commit": "5b1c54ba685f5480fe83fbc06582dd613e25afb5",
+    "green_note": "lint-test 3.10, 3.11, 3.12 and macos smoke green: unit 208, brain-ops 244, mcp 26, brain-api 177, embeddings 172, tick cycle 41 passed on 3.12"
+  },
+  "cases": {
+    "T-SV2-BRP-04-A": [
+      "services/brain-ops/tests/test_project_feed.py::test_the_quiet_project_keeps_its_cold_active_task_outside_the_fleet_top_ten (alpha, beta)",
+      "services/brain-ops/tests/test_project_feed.py::test_every_item_keeps_its_own_project_from_source_to_snapshot (alpha, beta)",
+      "services/brain-ops/tests/test_project_feed.py::test_only_explicitly_shared_warnings_reach_the_fleet_record (alpha, beta)",
+      "services/brain-ops/tests/test_project_feed.py::test_snapshots_are_written_per_project_with_a_stable_revision (alpha, beta)",
+      "services/brain-ops/tests/test_project_feed.py::test_the_deterministic_tick_writes_project_snapshots (alpha, beta)",
+      "services/brain-ops/tests/test_project_feed.py::test_a_lesson_shared_by_two_projects_names_only_the_serving_project (alpha, beta)",
+      "services/brain-ops/tests/test_project_feed.py::test_a_fleet_warning_on_a_project_arc_stays_out_of_the_project_signals (alpha, beta)",
+      "services/brain-ops/tests/test_project_feed.py::test_the_tick_prompt_asks_for_each_active_project_intent (alpha, beta)",
+      "services/brain-ops/tests/test_project_feed.py::test_each_active_project_gets_its_own_inferred_intent (alpha, beta)",
+      "services/brain-api/tests/test_project_feed.py::test_two_repositories_get_different_feeds_even_outside_the_fleet_top_ten (alpha, beta)",
+      "services/brain-api/tests/test_project_feed.py::test_the_revision_is_stable_until_the_snapshot_changes (alpha, beta)",
+      "services/brain-api/tests/test_project_feed.py::test_the_unscoped_feed_stays_for_legacy_clients (alpha, beta)",
+      "tests/test_tick_cycle_lock.py::test_replayed_deterministic_maintenance_accepts_each_write_once (rerun leaves project snapshots byte identical)"
+    ],
+    "T-SV2-BRP-04-B": [
+      "services/brain-api/tests/test_project_feed.py::test_missing_project_data_returns_a_scoped_empty_result (alpha, beta; feed files snapshotted before and after, unchanged)",
+      "services/brain-api/tests/test_project_feed.py::test_a_grant_outside_the_project_is_refused_and_recorded (alpha, beta; 403 body names no other project, 400 without project)",
+      "services/brain-api/tests/test_project_feed.py::test_items_from_another_project_are_dropped_and_counted (alpha, beta)",
+      "services/brain-api/tests/test_project_feed.py::test_an_item_naming_a_second_project_is_not_served (alpha, beta)",
+      "services/brain-api/tests/test_project_feed.py::test_a_snapshot_naming_another_project_is_served_as_missing (alpha, beta)",
+      "services/brain-api/tests/test_project_feed.py::test_an_intent_naming_another_project_is_not_served (alpha, beta)",
+      "services/brain-ops/tests/test_project_feed.py::test_an_intent_for_a_project_without_a_snapshot_is_not_written (alpha, beta)"
+    ],
+    "T-SV2-BRP-04-C": [
+      "services/brain-ops/tests/test_project_feed.py::test_a_failed_inference_keeps_the_last_intent_labelled_stale (alpha, beta; fake clock)",
+      "services/brain-ops/tests/test_project_feed.py::test_an_older_inference_never_overwrites_a_newer_intent (alpha, beta; same inference replayed twice, then an older one)",
+      "services/brain-ops/tests/test_project_feed.py::test_an_older_run_never_overwrites_or_removes_a_newer_snapshot (alpha, beta)",
+      "services/brain-ops/tests/test_project_feed.py::test_a_project_that_goes_quiet_loses_its_stale_snapshot (alpha, beta)",
+      "services/brain-api/tests/test_project_feed.py::test_a_stale_intent_is_served_with_its_stale_label (alpha, beta)",
+      "services/brain-api/tests/test_project_feed.py::test_an_old_fresh_intent_and_an_old_snapshot_read_as_stale (alpha, beta)"
+    ]
+  },
+  "measurement": {
+    "project_feed_cross_scope_failures": 0,
+    "note": "0 across every positive case in both sets; the negative cases plant foreign items and assert they are dropped and counted (2, 2 and 1)"
+  },
+  "interfaces": {
+    "brain-ops": [
+      "project_feed.build_snapshots",
+      "project_feed.fleet_warnings",
+      "project_feed.write_snapshots",
+      "project_feed.active_projects",
+      "project_feed.write_project_intents",
+      "brain_keeper.write_knowledge_feeds",
+      "brain_tick_prompt.with_project_intent",
+      "brain_apply.parse_project_intents",
+      "brain_apply.apply(now=)"
+    ],
+    "brain-api": [
+      "GET /feed?project=<canonical project id>",
+      "feed.project_feed_payload"
+    ],
+    "files": [
+      "brain-feed/projects/<sha256 of project id, 24 hex>.json",
+      "brain-feed/project-intent/<same key>.json",
+      "brain-feed/fleet-warnings.json"
+    ],
+    "settings": [
+      "BRAIN_PROJECT_FEED_ARCS=10",
+      "BRAIN_PROJECT_FEED_KNOWLEDGE=10",
+      "BRAIN_PROJECT_FEED_STALE_SECONDS=10800",
+      "BRAIN_PROJECT_INTENT_STALE_SECONDS=21600"
+    ]
+  },
+  "rollback": {
+    "action": "clients that omit project keep the unscoped legacy feed for router and ungranted tokens (test_the_unscoped_feed_stays_for_legacy_clients); scoped consumers are disabled selectively by not sending project; a full revert of the branch is git revert of its commits",
+    "rehearsal": "git revert --no-commit of every branch commit on head 5b1c54b applied cleanly and left no difference against origin/dev; aborted afterwards",
+    "data_safety": "snapshots, intent records and the fleet record are derived caches rebuilt each tick; arcs, lesson logs and decisions are the authoritative objects and are never written by this package"
+  },
+  "limitations": [
+    "A worker token granted specific projects that calls GET /feed without project now gets 400 where it got the global feed; no client change ships here, adoption by the agentihooks brain adapter belongs to SV2-BRP-05.",
+    "Freshness is measured from the snapshot file time; a vault copied or restored without file times reads fresh or stale wrongly until the next tick.",
+    "The project signal cap at BRAIN_PROJECT_FEED_KNOWLEDGE has no dedicated test.",
+    "When the tick prompt hits its hard truncation, the tail is cut, which now holds the project intent task.",
+    "Snapshot ownership compares second resolution stamps; two ticks in the same second both write.",
+    "Signal files written by POST /marker into amygdala are not yet part of project signals; only arc signal markers are."
+  ],
+  "case_files": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "case": "T-SV2-BRP-04-C",
+  "evidence_kind": "mocked fixture: brain-ops code on a temporary vault and brain-api through its HTTP test client; no live tick",
+  "tested_commit": "5b1c54ba685f5480fe83fbc06582dd613e25afb5",
+  "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40161932700",
+  "fixture": {
+    "path": "services/brain-ops/tests/fixtures/sv2_brp04_projects.json",
+    "sha256": "3e12a4696bd000c7f05f5e006c60fffc34677571dc84def1944ca5c0d515b728",
+    "contents": "two independent sets (alpha swarm brain, beta personal brain): a dominant project with 14 and 12 hot active arcs and a quieter project with one cold active task arc at heat 1 and 0, one lesson per project, a decision and a critical signal on the quiet project, one fleet shared warning and one unshared unattributed warning"
+  },
+  "tests": [
+    "services/brain-ops/tests/test_project_feed.py::test_a_failed_inference_keeps_the_last_intent_labelled_stale (alpha, beta; fake clock)",
+    "services/brain-ops/tests/test_project_feed.py::test_an_older_inference_never_overwrites_a_newer_intent (alpha, beta; same inference replayed twice, then an older one)",
+    "services/brain-ops/tests/test_project_feed.py::test_an_older_run_never_overwrites_or_removes_a_newer_snapshot (alpha, beta)",
+    "services/brain-ops/tests/test_project_feed.py::test_a_project_that_goes_quiet_loses_its_stale_snapshot (alpha, beta)",
+    "services/brain-api/tests/test_project_feed.py::test_a_stale_intent_is_served_with_its_stale_label (alpha, beta)",
+    "services/brain-api/tests/test_project_feed.py::test_an_old_fresh_intent_and_an_old_snapshot_read_as_stale (alpha, beta)"
+  ],
+  "then": "A failed project intent inference keeps the last intent labelled stale with its original inference time; an older inference or tick never replaces a newer accepted result.",
+  "measurement": {
+    "project_feed_cross_scope_failures": 0
+  },
+  "outcome": "passed"
+}
