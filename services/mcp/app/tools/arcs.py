@@ -48,6 +48,45 @@ async def _search_response(query: str, arcs: list[dict], project: str, expand_gr
     return json.dumps(response, indent=2)
 
 
+async def brain_read_detail(
+    entity_id: str,
+    revision: int | None = None,
+    section: str = "",
+    section_offset: int = 0,
+    reference_offset: int = 0,
+    content_hash: str = "",
+    page_size: int = 16,
+) -> str:
+    """Read canonical full sections, pinned revisions and provenance.
+
+    Pass the returned revision and content hash on every continuation, with
+    the same section and returned offsets. Missing detail is an error; this
+    tool never substitutes an indexed preview. Entity ids include their type
+    prefix, such as arc:cluster or lesson:key. Each section is returned whole.
+    """
+    if not BRAIN_API_URL:
+        return json.dumps({"error": "BRAIN_API_URL not set"})
+    params = {
+        "entity_id": entity_id,
+        "section": section,
+        "section_offset": section_offset,
+        "reference_offset": reference_offset,
+        "content_hash": content_hash,
+        "section_limit": page_size,
+        "reference_limit": page_size,
+    }
+    if revision is not None:
+        params["revision"] = revision
+    headers = {"Authorization": f"Bearer {BRAIN_API_TOKEN}"} if BRAIN_API_TOKEN else {}
+    return await http_request(
+        "GET",
+        f"{BRAIN_API_URL.rstrip('/')}/knowledge/detail",
+        headers=headers,
+        params=params,
+        timeout=15,
+    )
+
+
 def register(mcp: FastMCP):
     """Register brain arc tools on a FastMCP server."""
 
@@ -136,44 +175,7 @@ def register(mcp: FastMCP):
 
         return await _search_response(query, filtered, project, expand_graph)
 
-    @mcp.tool()
-    async def brain_read_detail(
-        entity_id: str,
-        revision: int | None = None,
-        section: str = "",
-        section_offset: int = 0,
-        reference_offset: int = 0,
-        content_hash: str = "",
-        page_size: int = 16,
-    ) -> str:
-        """Read canonical full sections, pinned revisions and provenance.
-
-        Pass the returned revision and content hash on every continuation, with
-        the same section and returned offsets. Missing detail is an error; this
-        tool never substitutes an indexed preview. Entity ids include their type
-        prefix, such as arc:cluster or lesson:key. Each section is returned whole.
-        """
-        if not BRAIN_API_URL:
-            return json.dumps({"error": "BRAIN_API_URL not set"})
-        params = {
-            "entity_id": entity_id,
-            "section": section,
-            "section_offset": section_offset,
-            "reference_offset": reference_offset,
-            "content_hash": content_hash,
-            "section_limit": page_size,
-            "reference_limit": page_size,
-        }
-        if revision is not None:
-            params["revision"] = revision
-        headers = {"Authorization": f"Bearer {BRAIN_API_TOKEN}"} if BRAIN_API_TOKEN else {}
-        return await http_request(
-            "GET",
-            f"{BRAIN_API_URL.rstrip(chr(47))}/knowledge/detail",
-            headers=headers,
-            params=params,
-            timeout=15,
-        )
+    mcp.tool()(brain_read_detail)
 
     @mcp.tool()
     async def brain_get_arc(cluster_id: str) -> str:
