@@ -202,11 +202,12 @@ def accept(
         lambda: rank.retrieve(
             graph.active_store(),
             request.project_id,
-            f"{request.intent} {request.query}",
-            [*request.subsystems, *request.errors],
+            rank.Task(
+                f"{request.intent} {request.query}",
+                (*request.subsystems, *request.errors),
+                request.budget.max_items,
+            ),
             active,
-            semantic=semantic_source,
-            heat=heat_source,
-            limit=request.budget.max_items,
+            rank.Sources(semantic_source, heat_source),
         ),
     )

@@ -125,12 +125,11 @@ def test_a_heat_only_candidate_is_excluded_by_the_pure_policy():
     rank = _rank()
     hot = {"id": "arc:hot", "type": "arc", "title": "Unrelated colour work"}
     result = rank.rank(
-        "transcript ingestion",
-        [],
+        rank.Task("transcript ingestion"),
         [hot],
         [],
         rank.policy(rank.CURRENT),
-        heat=_source({"arc:hot": 1.0}),
+        rank.Sources(heat=_source({"arc:hot": 1.0})),
     )
     assert result["items"] == []
     assert result["excluded"] == {"heat_only": 1, "no_task_evidence": 0}

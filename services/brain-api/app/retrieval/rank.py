@@ -11,6 +11,7 @@ import logging
 import re
 import time
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 
 from .current_knowledge import select_current
 
@@ -49,6 +50,22 @@ EDGE_BUDGET = 2000
 _WORD = re.compile(r"[a-z0-9]{3,}")
 
 Source = Callable[[str, list[str]], dict[str, float]]
+
+
+@dataclass(frozen=True)
+class Task:
+    query: str
+    terms: tuple[str, ...] = ()
+    limit: int = 12
+
+
+@dataclass(frozen=True)
+class Sources:
+    semantic: Source | None = None
+    heat: Source | None = None
+
+
+NO_SOURCES = Sources()
 
 
 def policy(revision: str) -> dict:
@@ -115,21 +132,17 @@ def _graph(edges: list[dict], relevance: dict[str, float], active: dict) -> dict
 
 
 def rank(
-    query: str,
-    task_terms: Iterable[str],
+    task: Task,
     candidates: list[dict],
     edges: list[dict],
     active: dict,
-    *,
-    semantic: Source | None = None,
-    heat: Source | None = None,
-    limit: int = 12,
+    sources: Sources = NO_SOURCES,
 ) -> dict:
     ids = [candidate["id"] for candidate in candidates]
-    wanted, task = terms(query), terms(*task_terms)
-    semantic_values, semantic_state = _optional("semantic", semantic, query, ids)
-    heat_values, heat_state = _optional("heat", heat, query, ids)
-    direct = {c["id"]: _direct(c, wanted, task, semantic_values, active) for c in candidates}
+    wanted, named = terms(task.query), terms(*task.terms)
+    semantic_values, semantic_state = _optional("semantic", sources.semantic, task.query, ids)
+    heat_values, heat_state = _optional("heat", sources.heat, task.query, ids)
+    direct = {c["id"]: _direct(c, wanted, named, semantic_values, active) for c in candidates}
     graph = _graph(edges, {ident: value[1] for ident, value in direct.items()}, active)
     items, excluded = [], {"heat_only": 0, "no_task_evidence": 0}
     for candidate in candidates:
@@ -173,7 +186,7 @@ def rank(
     return {
         "policy_revision": active["revision"],
         "authority": "recalled_evidence",
-        "items": items[:limit],
+        "items": items[: task.limit],
         "excluded": excluded,
         "sources": sources,
         "reduced": "unavailable" in sources.values(),
@@ -211,13 +224,9 @@ def _unavailable(state: str, active: dict) -> dict:
 def retrieve(
     store,
     project: str,
-    query: str,
-    task_terms: list[str],
+    task: Task,
     active: dict,
-    *,
-    semantic: Source | None = None,
-    heat: Source | None = None,
-    limit: int = 12,
+    sources: Sources = NO_SOURCES,
     time_budget: float = 0.25,
 ) -> dict:
     if store is None:
@@ -233,9 +242,7 @@ def retrieve(
             )["nodes"]
     except TimeoutError:
         return _unavailable("unavailable", active)
-    result = rank(
-        query, task_terms, labelled, edges, active, semantic=semantic, heat=heat, limit=limit
-    )
+    result = rank(task, labelled, edges, active, sources)
     result["sources"]["graph"] = "ok" if edges_complete else "partial"
     result["scan_limited"] = len(scanned) >= SCAN_LIMIT
     return result
