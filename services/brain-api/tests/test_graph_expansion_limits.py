@@ -100,7 +100,7 @@ def test_proposed_edges_and_hidden_intermediates_never_expand(monkeypatch, vault
     assert [n["id"] for n in data["nodes"]] == ["session:seed", "arc:bridge", "lesson:answer"]
 
 
-def test_a_slow_runner_cannot_empty_an_expansion(monkeypatch, vault, tmp_path):
+def test_expansion_result_ignores_real_runtime(monkeypatch, vault, tmp_path):
     client = _setup(monkeypatch, vault, tmp_path)
     graph = importlib.import_module("app.graph")
     original = graph.GraphReadView.get_entity
