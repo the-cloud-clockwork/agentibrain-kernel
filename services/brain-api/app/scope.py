@@ -2,7 +2,8 @@
 
 BRAIN_ID names this brain. KB_WORKER_TOKENS lists worker tokens as
 ``brain_id=token`` pairs, comma separated; ``brain_id@projA|projB=token`` also
-grants the token only those projects. Router tokens (KB_ROUTER_TOKENS)
+grants the token only those projects, and a ``#eng|ci`` suffix before ``=``
+grants it only those lanes. Router tokens (KB_ROUTER_TOKENS)
 name no brain and stay unscoped.
 """
 
@@ -18,11 +19,15 @@ DENIALS_KEPT = int(os.getenv("BRAIN_DENIALS_KEPT", "1000"))
 SESSION_TITLE_MAX = 200
 
 
-def _load_worker_tokens() -> tuple[dict[str, str], dict[str, frozenset[str]]]:
+def _load_worker_tokens() -> tuple[
+    dict[str, str], dict[str, frozenset[str]], dict[str, frozenset[str]]
+]:
     found: dict[str, str] = {}
     grants: dict[str, frozenset[str]] = {}
+    roles: dict[str, frozenset[str]] = {}
     for pair in os.getenv("KB_WORKER_TOKENS", "").split(","):
         named, sep, token = pair.strip().partition("=")
+        named, _, lanes = named.partition("#")
         brain, _, projects = named.partition("@")
         brain, token = brain.strip(), token.strip()
         if not (sep and brain and token):
@@ -31,11 +36,12 @@ def _load_worker_tokens() -> tuple[dict[str, str], dict[str, frozenset[str]]]:
             raise RuntimeError("KB_WORKER_TOKENS names one token for two brains")
         found[token] = brain
         grants[token] = frozenset(p.strip() for p in projects.split("|") if p.strip())
-    return found, grants
+        roles[token] = frozenset(r.strip() for r in lanes.split("|") if r.strip())
+    return found, grants, roles
 
 
 BRAIN_ID = os.getenv("BRAIN_ID", "").strip()
-WORKER_TOKENS, PROJECT_GRANTS = _load_worker_tokens()
+WORKER_TOKENS, PROJECT_GRANTS, ROLE_GRANTS = _load_worker_tokens()
 if WORKER_TOKENS and not BRAIN_ID:
     raise RuntimeError("KB_WORKER_TOKENS is set but BRAIN_ID is not; set BRAIN_ID and restart.")
 
@@ -50,6 +56,11 @@ def worker_brain(token: str) -> str | None:
 def project_grant(token: str) -> frozenset[str]:
     """Projects a worker token may write and read; empty means the whole brain."""
     return PROJECT_GRANTS.get(token, frozenset())
+
+
+def role_grant(token: str) -> frozenset[str]:
+    """Lanes a worker token may act as; empty means any lane."""
+    return ROLE_GRANTS.get(token, frozenset())
 
 
 def admits(grant: frozenset[str], claimed: set[str], *, unattributed: bool) -> bool:

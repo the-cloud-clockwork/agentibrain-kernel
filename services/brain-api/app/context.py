@@ -62,7 +62,7 @@ class ContextRequest(BaseModel):
 
 _failures: Counter[str] = Counter()
 _accepted: OrderedDict[str, dict] = OrderedDict()
-_latest: dict[tuple[str, str, str], int] = {}
+_latest: OrderedDict[tuple[str, str, str], int] = OrderedDict()
 _lock = threading.Lock()
 
 
@@ -103,7 +103,7 @@ async def read_bounded(chunks: AsyncIterator[bytes]) -> bytes:
 def _parse(body: bytes) -> ContextRequest:
     try:
         raw = json.loads(body)
-    except ValueError as exc:
+    except (ValueError, RecursionError) as exc:
         raise _reject(422, "invalid_request", "request body is not JSON") from exc
     if not isinstance(raw, dict):
         raise _reject(422, "invalid_request", "request body must be an object")
@@ -130,6 +130,9 @@ def _admit(request: ContextRequest, trusted: dict, operation: str) -> dict:
         else:
             stale = False
             _latest[task] = request.task_revision
+            _latest.move_to_end(task)
+            while len(_latest) > ACCEPTED_KEPT:
+                _latest.popitem(last=False)
             stored = _accepted.get(operation)
             if stored is not None:
                 _accepted.move_to_end(operation)
@@ -152,7 +155,9 @@ def _admit(request: ContextRequest, trusted: dict, operation: str) -> dict:
     return response
 
 
-def accept(body: bytes, grant: frozenset[str], deny: Callable[[], None]) -> dict:
+def accept(
+    body: bytes, grant: frozenset[str], lanes: frozenset[str], deny: Callable[[], None]
+) -> dict:
     if not scope.BRAIN_ID:
         raise HTTPException(status_code=503, detail="BRAIN_ID is not configured")
     request = _parse(body)
@@ -162,5 +167,8 @@ def accept(body: bytes, grant: frozenset[str], deny: Callable[[], None]) -> dict
     if not scope.admits(grant, {request.project_id}, unattributed=False):
         deny()
         raise _reject(403, "project_grant", "project is outside this token's grant")
+    if lanes and request.lane not in lanes:
+        deny()
+        raise _reject(403, "role_grant", "lane is outside this token's grant")
     trusted = {"brain_id": scope.BRAIN_ID, "project_ids": [request.project_id]}
     return _admit(request, trusted, operation_id(request, trusted))

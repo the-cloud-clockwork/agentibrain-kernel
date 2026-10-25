@@ -860,9 +860,11 @@ async def post_context(
     if not context.enabled():
         raise HTTPException(status_code=503, detail="task-context requests are disabled")
     body = await context.read_bounded(request.stream())
+    token = _bearer(authorization)
     return context.accept(
         body,
         _caller_grant(authorization),
+        frozenset() if token in KB_ROUTER_TOKENS else scope.role_grant(token),
         lambda: scope.record_denial(
             scope.worker_brain(_bearer(authorization)) or "",
             "POST /v2/context",

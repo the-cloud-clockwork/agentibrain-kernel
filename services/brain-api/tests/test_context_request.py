@@ -6,7 +6,7 @@ import pytest
 from .test_graph import ROUTER, _auth, _client
 
 SCHEMA = Path(__file__).resolve().parents[3] / "schemas" / "context-v2.json"
-TOKENS = "hive-a@alpha=engineer,hive-a@alpha=ci,hive-b@alpha=other"
+TOKENS = "hive-a@alpha#eng=engineer,hive-a@alpha#ci=ci,hive-b@alpha=other"
 
 
 def _request(**changes):
@@ -116,6 +116,27 @@ def test_query_text_cannot_broaden_the_project_set(monkeypatch, vault, tmp_path)
     assert _failures(client) == {"project_grant": 1, "invalid_request": 1}
 
 
+def test_a_token_cannot_act_as_another_lane(monkeypatch, vault, tmp_path):
+    client = _client(monkeypatch, vault, tmp_path / "ctx.db", TOKENS)
+    response = _post(client, _request(lane="ci"))
+    assert response.status_code == 403
+    assert response.json()["detail"]["reason"] == "role_grant"
+    assert _post(client, _request(lane="ci"), token=ROUTER).status_code == 200
+    assert _failures(client) == {"role_grant": 1}
+
+
+def test_a_deeply_nested_body_is_an_invalid_request(monkeypatch, vault, tmp_path):
+    client = _client(monkeypatch, vault, tmp_path / "ctx.db", TOKENS)
+    body = '{"a":' + "[" * 60_000
+    response = client.post(
+        "/v2/context",
+        content=body,
+        headers={**_auth("engineer"), "Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert _failures(client) == {"invalid_request": 1}
+
+
 def test_an_oversized_prompt_is_refused_before_parsing(monkeypatch, vault, tmp_path):
     client = _client(monkeypatch, vault, tmp_path / "ctx.db", TOKENS)
     huge = _post(client, _request(intent="x" * 70_000))
@@ -138,7 +159,9 @@ def test_an_unsupported_version_is_refused_before_validation(monkeypatch, vault,
     assert _failures(client) == {"unsupported_version": 1}
 
 
-def test_an_identical_retry_reuses_its_operation_identity(monkeypatch, vault, tmp_path):
+def test_an_identical_retry_reuses_its_operation_identity_after_a_restart(
+    monkeypatch, vault, tmp_path
+):
     db = tmp_path / "ctx.db"
     client = _client(monkeypatch, vault, db, TOKENS)
     first = _post(client, _request()).json()
