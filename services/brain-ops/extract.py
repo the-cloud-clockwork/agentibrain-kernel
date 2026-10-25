@@ -448,7 +448,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--state-dir",
-        default=os.environ.get("EXTRACT_STATE_DIR", str(Path.home() / ".agentibrain" / "extract")),
+        default=os.environ.get("EXTRACT_STATE_DIR") or str(Path.home() / ".agentibrain" / "extract"),
         help="Committed and staged session feed cursor state",
     )
     parser.add_argument("--limit", type=int, default=100, help="Session feed page size")
