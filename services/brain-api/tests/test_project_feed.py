@@ -111,8 +111,18 @@ def _seed(vault: Path, fx: dict) -> None:
             "schema": 1,
             "generated_at": _iso(now),
             "warnings": [
-                {"ref": "signal:fleet", "scope": "fleet", "severity": "warning", "content": fx["fleet"]},
-                {"ref": "signal:leak", "scope": "project", "severity": "warning", "content": "leak"},
+                {
+                    "ref": "signal:fleet",
+                    "scope": "fleet",
+                    "severity": "warning",
+                    "content": fx["fleet"],
+                },
+                {
+                    "ref": "signal:leak",
+                    "scope": "project",
+                    "severity": "warning",
+                    "content": "leak",
+                },
             ],
         },
     )
