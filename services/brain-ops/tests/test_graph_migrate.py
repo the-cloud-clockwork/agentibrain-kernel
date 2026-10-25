@@ -7,6 +7,7 @@ contradictory directions, a valid multirelation pair and a self loop.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import os
 import subprocess
@@ -21,9 +22,9 @@ for _p in (_BRAIN_OPS, _BRAIN_OPS / "scripts"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-import brain_apply  # noqa: E402
-import edge_relations  # noqa: E402
-import graph_migrate  # noqa: E402
+brain_apply = importlib.import_module("brain_apply")
+edge_relations = importlib.import_module("edge_relations")
+graph_migrate = importlib.import_module("graph_migrate")
 
 FIXTURE = _HERE / "fixtures" / "sv2_grf02_edges.json"
 OUTPUTS = ("relations.json", "quarantine.json", "audit.json", "manifest.json")
