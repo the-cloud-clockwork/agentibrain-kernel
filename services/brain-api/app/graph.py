@@ -63,7 +63,7 @@ class GraphRejection(ValueError):
 
 
 def entity_id(entity_type: str, key: str) -> str:
-    if entity_type not in ENTITY_TYPES:
+    if not isinstance(entity_type, str) or entity_type not in ENTITY_TYPES:
         raise GraphRejection("unknown_entity_type", f"entity type {entity_type!r} is not known")
     if not isinstance(key, str) or not _KEY_RE.fullmatch(key):
         raise GraphRejection("invalid_entity", f"entity key {key!r} is not a valid key")
@@ -115,6 +115,8 @@ def _relation_fields(record: dict) -> dict:
         raise GraphRejection("invalid_relation", "a relation must be an object")
     name = record.get("type")
     source, target = record.get("source"), record.get("target")
+    if not isinstance(name, str):
+        raise GraphRejection("unknown_relation_type", f"relation type {name!r} is not known")
     if name in INVERSES:
         name, source, target = INVERSES[name], target, source
     elif name not in RELATION_TYPES:
@@ -122,9 +124,9 @@ def _relation_fields(record: dict) -> dict:
     status = record.get("status", "proposed")
     confidence = record.get("confidence")
     evidence = record.get("evidence", [])
-    if status not in STATUSES:
+    if not isinstance(status, str) or status not in STATUSES:
         raise GraphRejection("invalid_relation", f"status {status!r} is not known")
-    if confidence not in CONFIDENCE_CLASSES:
+    if not isinstance(confidence, str) or confidence not in CONFIDENCE_CLASSES:
         raise GraphRejection("invalid_relation", f"confidence class {confidence!r} is not known")
     if not isinstance(evidence, list) or not all(isinstance(e, str) and e for e in evidence):
         raise GraphRejection("invalid_relation", "evidence must be a list of references")
@@ -197,9 +199,12 @@ class GraphStore:
 
     def _write_entity(self, entity: dict) -> None:
         self._conn.execute(
-            "INSERT OR REPLACE INTO graph_entities"
+            "INSERT INTO graph_entities"
             " (id, type, revision, projects, vault_ref, title, provenance)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " VALUES (?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT (id) DO UPDATE SET type = excluded.type, revision = excluded.revision,"
+            " projects = excluded.projects, vault_ref = excluded.vault_ref,"
+            " title = excluded.title, provenance = excluded.provenance",
             (
                 entity["id"],
                 entity["type"],
@@ -216,7 +221,7 @@ class GraphStore:
             return self._read_entity(ident)
 
     def put_entity(self, record: dict) -> str:
-        """created, updated, replayed, or stale when the stored revision is newer or differs."""
+        """Return created, updated or replayed; stale when the stored revision is newer."""
         entity = _entity(record)
         with self._lock:
             stored = self._read_entity(entity["id"])
@@ -275,13 +280,16 @@ class GraphStore:
             try:
                 relation = self._check_relation(record, visible)
             except GraphRejection as exc:
+                self._conn.execute("BEGIN IMMEDIATE")
                 self._count_invalid(exc.reason)
+                if quarantine:
+                    self._conn.execute(
+                        "INSERT INTO graph_quarantine (reason, record) VALUES (?, ?)",
+                        (exc.reason, json.dumps(record, sort_keys=True)),
+                    )
+                self._conn.execute("COMMIT")
                 if not quarantine:
                     raise
-                self._conn.execute(
-                    "INSERT INTO graph_quarantine (reason, record) VALUES (?, ?)",
-                    (exc.reason, json.dumps(record, sort_keys=True)),
-                )
                 return {"action": "quarantined", "reason": exc.reason}
             action = self._upsert_relation(relation)
         ident = relation_id(relation["source"], relation["type"], relation["target"])
@@ -363,7 +371,6 @@ class GraphStore:
                         self._upsert_relation(self._check_relation(record, _always))
                     except GraphRejection as exc:
                         rejected[exc.reason] = rejected.get(exc.reason, 0) + 1
-                        self._count_invalid(exc.reason)
                 relations = self._conn.execute("SELECT COUNT(*) FROM graph_relations").fetchone()
             except BaseException:
                 self._conn.execute("ROLLBACK")

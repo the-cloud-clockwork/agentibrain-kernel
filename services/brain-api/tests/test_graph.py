@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import importlib
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -53,8 +54,8 @@ def _client(monkeypatch, vault: Path, db: Path | None, worker_tokens: str = "") 
     else:
         monkeypatch.setenv("BRAIN_GRAPH_DB", str(db))
     for name in _MODULES:
-        if name in importlib.sys.modules:
-            importlib.reload(importlib.sys.modules[name])
+        if name in sys.modules:
+            importlib.reload(sys.modules[name])
         else:
             importlib.import_module(name)
     from app.main import app
@@ -138,7 +139,6 @@ def test_entity_ids_are_typed_and_stable():
     graph = _graph()
 
     assert graph.entity_id("arc", "alpha-arc-1") == "arc:alpha-arc-1"
-    assert graph.entity_id("arc", "alpha-arc-1") == graph.entity_id("arc", "alpha-arc-1")
     with pytest.raises(graph.GraphRejection) as unknown:
         graph.entity_id("note", "x")
     assert unknown.value.reason == "unknown_entity_type"
@@ -270,6 +270,55 @@ def test_a_stale_entity_revision_cannot_overwrite_a_newer_one(tmp_path):
 
     assert store.get_entity(arc["id"])["title"] == newer["title"]
     assert store.get_entity(arc["id"])["revision"] == 3
+
+
+def test_revising_a_linked_entity_keeps_its_edges(tmp_path):
+    fixture = FIXTURE["alpha"]
+    store = _loaded(tmp_path, fixture)
+    edges = store.snapshot()[1]
+
+    assert store.put_entity(dict(fixture["entities"][2], revision=2, title="revised")) == "updated"
+
+    assert store.snapshot()[1] == edges
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("type", ["has_lesson"]), ("status", {"a": 1}), ("confidence", ["observed"])],
+)
+def test_non_string_relation_fields_are_rejected_not_crashed(
+    monkeypatch, vault, tmp_path, field, value
+):
+    client = _client(monkeypatch, vault, tmp_path / "graph.db")
+    _seed(client, FIXTURE["alpha"])
+    bad = dict(FIXTURE["alpha"]["valid"][0], **{field: value})
+
+    response = client.post("/graph/relation", json=bad, headers=_auth(ROUTER))
+
+    assert response.status_code == 422
+
+
+def test_a_non_string_entity_type_is_rejected_not_crashed(monkeypatch, vault, tmp_path):
+    client = _client(monkeypatch, vault, tmp_path / "graph.db")
+    entity = dict(FIXTURE["alpha"]["entities"][0], type=["arc"])
+
+    response = client.post("/graph/entity", json=entity, headers=_auth(ROUTER))
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["reason"] == "unknown_entity_type"
+
+
+def test_rebuild_reports_rejects_without_raising_the_live_counter(tmp_path):
+    fixture = FIXTURE["alpha"]
+    store = _store(tmp_path)
+
+    for _ in range(2):
+        report = store.rebuild(
+            {"entities": fixture["entities"], "relations": [fixture["incompatible"]]}
+        )
+
+    assert report["rejected"] == {"incompatible_endpoint": 1}
+    assert store.invalid_relations_total() == {}
 
 
 @pytest.mark.parametrize("name", SETS)
