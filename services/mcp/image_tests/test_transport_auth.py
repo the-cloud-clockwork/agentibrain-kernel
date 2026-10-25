@@ -21,6 +21,7 @@ import pytest
 BRAIN_TOOLS = {
     "brain_feed",
     "brain_get_arc",
+    "brain_read_detail",
     "brain_ingest",
     "brain_search_arcs",
     "brain_tick",

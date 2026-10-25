@@ -101,8 +101,10 @@ def test_graph_rebuild_and_process_reopen_preserve_detail(monkeypatch, vault, tm
     _publish(client, 2, [{"id": "new", "content": "second revision"}])
     before = _read(client, revision=1).json()
     store = graph.active_store()
-    entities, relations = store.snapshot()
-    assert store.rebuild({"entities": entities, "relations": relations})["entities"] == 1
+    snapshot = store.snapshot()
+    canonical = {"entities": [_entity(revision=2)], "relations": []}
+    assert store.rebuild(canonical)["entities"] == 1
+    assert store.snapshot() == snapshot
     assert _read(client, revision=1).json() == before
     store._conn.close()
     graph._stores.pop(str(db))

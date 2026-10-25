@@ -616,7 +616,7 @@ paths:
         "403": {description: Router authority required.}
         "409": {description: Conflicting revision or matching graph metadata absent.}
         "422": {description: Invalid publication or preview-only payload.}
-        "503": {description: Graph storage is not configured.}
+        "404": {description: Graph storage is not configured.}
     get:
       summary: Read complete canonical sections and paginated provenance.
       security: [{bearerAuth: []}]
@@ -647,12 +647,12 @@ paths:
             and hash; source ranges refer to original evidence, while lessons and
             arcs are synthesized knowledge. Existing graph neighborhoods use
             POST /graph/expand and its bounded continuation contract.
-        "404": {description: Revision or section unavailable in caller scope.}
+        "404": {description: Revision or section unavailable in caller scope or graph unconfigured.}
         "409": {description: Expected content hash does not match.}
         "422": {description: Invalid pagination or continuation without revision.}
         "503":
           description: |
-            Full reads disabled by BRAIN_FULL_DETAIL=false or graph unconfigured.
+            Full reads disabled by BRAIN_FULL_DETAIL=false.
             Rollback retains published revisions and the truthful MCP preview tool.
 
   /knowledge/neighbors:
@@ -673,6 +673,5 @@ paths:
             visible page. This is a live graph view, not historical guidance or a
             repeatable snapshot; newly inserted relations before the keyset require
             a fresh scan. Full entity sections use the separate pinned detail API.
-        "404": {description: Entity unavailable in caller scope.}
+        "404": {description: Entity unavailable in caller scope or graph unconfigured.}
         "422": {description: Invalid page bound.}
-        "503": {description: Graph storage is not configured.}
