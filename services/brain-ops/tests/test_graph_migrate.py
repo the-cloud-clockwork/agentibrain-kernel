@@ -269,7 +269,7 @@ class TestRecovery:
 
         graph_migrate.migrate(vault, out)
         reviewed = _relations(out)[("arc-x", "parent", "arc-y")]
-        assert reviewed["evidence"] == ["right/arc-x.md#L7", f"review:{qid}"]
+        assert reviewed["evidence"] == ["right/arc-x.md#L8", f"review:{qid}"]
         assert _entry(out, "contradictory_direction")["review"]["decision"] == "accept"
         stable = {name: (out / name).read_bytes() for name in OUTPUTS}
 
