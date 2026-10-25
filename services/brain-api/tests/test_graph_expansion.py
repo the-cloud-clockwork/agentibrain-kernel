@@ -45,9 +45,11 @@ def _fixture(client):
 
 
 def _setup(monkeypatch, vault, tmp_path):
-    client = _client(monkeypatch, vault, tmp_path / "graph.db", "worker=hive-a@alpha")
+    client = _client(monkeypatch, vault, tmp_path / "graph.db", "hive-a@alpha=worker")
     monkeypatch.setenv("BRAIN_GRAPH_EXPANSION", "true")
     _fixture(client)
+    assert client.get("/graph/entity/session:seed", headers=_auth("worker")).status_code == 200
+    assert client.get("/graph/entity/arc:hidden", headers=_auth("worker")).status_code == 404
     return client
 
 
