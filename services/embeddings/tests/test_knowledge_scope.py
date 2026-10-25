@@ -70,6 +70,7 @@ def test_metadata_update_reports_a_missing_key(client, monkeypatch):
     )
 
     assert resp.status_code == 404
+    assert resp.json() == {"detail": "key not found: nope"}
 
 
 def test_metadata_update_returns_the_rows_it_changed(client, monkeypatch):
@@ -174,6 +175,8 @@ def test_a_substring_of_another_repository_never_passes_the_project_filter(fresh
     assert unknown == []
     assert {r["key"] for r in unfiltered} == {"own", "foreign", "unknown"}
     assert _snapshot(db) == before
+    corrected = db.search(_vector(dim), project_id=own, limit=10)
+    assert [r["key"] for r in corrected] == ["own"]
 
 
 def test_the_project_filter_has_its_own_index(fresh_db):
