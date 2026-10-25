@@ -28,6 +28,12 @@ class SearchRequest(BaseModel):
     producer: str | None = None
     limit: int = 10
     min_score: float = 0.0
+    project_id: str | None = None
+
+
+class MetadataRequest(BaseModel):
+    key: str
+    metadata: dict
 
 
 class PruneRequest(BaseModel):
@@ -197,9 +203,26 @@ async def search_content(
         producer=req.producer,
         limit=req.limit,
         min_score=req.min_score,
+        project_id=req.project_id,
     )
 
     return {"query": req.query, "results": results, "count": len(results)}
+
+
+@app.post("/metadata")
+async def update_metadata(
+    req: MetadataRequest,
+    _token: str = Depends(auth.require_api_key),
+):
+    """Replace a key's metadata without re-embedding its content."""
+    try:
+        rows = db.update_metadata(req.key, req.metadata)
+    except Exception as e:
+        log.error(f"metadata_update_failed key={req.key} error={e}")
+        raise HTTPException(500, f"Metadata update failed: {e}") from e
+    if not rows:
+        raise HTTPException(404, f"key not found: {req.key}")
+    return {"key": req.key, "rows_updated": rows}
 
 
 @app.get("/stats")

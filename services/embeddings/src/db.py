@@ -171,11 +171,24 @@ def upsert_chunks(
     return len(chunks)
 
 
+def update_metadata(key: str, metadata: dict) -> int:
+    """Replace the metadata of every chunk of `key`, leaving content and vectors alone."""
+    pool = get_pool()
+    with pool.connection() as conn:
+        cur = conn.execute(
+            "UPDATE content_embeddings SET metadata = %s WHERE key = %s",
+            (Jsonb(_without_nul(metadata)), _without_nul(key)),
+        )
+        conn.commit()
+        return cur.rowcount
+
+
 def search(
     query_embedding: list[float],
     producer: str | None = None,
     limit: int = 10,
     min_score: float = 0.0,
+    project_id: str | None = None,
 ) -> list[dict]:
     pool = get_pool()
     with pool.connection() as conn:
@@ -185,6 +198,11 @@ def search(
         if producer:
             conditions.append("producer = %s")
             params.append(producer)
+
+        if project_id:
+            # Containment on the exact project set, served by idx_ce_projects.
+            conditions.append("(metadata->'projects') @> %s")
+            params.append(Jsonb([project_id]))
 
         where = " AND ".join(conditions)
         vec_str = str(query_embedding)

@@ -19,3 +19,4 @@ CREATE TABLE IF NOT EXISTS content_embeddings (
 CREATE INDEX IF NOT EXISTS idx_ce_producer ON content_embeddings (producer);
 CREATE INDEX IF NOT EXISTS idx_ce_key ON content_embeddings (key);
 CREATE INDEX IF NOT EXISTS idx_ce_metadata ON content_embeddings USING gin (metadata);
+CREATE INDEX IF NOT EXISTS idx_ce_projects ON content_embeddings USING gin ((metadata->'projects'));

@@ -207,7 +207,11 @@ class FakeEmbeddings:
         return {k: r for k, r in self.rows.items() if r["producer"] == PRODUCER}
 
     def calls(self, path: str) -> list[dict]:
-        return [p["body"] for p in self.posts if p["path"] == path]
+        return [
+            p["body"]
+            for p in self.posts
+            if p["path"] == path and p["body"].get("producer", PRODUCER) == PRODUCER
+        ]
 
     def reset_calls(self) -> None:
         self.posts.clear()

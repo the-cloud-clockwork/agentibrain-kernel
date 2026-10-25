@@ -27,8 +27,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+import knowledge_index
 import markers
-
 
 STATE_FILENAME = ".brain-arc-embed.state.json"
 STATE_GENERATION_ENV = "EMBEDDING_STATE_GENERATION"
@@ -469,6 +469,22 @@ def main() -> int:
             stats["lesson_prune_error"] = str(e)
             stats["errors"] += 1
             print(f"WARN: lesson prune failed: {e}", file=sys.stderr)
+
+    knowledge_state_path = state_path.with_name(knowledge_index.STATE_FILENAME)
+    knowledge = knowledge_index.index_knowledge(
+        knowledge_index.IndexRun(
+            vault=vault,
+            api_url=args.api_url,
+            api_key=args.api_key,
+            state={} if args.force_all else load_state(knowledge_state_path),
+            save=lambda s: save_state(knowledge_state_path, s),
+            report_path=state_path.with_name(knowledge_index.REPORT_FILENAME),
+            dry_run=args.dry_run,
+            prune=args.prune,
+        )
+    )
+    stats["errors"] += knowledge.pop("errors")
+    stats.update(knowledge)
 
     # Reaper: delete pgvector rows whose cluster_id no longer maps to an
     # arc file on disk (graduated, renamed, or removed).
