@@ -1,0 +1,25 @@
+{
+  "case": "T-SV2-BRP-04-B",
+  "evidence_kind": "mocked fixture: brain-ops code on a temporary vault and brain-api through its HTTP test client; no live tick",
+  "tested_commit": "5b1c54ba685f5480fe83fbc06582dd613e25afb5",
+  "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40161932700",
+  "fixture": {
+    "path": "services/brain-ops/tests/fixtures/sv2_brp04_projects.json",
+    "sha256": "3e12a4696bd000c7f05f5e006c60fffc34677571dc84def1944ca5c0d515b728",
+    "contents": "two independent sets (alpha swarm brain, beta personal brain): a dominant project with 14 and 12 hot active arcs and a quieter project with one cold active task arc at heat 1 and 0, one lesson per project, a decision and a critical signal on the quiet project, one fleet shared warning and one unshared unattributed warning"
+  },
+  "tests": [
+    "services/brain-api/tests/test_project_feed.py::test_missing_project_data_returns_a_scoped_empty_result (alpha, beta; feed files snapshotted before and after, unchanged)",
+    "services/brain-api/tests/test_project_feed.py::test_a_grant_outside_the_project_is_refused_and_recorded (alpha, beta; 403 body names no other project, 400 without project)",
+    "services/brain-api/tests/test_project_feed.py::test_items_from_another_project_are_dropped_and_counted (alpha, beta)",
+    "services/brain-api/tests/test_project_feed.py::test_an_item_naming_a_second_project_is_not_served (alpha, beta)",
+    "services/brain-api/tests/test_project_feed.py::test_a_snapshot_naming_another_project_is_served_as_missing (alpha, beta)",
+    "services/brain-api/tests/test_project_feed.py::test_an_intent_naming_another_project_is_not_served (alpha, beta)",
+    "services/brain-ops/tests/test_project_feed.py::test_an_intent_for_a_project_without_a_snapshot_is_not_written (alpha, beta)"
+  ],
+  "then": "A project with no data returns empty lists, no intent and freshness missing, with no global memory and no feed file changed; a grant outside the project is refused and recorded.",
+  "measurement": {
+    "project_feed_cross_scope_failures": 0
+  },
+  "outcome": "passed"
+}
