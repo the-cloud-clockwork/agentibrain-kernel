@@ -41,6 +41,13 @@ async def _expand_arcs(arcs: list[dict], project: str) -> dict:
         return {"error": "invalid graph response", "partial": True}
 
 
+async def _search_response(query: str, arcs: list[dict], project: str, expand_graph: bool) -> str:
+    response = {"query": query, "count": len(arcs), "arcs": arcs}
+    if expand_graph and arcs:
+        response["graph"] = await _expand_arcs(arcs, project)
+    return json.dumps(response, indent=2)
+
+
 def register(mcp: FastMCP):
     """Register brain arc tools on a FastMCP server."""
 
@@ -127,10 +134,7 @@ def register(mcp: FastMCP):
             if len(filtered) >= top_k:
                 break
 
-        response = {"query": query, "count": len(filtered), "arcs": filtered}
-        if expand_graph and filtered:
-            response["graph"] = await _expand_arcs(filtered, project)
-        return json.dumps(response, indent=2)
+        return await _search_response(query, filtered, project, expand_graph)
 
     @mcp.tool()
     async def brain_get_arc(cluster_id: str) -> str:
