@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import importlib
 import io
 import json
 import sys
@@ -27,7 +28,7 @@ _BRAIN_OPS = _HERE.parent
 if str(_BRAIN_OPS) not in sys.path:
     sys.path.insert(0, str(_BRAIN_OPS))
 
-import embed_arcs  # noqa: E402
+embed_arcs = importlib.import_module("embed_arcs")
 
 FIXTURE = _HERE / "fixtures" / "sv2_brp03_knowledge.json"
 SETS = json.loads(FIXTURE.read_text(encoding="utf-8"))["sets"]
