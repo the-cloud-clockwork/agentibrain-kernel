@@ -545,6 +545,19 @@ def write_lessons_feed(path: Path, vault_root: Path, now: datetime | None = None
     return stats
 
 
+def write_knowledge_feeds(
+    brain_feed_dir: Path, vault_root: Path, arcs: list[markers.DocumentMeta], now: datetime
+) -> dict:
+    """Write lessons.md and every project's own feed snapshot; return the lesson stats."""
+    lesson_stats = write_lessons_feed(brain_feed_dir / "lessons.md", vault_root, now=now)
+    project_feed.write_snapshots(
+        brain_feed_dir,
+        project_feed.build_snapshots(arcs, vault_root, now),
+        project_feed.fleet_warnings(arcs, now),
+    )
+    return lesson_stats
+
+
 def write_inject_feed(path: Path, injects: list[markers.Marker]) -> None:
     """Generate inject.md from collected @inject markers. Deduplicates by content hash."""
     now = datetime.now(timezone.utc)
@@ -1250,7 +1263,6 @@ def tick(
     # Auto-verifier: run each signal's verify= command, tag _mitigated=true on
     # signals whose underlying claim has been falsified. write_signals_feed
     # already honors _mitigated for tombstoning, so no further plumbing needed.
-    project_feed_stats = {"projects_written": 0, "projects_removed": 0}
     verify_results = brain_verifier.verify_all(all_signals)
     verify_stats = brain_verifier.apply_verify_results(all_signals, verify_results)
     if not dry_run:
@@ -1258,12 +1270,7 @@ def tick(
         write_hot_arcs_md(brain_feed_dir / "hot-arcs.md", hot)
         signal_stats = write_signals_feed(brain_feed_dir / "signals.md", all_signals, now=now)
         write_inject_feed(brain_feed_dir / "inject.md", all_injects)
-        lesson_feed_stats = write_lessons_feed(brain_feed_dir / "lessons.md", vault_root, now=now)
-        project_feed_stats = project_feed.write_snapshots(
-            brain_feed_dir,
-            project_feed.build_snapshots(arcs, vault_root, now),
-            project_feed.fleet_warnings(arcs, now),
-        )
+        lesson_feed_stats = write_knowledge_feeds(brain_feed_dir, vault_root, arcs, now=now)
 
     # 6. Update dashboards (skipped in quick_refresh)
     if not dry_run and not quick_refresh:
@@ -1296,8 +1303,6 @@ def tick(
         "templates_written": templates_written if not quick_refresh else 0,
         "graduations": graduations,
         "hot_arcs_written": len(hot),
-        "project_feeds_written": project_feed_stats["projects_written"],
-        "project_feeds_removed": project_feed_stats["projects_removed"],
         "signals_collected": len(all_signals),
         "signals_written": signal_stats["written"],
         "signals_tombstoned_stale": signal_stats["tombstoned_stale"],

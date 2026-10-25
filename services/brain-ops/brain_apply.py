@@ -215,6 +215,17 @@ def parse_project_intents(section: str) -> dict[str, str]:
     return intents
 
 
+_SECTION_KEYS = (
+    ("### 1.", "edges"),
+    ("### 2.", "merges"),
+    ("### 3.", "signals"),
+    ("### 4.", "intent"),
+    ("### 5.", "health"),
+    ("### 6.", "summaries"),
+    ("### 7.", "project_intents"),
+)
+
+
 def parse_ai_output(text: str) -> dict:
     """Parse the full AI tick output into structured sections."""
     sections = {}
@@ -222,43 +233,14 @@ def parse_ai_output(text: str) -> dict:
     current_lines = []
 
     for line in text.splitlines():
-        if line.startswith("### 1."):
-            if current_key:
-                sections[current_key] = "\n".join(current_lines)
-            current_key = "edges"
-            current_lines = []
-        elif line.startswith("### 2."):
-            if current_key:
-                sections[current_key] = "\n".join(current_lines)
-            current_key = "merges"
-            current_lines = []
-        elif line.startswith("### 3."):
-            if current_key:
-                sections[current_key] = "\n".join(current_lines)
-            current_key = "signals"
-            current_lines = []
-        elif line.startswith("### 4."):
-            if current_key:
-                sections[current_key] = "\n".join(current_lines)
-            current_key = "intent"
-            current_lines = []
-        elif line.startswith("### 5."):
-            if current_key:
-                sections[current_key] = "\n".join(current_lines)
-            current_key = "health"
-            current_lines = []
-        elif line.startswith("### 6."):
-            if current_key:
-                sections[current_key] = "\n".join(current_lines)
-            current_key = "summaries"
-            current_lines = []
-        elif line.startswith("### 7."):
-            if current_key:
-                sections[current_key] = "\n".join(current_lines)
-            current_key = "project_intents"
-            current_lines = []
-        else:
+        key = next((k for prefix, k in _SECTION_KEYS if line.startswith(prefix)), None)
+        if key is None:
             current_lines.append(line)
+            continue
+        if current_key:
+            sections[current_key] = "\n".join(current_lines)
+        current_key = key
+        current_lines = []
 
     if current_key:
         sections[current_key] = "\n".join(current_lines)

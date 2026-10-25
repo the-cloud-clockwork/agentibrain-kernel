@@ -82,6 +82,33 @@ def _extract_section(arc, heading: str) -> str:
     return " ".join(out)
 
 
+_CLOSING = "Respond ONLY with the 6 sections above."
+
+
+def with_project_intent(prompt: str, brain_feed_dir: Path) -> str:
+    """Add the per-project intent task, listing the projects the tick marked active."""
+    active = project_feed.active_projects(brain_feed_dir)
+    listed = "\n".join(f"- {p}" for p in active) if active else "(none)"
+    task = f"""### 7. Project Intent
+For EACH active project below, say in one sentence what the operator is doing
+in that project, grounded only in that project's own arcs, signals and
+lessons. Never carry one project's work into another project's line. Skip a
+project the data does not support; its last intent is kept and marked stale.
+
+Active projects:
+{listed}
+
+Format, one per line, project id first:
+`PROJECT_INTENT: <project id> | <one sentence>`
+
+If there are no active projects, say "None."
+
+Respond ONLY with the 7 sections above."""
+    if _CLOSING in prompt:
+        return prompt.replace(_CLOSING, task)
+    return f"{prompt}\n\n{task}\n"
+
+
 def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
     """Run deterministic tick, then build the AI reasoning prompt.
 
@@ -318,11 +345,6 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
     except OSError:
         pass
 
-    active_projects = project_feed.active_projects(brain_feed_dir)
-    active_projects_text = (
-        "\n".join(f"- {p}" for p in active_projects) if active_projects else "(none)"
-    )
-
     unsynthesized_text = "\n".join(unsynth_blocks) if unsynth_blocks else "(all synthesized)"
     if len(unsynth_arcs) > MAX_SYNTH_ARCS:
         unsynthesized_text += (
@@ -435,21 +457,7 @@ Rules:
 
 If there are no unsynthesized arcs, say "None."
 
-### 7. Project Intent
-For EACH active project below, say in one sentence what the operator is doing
-in that project, grounded only in that project's own arcs, signals and
-lessons. Never carry one project's work into another project's line. Skip a
-project the data does not support; its last intent is kept and marked stale.
-
-Active projects:
-{active_projects_text}
-
-Format, one per line, project id first:
-`PROJECT_INTENT: <project id> | <one sentence>`
-
-If there are no active projects, say "None."
-
-Respond ONLY with the 7 sections above. No preamble. No explanation of what you're doing. Just the answers.
+Respond ONLY with the 6 sections above. No preamble. No explanation of what you're doing. Just the answers.
 """
 
     # Final hard ceiling. The per-section caps above keep a healthy vault well
@@ -465,7 +473,7 @@ Respond ONLY with the 7 sections above. No preamble. No explanation of what you'
     if len(prompt) > MAX_PROMPT_CHARS:
         prompt = prompt[:MAX_PROMPT_CHARS] + "\n\n[prompt hard-truncated to fit context]\n"
 
-    return prompt, stats
+    return with_project_intent(prompt, brain_feed_dir), stats
 
 
 def main() -> int:

@@ -260,7 +260,7 @@ def test_the_deterministic_tick_writes_project_snapshots(tmp_path, fx):
     _write_vault(vault, fx)
     feed = vault / "brain-feed"
 
-    stats = brain_keeper.tick(vault, feed)
+    brain_keeper.tick(vault, feed)
 
     quiet = json.loads(
         (feed / "projects" / f"{project_feed.project_key(fx['quiet']['project'])}.json").read_text()
@@ -272,7 +272,8 @@ def test_the_deterministic_tick_writes_project_snapshots(tmp_path, fx):
     )
     assert f"arc:{fx['quiet']['arc']}" in _refs(quiet, "arcs")
     assert all(fx["quiet"]["arc"] not in ref for ref in _refs(dominant, "arcs"))
-    assert stats["project_feeds_written"] == 2
+    assert len(list((feed / "projects").glob("*.json"))) == 2
+    assert (feed / "fleet-warnings.json").is_file()
 
 
 def _ai_output(intents: dict[str, str]) -> str:
