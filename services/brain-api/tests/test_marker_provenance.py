@@ -451,3 +451,56 @@ def test_a_blank_provenance_value_is_not_counted_as_lost(vault: Path, client):
     }
 
     assert client.post("/marker", json=body).json()["marker_provenance_loss_total"] == 0
+
+
+def test_a_list_of_blank_values_is_not_counted_as_lost(vault: Path, client):
+    body = {
+        "type": "lesson",
+        "content": "A lesson whose project set arrives blank.",
+        "attrs": {"project_id": "github.com/acme/alpha", "projects": ["  ", ""]},
+    }
+
+    assert client.post("/marker", json=body).json()["marker_provenance_loss_total"] == 0
+
+
+def test_a_blank_idempotency_key_does_not_share_one_marker_id(vault: Path, client):
+    first = {"type": "milestone", "content": "First keyless milestone.", "attrs": {}}
+    second = {"type": "milestone", "content": "Second keyless milestone.", "attrs": {}}
+
+    a = client.post("/marker", json=first, headers={"X-Idempotency-Key": "   "}).json()
+    b = client.post("/marker", json=second, headers={"X-Idempotency-Key": "   "}).json()
+
+    assert b["action"] == "appended"
+    assert a["marker_id"] != b["marker_id"]
+    assert a["idempotency_key"] != b["idempotency_key"]
+
+
+def test_a_retry_after_midnight_finds_the_log_the_dead_attempt_wrote(
+    vault: Path, client, monkeypatch
+):
+    import app.main as main
+    import app.markers as markers
+
+    marker = json.loads(json.dumps(FIXTURE["first"]["markers"][2]))
+    record = markers._record
+
+    def die_before_commit(registry, entry):
+        if "state" not in entry:
+            raise OSError("process killed")
+        record(registry, entry)
+
+    def stamps(day):
+        return lambda _ts=None: (day, f"{day.replace('-', '')}T235959Z", f"{day}T23:59:59+00:00")
+
+    monkeypatch.setattr(markers, "_record", die_before_commit)
+    monkeypatch.setattr(markers, "_format_timestamp_utc", stamps("2026-10-20"))
+    assert _post(client, {**marker, "ts": ""}).status_code == 503
+    monkeypatch.setattr(markers, "_record", record)
+    monkeypatch.setattr(markers, "_format_timestamp_utc", stamps("2026-10-21"))
+    main._idempotency_cache.clear()
+
+    again = _post(client, {**marker, "ts": ""}).json()
+
+    assert again["action"] == "replayed"
+    assert again["vault_path"] == "daily/2026-10-20.md"
+    assert not (vault / "daily" / "2026-10-21.md").exists()

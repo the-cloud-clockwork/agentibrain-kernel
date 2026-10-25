@@ -591,7 +591,8 @@ def post_marker(
         raise HTTPException(status_code=403, detail="marker project is outside this token's grant")
 
     body_hash = _hash_marker_body(marker_type, content, attrs)
-    idem_key = (x_idempotency_key or body_hash).strip()
+    explicit_key = (x_idempotency_key or "").strip()
+    idem_key = explicit_key or body_hash
 
     # The lock spans check-write-record so two threads carrying the same key
     # cannot both miss the cache and double-apply; it also serialises the
@@ -609,7 +610,7 @@ def post_marker(
                 marker_type,
                 content,
                 attrs,
-                marker_id=marker_id_for(x_idempotency_key.strip()) if x_idempotency_key else None,
+                marker_id=marker_id_for(explicit_key) if explicit_key else None,
                 brain=scope.BRAIN_ID,
                 grant=grant,
             )
@@ -621,8 +622,9 @@ def post_marker(
 
         if result["marker_provenance_loss_total"]:
             log.warning(
-                "marker_provenance_loss_total=%d marker_id=%s",
+                "marker_provenance_loss_total=%d marker_type=%s marker_id=%s",
                 result["marker_provenance_loss_total"],
+                result["marker_type"],
                 result["marker_id"],
             )
         response = {

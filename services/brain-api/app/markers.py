@@ -238,7 +238,7 @@ def marker_provenance(
     lost = 0
     for name in PROVENANCE_FIELDS:
         raw = attrs.get(name)
-        if raw is None or raw == [] or (isinstance(raw, str) and not raw.strip()):
+        if raw is None or (isinstance(raw, (str, list, tuple)) and not _listed(raw)):
             continue
         value = _provenance_value(raw)
         if value:
@@ -617,9 +617,12 @@ def _written_candidates(root, marker_type, attrs, stamps, grant) -> list[Path]:
     return sorted((root / "left" / "decisions").glob("ADR-*.md"), reverse=True)
 
 
-def _already_written(root, marker_type, marker_id, attrs, stamps, grant) -> Path | None:
+def _already_written(root, marker_type, marker_id, attrs, stamps, grant, pending) -> Path | None:
     """A file holding this marker id from an attempt that died between pending and recorded."""
-    for path in _written_candidates(root, marker_type, attrs, stamps, grant):
+    # The pending entry names the dated log the dead attempt chose, which a retry
+    # after midnight would no longer compute.
+    noted = [root / rel for rel in pending.get("candidates", [])]
+    for path in noted + _written_candidates(root, marker_type, attrs, stamps, grant):
         try:
             if marker_id in path.read_text(encoding="utf-8"):
                 return path
@@ -633,7 +636,7 @@ def _committed_entry(registry, root, marker_type, marker_id, attrs, stamps, gran
     recorded = _registry_entry(registry, marker_id)
     if recorded is None or recorded.get("state") != "pending":
         return recorded
-    orphan = _already_written(root, marker_type, marker_id, attrs, stamps, grant)
+    orphan = _already_written(root, marker_type, marker_id, attrs, stamps, grant, recorded)
     if orphan is None:
         return None
     recorded = {
@@ -699,7 +702,11 @@ def write_marker(
                 "marker_id": marker_id,
                 "marker_provenance_loss_total": 0,
             }
-        _record(registry, {"marker_id": marker_id, "marker_type": marker_type, "state": "pending"})
+        pending = {"marker_id": marker_id, "marker_type": marker_type, "state": "pending"}
+        if marker_type in ("lesson", "milestone"):
+            dated = _written_candidates(root, marker_type, attrs, stamps, grant)
+            pending["candidates"] = [str(path.relative_to(root)) for path in dated]
+        _record(registry, pending)
         extra = {"grant": grant} if marker_type == "milestone" else {}
         target, action, kept = _WRITERS[marker_type](
             root, content, attrs, stamps, provenance, **extra
