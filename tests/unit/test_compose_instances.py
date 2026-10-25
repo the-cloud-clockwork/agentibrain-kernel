@@ -23,6 +23,8 @@ PORTS = ("port_brain_api", "port_postgres", "port_redis", "port_mcp")
 CONFLICTING = {"personal": (18103, 15432, 16379, 18104), "swarm": (18103, 15432, 16379, 18104)}
 DISTINCT = {"personal": (18103, 15432, 16379, 18104), "swarm": (28103, 25432, 26379, 28104)}
 SECOND_RUN = {"personal": (38103, 35432, 36379, 38104), "swarm": (48103, 45432, 46379, 48104)}
+# Captured before the autouse conftest stub; a named brain resolves only inside tmp_path.
+FIND_DEPLOYMENT = bootstrap.find_deployment
 
 
 def _instance(root: Path, brain_id: str, ports: tuple[int, ...]) -> BrainSettings:
@@ -79,6 +81,7 @@ class FakeHost:
         monkeypatch.setattr(bootstrap, "compose_stream", self._stream)
         monkeypatch.setattr(bootstrap, "run_migrations", lambda settings: [])
         monkeypatch.setattr(bootstrap, "remove_other_stacks", self._remove)
+        monkeypatch.setattr(bootstrap, "find_deployment", FIND_DEPLOYMENT)
 
     def start(self, settings: BrainSettings) -> None:
         self.held.update(_running(settings))
@@ -148,7 +151,7 @@ def test_a_named_brain_resolves_only_its_own_deployment(tmp_path, monkeypatch):
         "_kernel_containers",
         lambda: [[bootstrap.COMPOSE_MARKER, "agentibrain", str(checkout)]],
     )
-    assert bootstrap.find_deployment(swarm, cwd=checkout) == ("home", swarm.config_dir)
+    assert FIND_DEPLOYMENT(swarm, cwd=checkout) == ("home", swarm.config_dir)
 
 
 def test_starting_both_brains_creates_two_running_stacks(tmp_path, monkeypatch):
@@ -235,7 +238,9 @@ def test_the_default_brain_still_replaces_only_legacy_stacks(tmp_path, monkeypat
         config_dir=tmp_path / "default", vault_path=tmp_path / "v", _env_file=None
     )
     bootstrap.write_compose(settings, bootstrap.render_compose(settings))
-    monkeypatch.setattr(bootstrap, "_kernel_containers", lambda: [])
+    monkeypatch.setattr(
+        bootstrap, "find_deployment", lambda *a, **kw: ("home", settings.config_dir)
+    )
 
     assert _cli(monkeypatch, settings, "up").exit_code == 0
     assert host.removed == [settings.config_dir]
