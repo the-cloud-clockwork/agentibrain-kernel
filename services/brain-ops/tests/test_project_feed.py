@@ -217,10 +217,11 @@ def test_snapshots_are_written_per_project_with_a_stable_revision(tmp_path, fx):
     restored = json.loads(quiet_path.read_text(encoding="utf-8"))
 
     assert first["projects_written"] == 2
-    assert second["projects_written"] == 2
+    assert second["projects_written"] == 0
+    assert second["projects_unchanged"] == 2
     assert stored["project_id"] == fx["quiet"]["project"]
     assert stored["generated_at"] == NOW.isoformat(timespec="seconds")
-    assert restored["generated_at"] == later.isoformat(timespec="seconds")
+    assert restored == stored
     assert stored["revision"] == restored["revision"]
     assert len(stored["revision"]) == 16
     assert (feed / "fleet-warnings.json").is_file()
@@ -342,7 +343,12 @@ def test_an_older_run_never_overwrites_or_removes_a_newer_snapshot(tmp_path, fx)
         project_feed.fleet_warnings(remaining, NOW),
     )
 
-    assert stats == {"projects_written": 0, "projects_removed": 0, "projects_kept_newer": 2}
+    assert stats == {
+        "projects_written": 0,
+        "projects_unchanged": 0,
+        "projects_removed": 0,
+        "projects_kept_newer": 2,
+    }
     assert json.loads(quiet_path.read_text())["generated_at"] == later.isoformat(timespec="seconds")
     fleet = json.loads((feed / "fleet-warnings.json").read_text())
     assert fleet["generated_at"] == later.isoformat(timespec="seconds")

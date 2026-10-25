@@ -166,14 +166,15 @@ def _age_seconds(stamp: Any, now: datetime) -> int | None:
     return max(0, int((now - when).total_seconds()))
 
 
-def _freshness(snapshot: dict | None, now: datetime) -> dict:
-    if snapshot is None:
-        return {"state": "missing", "generated_at": None, "age_seconds": None}
-    age = _age_seconds(snapshot.get("generated_at"), now)
-    stale = age is None or age > PROJECT_FEED_STALE_SECONDS
+def _freshness(snapshot: dict | None, checked: float | None, now: datetime) -> dict:
+    if snapshot is None or checked is None:
+        return {"state": "missing", "generated_at": None, "checked_at": None, "age_seconds": None}
+    checked_at = datetime.fromtimestamp(checked, tz=timezone.utc)
+    age = max(0, int((now - checked_at).total_seconds()))
     return {
-        "state": "stale" if stale else "fresh",
+        "state": "stale" if age > PROJECT_FEED_STALE_SECONDS else "fresh",
         "generated_at": snapshot.get("generated_at"),
+        "checked_at": checked_at.isoformat(timespec="seconds"),
         "age_seconds": age,
     }
 
@@ -213,7 +214,9 @@ def project_feed_payload(
     now = now or datetime.now(tz=timezone.utc)
     key = project_key(project_id)
     failures = 0
-    snapshot = _read_json(feed_dir / PROJECT_SNAPSHOT_DIR / f"{key}.json")
+    snapshot_path = feed_dir / PROJECT_SNAPSHOT_DIR / f"{key}.json"
+    snapshot = _read_json(snapshot_path)
+    checked = snapshot_path.stat().st_mtime if snapshot is not None else None
     if snapshot is not None and snapshot.get("project_id") != project_id:
         snapshot, failures = None, failures + 1
     intent_record = _read_json(feed_dir / PROJECT_INTENT_DIR / f"{key}.json")
@@ -236,7 +239,7 @@ def project_feed_payload(
         "project_id": project_id,
         "brain_id": brain_id,
         "revision": revision,
-        "freshness": _freshness(snapshot, now),
+        "freshness": _freshness(snapshot, checked, now),
         **items,
         "intent": intent,
         "fleet_warnings": fleet,

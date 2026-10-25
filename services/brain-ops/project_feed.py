@@ -209,28 +209,34 @@ def _write_json(path: Path, data: dict) -> None:
 
 
 def write_snapshots(brain_feed_dir: Path, snapshots: dict[str, dict], fleet: dict) -> dict:
-    """Write every snapshot, then remove snapshots of projects no longer present.
+    """Write every changed snapshot, then remove snapshots of projects no longer present.
 
     A stored snapshot generated after this run is newer and is never replaced
-    or removed by it.
+    or removed by it. An unchanged revision keeps its bytes and generated_at;
+    only its file time moves, which brain-api reads as the time it was checked.
     """
     out_dir = brain_feed_dir / SNAPSHOT_DIR
     stamp = fleet["generated_at"]
-    keep, stats = set(), {"projects_written": 0, "projects_removed": 0, "projects_kept_newer": 0}
+    keep = set()
+    stats = {
+        "projects_written": 0,
+        "projects_unchanged": 0,
+        "projects_removed": 0,
+        "projects_kept_newer": 0,
+    }
     for project, snapshot in snapshots.items():
         name = f"{project_key(project)}.json"
         keep.add(name)
         if _newer(out_dir / name, stamp):
             stats["projects_kept_newer"] += 1
             continue
-        _write_json(out_dir / name, snapshot)
-        stats["projects_written"] += 1
+        stats["projects_written" if _store(out_dir / name, snapshot) else "projects_unchanged"] += 1
     for path in out_dir.glob("*.json") if out_dir.is_dir() else []:
         if path.name not in keep and not _newer(path, stamp):
             path.unlink()
             stats["projects_removed"] += 1
     if not _newer(brain_feed_dir / FLEET_FILE, stamp):
-        _write_json(brain_feed_dir / FLEET_FILE, fleet)
+        _store(brain_feed_dir / FLEET_FILE, fleet)
     return stats
 
 
@@ -245,6 +251,15 @@ def _read_json(path: Path) -> dict | None:
 def _newer(path: Path, stamp: str) -> bool:
     stored = _read_json(path)
     return bool(stored) and str(stored.get("generated_at", "")) > stamp
+
+
+def _store(path: Path, data: dict) -> bool:
+    stored = _read_json(path)
+    if stored and stored.get("revision") == data["revision"]:
+        os.utime(path)
+        return False
+    _write_json(path, data)
+    return True
 
 
 def active_projects(brain_feed_dir: Path) -> list[str]:

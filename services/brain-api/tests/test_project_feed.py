@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -238,7 +239,12 @@ def test_missing_project_data_returns_a_scoped_empty_result(monkeypatch, tmp_pat
     for kind in ("arcs", "lessons", "decisions", "signals"):
         assert data[kind] == []
     assert data["intent"] is None
-    assert data["freshness"] == {"state": "missing", "generated_at": None, "age_seconds": None}
+    assert data["freshness"] == {
+        "state": "missing",
+        "generated_at": None,
+        "checked_at": None,
+        "age_seconds": None,
+    }
     assert "dominant" not in json.dumps(data)
     assert _snapshot_files(vault) == before
 
@@ -343,6 +349,8 @@ def test_an_old_fresh_intent_and_an_old_snapshot_read_as_stale(monkeypatch, tmp_
     _seed(vault, fx)
     old = _now() - timedelta(days=2)
     _snapshot(vault, fx["quiet"], [_arc(fx["quiet"], fx["quiet_arc"], 0)], old)
+    stored = vault / "brain-feed" / "projects" / f"{_key(fx['quiet'])}.json"
+    os.utime(stored, (old.timestamp(), old.timestamp()))
     _intent(vault, fx["quiet"], "Finishing the cold export task.", "fresh", old)
 
     data = _get(client, fx["quiet"]).json()
