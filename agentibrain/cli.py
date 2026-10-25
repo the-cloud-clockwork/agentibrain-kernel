@@ -1234,6 +1234,17 @@ def _start_stack(settings: BrainSettings) -> None:
     console.print(f"  [green]✓[/green] up ({mode} @ {compose_dir})")
 
 
+def _install_stack(
+    settings: BrainSettings, deployment: tuple[str, Path] | None, dry_run: bool
+) -> None:
+    if not dry_run:
+        _start_stack(settings)
+    elif deployment is not None:
+        _inventory(settings, *deployment, "start")
+    else:
+        console.print("  would start the compose stack")
+
+
 def _sync_env_manifest(
     settings: BrainSettings,
     deployment: tuple[str, Path] | None,
@@ -1481,12 +1492,8 @@ def install_cmd(
         console.print("  [--] skipped — client-only")
     elif no_stack:
         console.print("  [--] skipped (--no-stack)")
-    elif dry_run and deployment is not None:
-        _inventory(settings, *deployment, "start")
-    elif dry_run:
-        console.print("  would start the compose stack")
     else:
-        _start_stack(settings)
+        _install_stack(settings, deployment, dry_run)
 
     console.print("\n[bold]5. profile[/bold]")
     if no_link:
