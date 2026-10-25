@@ -11,6 +11,10 @@ Endpoints:
   GET  /signal                         — current amygdala signal (single file)
   GET  /denials                        — cross scope query denials (router tokens only)
   POST /marker                         — emit lesson/milestone/signal/decision
+  POST /graph/entity                   — create or revise a typed graph entity
+  POST /graph/relation                 — store a typed relation (bad ones rejected or quarantined)
+  GET  /graph/entity/{id}              — an entity and its relations inside the caller scope
+  GET  /graph/stats                    — graph_invalid_relations_total and quarantine size
   POST /tick                           — request a manual agentibrain tick
   GET  /tick/{job_id}                  — look up tick status
   GET  /vault/list                     — list vault files
@@ -46,9 +50,10 @@ from fastapi import (
 from fastapi import (
     Path as PathParam,
 )
+from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from . import pipeline, scope, vault_reader
+from . import graph, pipeline, scope, vault_reader
 from .feed import VAULT_ROOT, feed_payload, project_feed_payload
 from .markers import (
     MarkerError,
@@ -673,6 +678,111 @@ def get_marker(
     ):
         raise HTTPException(status_code=404, detail="marker not found")
     return record
+
+
+def _graph_store() -> graph.GraphStore:
+    store = graph.active_store()
+    if store is None:
+        raise HTTPException(status_code=404, detail="knowledge graph is inactive")
+    return store
+
+
+def _graph_visible(authorization: str | None):
+    grant = _caller_grant(authorization)
+    return lambda entity: scope.admits(grant, set(entity["projects"]), unattributed=False)
+
+
+@app.post("/graph/entity", status_code=201)
+def post_graph_entity(
+    payload: dict,
+    authorization: str | None = Header(None),
+    x_session_title: str | None = Header(None, alias="X-Session-Title"),
+    _: None = Depends(require_token),
+) -> dict:
+    """Create or revise a graph entity; a stale or conflicting revision is a 409."""
+    store = _graph_store()
+    grant = _caller_grant(authorization)
+    projects = payload.get("projects") if isinstance(payload.get("projects"), list) else []
+    if not all(isinstance(p, str) for p in projects):
+        raise HTTPException(
+            status_code=422,
+            detail={"reason": "invalid_entity", "error": "projects must be a list of project ids"},
+        )
+    stored = store.get_entity(payload["id"]) if isinstance(payload.get("id"), str) else None
+    if not scope.admits(grant, set(projects), unattributed=False) or (
+        stored is not None and not scope.admits(grant, set(stored["projects"]), unattributed=False)
+    ):
+        scope.record_denial(
+            scope.worker_brain(_bearer(authorization)) or "",
+            "POST /graph/entity",
+            x_session_title or "",
+        )
+        raise HTTPException(status_code=403, detail="entity project is outside this token's grant")
+    try:
+        action = store.put_entity(payload)
+    except graph.GraphRejection as exc:
+        raise HTTPException(
+            status_code=422, detail={"reason": exc.reason, "error": str(exc)}
+        ) from exc
+    if action == "stale":
+        raise HTTPException(status_code=409, detail="a newer or different revision is stored")
+    return {"ok": True, "action": action, "id": payload["id"]}
+
+
+@app.post("/graph/relation", status_code=201)
+def post_graph_relation(
+    payload: dict,
+    quarantine: bool = Query(False),
+    authorization: str | None = Header(None),
+    _: None = Depends(require_token),
+) -> Any:
+    """Store a typed relation; a bad one is a 422, or a 202 when quarantine is asked for."""
+    store = _graph_store()
+    try:
+        result = store.put_relation(
+            payload, quarantine=quarantine, visible=_graph_visible(authorization)
+        )
+    except graph.GraphRejection as exc:
+        total = sum(store.invalid_relations_total().values())
+        log.warning("graph_invalid_relations_total=%d reason=%s", total, exc.reason)
+        raise HTTPException(
+            status_code=422,
+            detail={"reason": exc.reason, "graph_invalid_relations_total": total},
+        ) from exc
+    if result["action"] == "stale":
+        raise HTTPException(status_code=409, detail="a newer or different revision is stored")
+    if result["action"] == "quarantined":
+        total = sum(store.invalid_relations_total().values())
+        log.warning("graph_invalid_relations_total=%d reason=%s", total, result["reason"])
+        return JSONResponse(
+            status_code=202, content={**result, "graph_invalid_relations_total": total}
+        )
+    return {"ok": True, **result}
+
+
+@app.get("/graph/entity/{entity_id:path}")
+def get_graph_entity(
+    entity_id: str = PathParam(..., min_length=3, max_length=256),
+    authorization: str | None = Header(None),
+    _: None = Depends(require_token),
+) -> dict:
+    """An entity with every relation whose other end the caller may read."""
+    store = _graph_store()
+    visible = _graph_visible(authorization)
+    entity = store.get_entity(entity_id)
+    if entity is None or not visible(entity):
+        raise HTTPException(status_code=404, detail="entity not found")
+    return {"entity": entity, "relations": store.relations(entity_id, visible)}
+
+
+@app.get("/graph/stats")
+def get_graph_stats(_: None = Depends(require_router_token)) -> dict:
+    """Invalid relation counts by reason and the quarantine size (router tokens only)."""
+    store = _graph_store()
+    return {
+        "graph_invalid_relations_total": store.invalid_relations_total(),
+        "quarantined": len(store.quarantined()),
+    }
 
 
 @app.post("/tick", status_code=202)
