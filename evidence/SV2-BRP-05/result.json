@@ -1,0 +1,50 @@
+{
+  "package": "SV2-BRP-05",
+  "repository": "agentibrain-kernel",
+  "gate": "G5",
+  "state": "committed and verified in CI on the pull request head; not yet observed on a deployed brain",
+  "evidence_kind": "live: real brain-api, embeddings on pgvector, the brain-ops extract, cluster, outbox drain and tick drain scripts, real git checkouts with linked worktrees; mocked model stand-in: word hash embeddings and an intent answer echoing the tick's active project list, so intent checks prove plumbing, not inference quality",
+  "tested_commit": "a69b8911525d60da151d1b878b4b9b55c1a8116c",
+  "fixture": {
+    "path": "tests/integration/project_scope/harness.py",
+    "contents": "per fixture run: two git repositories with an origin remote and one linked worktree each; a Claude session on the alpha checkout and the beta worktree, a Codex session on the alpha worktree with no recorded remote and on the beta checkout with its remote; markers written directly and through outbox replay; one scope fleet signal; one unattributed lesson. Two independent sets, one and two, with different hosts, owners, repositories, tokens, vaults, embeddings services and databases",
+    "manifest": "each case prints ISSUE89_RESULT with input sha256 per session file, project ids, tested commit and tree cleanliness"
+  },
+  "runs": {
+    "red": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40166048714",
+    "green": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40167293188"
+  },
+  "cases": {
+    "T-SV2-BRP-05-A": "passed",
+    "T-SV2-BRP-05-B": "passed",
+    "T-SV2-BRP-05-C": "passed"
+  },
+  "measurement": {
+    "issue89_acceptance_cases_passed": 6,
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ]
+  },
+  "interfaces": [
+    "extract.py --codex-dir and EXTRACT_CODEX_DIR: Codex rollouts become sessions with harness codex",
+    "extract.py session project_id: canonical origin remote through the git common dir, or the Codex recorded remote; unattributed otherwise",
+    "embeddings rows for brain-arc carry metadata.projects for canonical ids",
+    "MCP brain_search_arcs and kb_search take project; kb_search skips the vault text search when set",
+    "POST /marker signal with attrs.scope fleet is served in every project feed's fleet_warnings",
+    "compose tick-cron mounts CODEX_SESSIONS_HOST read only"
+  ],
+  "rollback": "docs/operations/project-scope-migration.md; stored scope is additive and the unscoped feed is unchanged. A run of an older brain-api image against the new data was not performed.",
+  "limitations": [
+    "Claude sessions extracted inside a container whose checkouts are not mounted stay unattributed; event time project metadata from the session source belongs to SV2-ING-01",
+    "arcs embedded before this release need EMBEDDING_STATE_GENERATION raised once to gain projects",
+    "the model is mocked; intent quality is not measured",
+    "historical unattributed lessons and decisions are not backfilled"
+  ],
+  "case_files": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ]
+}

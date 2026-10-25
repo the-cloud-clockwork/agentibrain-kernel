@@ -42,6 +42,10 @@ REQ_TIMEOUT = 30
 LESSON_STATE_FILENAME = ".brain-lesson-embed.state.json"
 LESSON_PRODUCER = "brain-lesson"
 LESSON_MAX_TEXT_CHARS = 4000
+# Canonical ids only: host/owner/repo, or local:<name> from AGENTIHOOKS_PROJECT_ID.
+CANONICAL_PROJECT_RE = re.compile(
+    r"local:[A-Za-z0-9][A-Za-z0-9._-]*|[^/\s]+\.[^/\s]+/[^/\s]+/[^/\s]+"
+)
 
 
 def parse_frontmatter(text: str) -> tuple[dict, str]:
@@ -85,7 +89,8 @@ def _clean_section(text: str) -> str:
     unrelated documents came back with the SAME similarity score, so
     brain_search_arcs was returning noise rather than matches.
     """
-    return "\n".join(l for l in _STUB_NOISE_RE.sub("", text).splitlines() if l.strip()).strip()
+    lines = _STUB_NOISE_RE.sub("", text).splitlines()
+    return "\n".join(line for line in lines if line.strip()).strip()
 
 
 def _body_excerpt(body: str, limit: int = 800) -> str:
@@ -239,6 +244,11 @@ def arc_id(md: Path, fm: dict | None = None) -> str:
     return md.stem.replace(".merged", "")
 
 
+def arc_projects(fm: dict) -> list[str]:
+    project = str(fm.get("project") or "").strip()
+    return [project] if CANONICAL_PROJECT_RE.fullmatch(project) else []
+
+
 def scan_arcs(vault: Path):
     seen_ids: set[str] = set()
 
@@ -380,6 +390,7 @@ def main() -> int:
                 # is often meaningless.
                 "summary": fm.get("summary", ""),
                 "path": rel,
+                "projects": arc_projects(fm),
             },
         }
 

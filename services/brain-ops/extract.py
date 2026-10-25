@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Deterministic session extractor for the brain-clusters skill.
 
-Scans ~/.claude/projects/*/<session>.jsonl files, filters by time window and
-project substring, and emits a structured JSON bundle that the AI side of the
-skill consumes to produce semantic cluster markdown files.
+Scans ~/.claude/projects/*/<session>.jsonl files and Codex rollout files under
+~/.codex/sessions, filters by time window and project substring, and emits a
+structured JSON bundle that the AI side of the skill consumes to produce
+semantic cluster markdown files.
 
 Usage:
     python3 extract.py --since 24h [--project my-project] [--min-turns 5]
@@ -16,8 +17,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from collections import Counter
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -35,6 +38,14 @@ ERROR_MARKERS = re.compile(
     re.IGNORECASE,
 )
 COMPACT_MARKERS = re.compile(r"/compact\b|resuming from.*conversation", re.IGNORECASE)
+REMOTE_RE = re.compile(
+    r"(?:https://|ssh://(?:git@)?|git@)([A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)([/:])"
+    r"([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/?"
+)
+GIT_TIMEOUT = 5
+CODEX_TOOL_ITEMS = frozenset({"function_call", "custom_tool_call", "local_shell_call"})
+# Codex records its own injected context as user messages.
+CODEX_INJECTED_PREFIXES = ("<", "# AGENTS.md")
 
 
 def parse_since(s: str) -> datetime:
@@ -53,7 +64,7 @@ def parse_since(s: str) -> datetime:
     try:
         return datetime.fromisoformat(s.replace("Z", "+00:00"))
     except ValueError:
-        raise SystemExit(f"ERROR: cannot parse --since '{s}'")
+        raise SystemExit(f"ERROR: cannot parse --since '{s}'") from None
 
 
 def iter_content_texts(msg) -> list[str]:
@@ -90,6 +101,57 @@ def project_name(cwd: str) -> str:
     return Path(cwd).name or "unknown"
 
 
+def canonical_remote(remote: str) -> str | None:
+    """The agentihooks client's project id for an origin URL: host/owner/repo."""
+    match = REMOTE_RE.fullmatch(remote)
+    if not match:
+        return None
+    host, separator, owner, repo = match.groups()
+    if "." not in host or ".." in host or separator != (":" if remote.startswith("git@") else "/"):
+        return None
+    repo = repo.removesuffix(".git")
+    if owner in (".", "..") or repo in ("", ".", ".."):
+        return None
+    project_id = f"{host.lower()}/{owner}/{repo}"
+    return project_id.lower() if host.lower() == "github.com" else project_id
+
+
+def _git(cwd: str, *args: str) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", cwd, *args], capture_output=True, text=True, timeout=GIT_TIMEOUT
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def checkout_identity(cwd: str) -> dict:
+    if not cwd or not Path(cwd).is_dir():
+        return {"project_id": None, "worktree": ""}
+    common = _git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if not common:
+        return {"project_id": None, "worktree": ""}
+    top = _git(cwd, "rev-parse", "--show-toplevel")
+    return {
+        "project_id": canonical_remote(_git(cwd, "remote", "get-url", "origin")),
+        "worktree": top if top and top != str(Path(common).parent) else "",
+    }
+
+
+def session_attribution(cwd: str, remote: str = "") -> dict:
+    """Project fields of a session: its recorded remote first, else its checkout; never a guess."""
+    checkout = checkout_identity(cwd)
+    project_id = (canonical_remote(remote) if remote else None) or checkout["project_id"]
+    if not project_id:
+        return {"project": project_name(cwd), "project_id": None, "worktree": ""}
+    return {
+        "project": project_id.rsplit("/", 1)[-1],
+        "project_id": project_id,
+        "worktree": checkout["worktree"],
+    }
+
+
 def process_session(jsonl_path: Path, since: datetime, until: datetime) -> dict | None:
     """Parse one session jsonl file. Return a session summary dict or None to skip."""
     first_ts: datetime | None = None
@@ -108,7 +170,7 @@ def process_session(jsonl_path: Path, since: datetime, until: datetime) -> dict 
     session_id = jsonl_path.stem
 
     try:
-        with open(jsonl_path, "r", encoding="utf-8", errors="replace") as fh:
+        with open(jsonl_path, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
@@ -174,8 +236,7 @@ def process_session(jsonl_path: Path, since: datetime, until: datetime) -> dict 
 
     return {
         "session_id": session_id,
-        "project": project_name(cwd),
-        "project_id": None,
+        **session_attribution(cwd),
         "cwd": cwd,
         "harness": "claude",
         "git_branch": git_branch,
@@ -192,6 +253,121 @@ def process_session(jsonl_path: Path, since: datetime, until: datetime) -> dict 
         "joy_markers": joy_hits,
         "error_markers": error_hits,
     }
+
+
+@dataclass
+class _CodexTally:
+    meta: dict = field(default_factory=dict)
+    first_ts: datetime | None = None
+    last_ts: datetime | None = None
+    user: int = 0
+    assistant: int = 0
+    first_prompt: str = ""
+    last_prompt: str = ""
+    tools: Counter = field(default_factory=Counter)
+    joy: int = 0
+    errors: int = 0
+    compactions: int = 0
+
+    def stamp(self, ts: datetime) -> None:
+        self.first_ts = ts if self.first_ts is None else min(self.first_ts, ts)
+        self.last_ts = ts if self.last_ts is None else max(self.last_ts, ts)
+
+    def message(self, payload: dict) -> None:
+        content = payload.get("content")
+        parts = content if isinstance(content, list) else [{"text": content}]
+        joined = " ".join(
+            p["text"] for p in parts if isinstance(p, dict) and isinstance(p.get("text"), str)
+        )
+        if payload.get("role") == "user":
+            if not joined or joined.lstrip().startswith(CODEX_INJECTED_PREFIXES):
+                return
+            self.user += 1
+            self.first_prompt = self.first_prompt or joined
+            self.last_prompt = joined
+            self.compactions += bool(COMPACT_MARKERS.search(joined))
+        elif payload.get("role") == "assistant":
+            self.assistant += 1
+            self.joy += self.joy < 50 and bool(JOY_MARKERS.search(joined))
+            self.errors += self.errors < 50 and bool(ERROR_MARKERS.search(joined))
+
+    def record(self, d: dict) -> None:
+        payload = d.get("payload") if isinstance(d.get("payload"), dict) else {}
+        if d.get("type") == "session_meta" and not self.meta:
+            self.meta = payload
+        ts = parse_ts(d.get("timestamp"))
+        if ts is None or d.get("type") != "response_item":
+            return
+        self.stamp(ts)
+        if payload.get("type") == "message":
+            self.message(payload)
+        elif payload.get("type") in CODEX_TOOL_ITEMS:
+            self.tools[payload.get("name") or payload.get("type")] += 1
+
+
+def process_codex_session(jsonl_path: Path, since: datetime, until: datetime) -> dict | None:
+    """Parse one Codex rollout file into the same summary shape as a Claude session."""
+    tally = _CodexTally()
+    try:
+        with open(jsonl_path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    d = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(d, dict):
+                    tally.record(d)
+    except OSError as e:
+        print(f"WARN: cannot read {jsonl_path}: {e}", file=sys.stderr)
+        return None
+    if tally.first_ts is None or tally.last_ts is None:
+        return None
+    if tally.last_ts < since or tally.first_ts > until:
+        return None
+    meta = tally.meta
+    git = meta.get("git") if isinstance(meta.get("git"), dict) else {}
+    cwd = str(meta.get("cwd") or "")
+    return {
+        "session_id": str(meta.get("id") or jsonl_path.stem),
+        **session_attribution(cwd, str(git.get("repository_url") or "")),
+        "cwd": cwd,
+        "harness": "codex",
+        "git_branch": str(git.get("branch") or ""),
+        "start": tally.first_ts.isoformat(),
+        "end": tally.last_ts.isoformat(),
+        "duration_minutes": round((tally.last_ts - tally.first_ts).total_seconds() / 60.0, 1),
+        "num_user_turns": tally.user,
+        "num_assistant_turns": tally.assistant,
+        "num_tool_calls": sum(tally.tools.values()),
+        "first_user_prompt": tally.first_prompt[:300],
+        "last_user_prompt": tally.last_prompt[:300],
+        "top_tools": [{"name": n, "count": c} for n, c in tally.tools.most_common(10)],
+        "compactions": tally.compactions,
+        "joy_markers": tally.joy,
+        "error_markers": tally.errors,
+    }
+
+
+def codex_candidates(root: Path, since: datetime) -> list[Path]:
+    if not root.is_dir():
+        return []
+    found = []
+    for f in sorted(root.rglob("rollout-*.jsonl")):
+        try:
+            mtime = datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc)
+        except OSError:
+            continue
+        if mtime >= since:
+            found.append(f)
+    return found
+
+
+def codex_sessions(
+    paths: list[Path], since: datetime, until: datetime, project: str | None
+) -> list[dict]:
+    """Parsed Codex sessions in the window, filtered by a substring of their working folder."""
+    found = (process_codex_session(path, since, until) for path in paths)
+    return [s for s in found if s and (not project or project.lower() in s["cwd"].lower())]
 
 
 def main() -> int:
@@ -223,6 +399,11 @@ def main() -> int:
         "--projects-dir",
         default=str(Path.home() / ".claude" / "projects"),
         help="Root of Claude Code projects (default: ~/.claude/projects)",
+    )
+    parser.add_argument(
+        "--codex-dir",
+        default=str(Path.home() / ".codex" / "sessions"),
+        help="Root of Codex rollout sessions, skipped when absent (default: ~/.codex/sessions)",
     )
     args = parser.parse_args()
 
@@ -256,9 +437,13 @@ def main() -> int:
                 continue
             candidates.append(f)
 
+    codex = codex_candidates(Path(args.codex_dir), since)
+    parsed = [process_session(path, since, until) for path in candidates]
+    parsed += codex_sessions(codex, since, until, args.project)
+    candidates += codex
+
     sessions: list[dict] = []
-    for path in candidates:
-        s = process_session(path, since, until)
+    for s in parsed:
         if s is None:
             continue
         if s["num_user_turns"] < args.min_turns:

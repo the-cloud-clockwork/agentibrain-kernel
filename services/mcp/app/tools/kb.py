@@ -16,7 +16,6 @@ import os
 import aiohttp
 from mcp.server.fastmcp import FastMCP
 
-
 EMBEDDINGS_URL = os.getenv("EMBEDDINGS_URL", "http://agentibrain-embeddings:8080")
 EMBEDDINGS_API_KEY = os.environ.get("EMBEDDINGS_API_KEY") or ""
 BRAIN_API_URL = os.getenv(
@@ -40,7 +39,7 @@ RRF_K = int(os.getenv("KB_RRF_K", "60"))
 
 
 async def _search_embeddings(
-    query: str, limit: int, min_score: float, producer: str = ""
+    query: str, limit: int, min_score: float, producer: str = "", project: str = ""
 ) -> list[dict]:
     """Call agentibrain-embeddings /search and normalize into common schema."""
     if not EMBEDDINGS_URL or not EMBEDDINGS_API_KEY:
@@ -54,6 +53,8 @@ async def _search_embeddings(
     # search, so existing callers see no change.
     if producer:
         body["producer"] = producer
+    if project:
+        body["project_id"] = project
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -169,6 +170,7 @@ def register(mcp: FastMCP):
         include_obsidian: bool = True,
         min_score: float = 0.0,
         producer: str = "",
+        project: str = "",
     ) -> str:
         """Federated knowledge base search across embeddings (semantic) + Obsidian vault (text).
 
@@ -192,11 +194,14 @@ def register(mcp: FastMCP):
             min_score: Minimum score threshold for semantic hits.
             producer: Restrict semantic hits to one producer, e.g.
                 "brain-arc" or "brain-lesson". Empty searches all.
+            project: Canonical project id, e.g. "github.com/owner/repo". Semantic
+                hits must be attributed to exactly that project, and the vault
+                text search is skipped because a text mention is not a match.
         """
         tasks = []
         if include_artifact:
-            tasks.append(_search_embeddings(query, limit, min_score, producer))
-        if include_obsidian:
+            tasks.append(_search_embeddings(query, limit, min_score, producer, project))
+        if include_obsidian and not project:
             tasks.append(_search_vault(query, limit))
         if not tasks:
             return json.dumps({"query": query, "count": 0, "results": []})
@@ -254,7 +259,7 @@ def register(mcp: FastMCP):
                 "results": merged,
                 "sources_searched": (
                     (["artifact"] if include_artifact else [])
-                    + (["obsidian"] if include_obsidian else [])
+                    + (["obsidian"] if include_obsidian and not project else [])
                 ),
             }
         )

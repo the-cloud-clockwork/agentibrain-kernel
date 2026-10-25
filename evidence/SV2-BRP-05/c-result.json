@@ -1,0 +1,20 @@
+{
+  "case": "T-SV2-BRP-05-C",
+  "evidence_kind": "live: real brain-api, embeddings on pgvector, the brain-ops extract, cluster, outbox drain and tick drain scripts, real git checkouts with linked worktrees; mocked model stand-in: word hash embeddings and an intent answer echoing the tick's active project list, so intent checks prove plumbing, not inference quality",
+  "tested_commit": "a69b8911525d60da151d1b878b4b9b55c1a8116c",
+  "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40167293188",
+  "fixture": {
+    "path": "tests/integration/project_scope/harness.py",
+    "contents": "per fixture run: two git repositories with an origin remote and one linked worktree each; a Claude session on the alpha checkout and the beta worktree, a Codex session on the alpha worktree with no recorded remote and on the beta checkout with its remote; markers written directly and through outbox replay; one scope fleet signal; one unattributed lesson. Two independent sets, one and two, with different hosts, owners, repositories, tokens, vaults, embeddings services and databases",
+    "manifest": "each case prints ISSUE89_RESULT with input sha256 per session file, project ids, tested commit and tree cleanliness"
+  },
+  "tests": [
+    "tests/integration/project_scope/test_issue89_acceptance.py::test_replay_and_restart_keep_scope_without_duplicates[one]",
+    "tests/integration/project_scope/test_issue89_acceptance.py::test_replay_and_restart_keep_scope_without_duplicates[two]"
+  ],
+  "then": "With brain-api stopped the outbox keeps the undelivered marker; after restart it is delivered once; replaying already accepted markers adds nothing; after a second tick the other project's items and intent are unchanged, search rows grow by exactly the one new lesson, every marker's provenance reads back, the outbox is empty and the unscoped legacy feed keeps its shape.",
+  "measurement": {
+    "issue89_acceptance_cases_passed": 2
+  },
+  "outcome": "passed"
+}

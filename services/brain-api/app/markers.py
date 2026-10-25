@@ -422,6 +422,10 @@ def _build_milestone_entry(
     return f"{header}\n  {content.strip()}\n"
 
 
+def _fleet_scoped(attrs: dict[str, Any]) -> bool:
+    return str(attrs.get("scope") or "").strip().lower() == "fleet"
+
+
 def _build_signal_file(
     content: str, attrs: dict[str, Any], ts_iso: str, slug: str, provenance: dict[str, str]
 ) -> str:
@@ -429,12 +433,14 @@ def _build_signal_file(
     if severity not in _VALID_SEVERITIES:
         severity = "warning"
     source = attrs.get("source") or "unknown"
+    scope_line = "scope: fleet\n" if _fleet_scoped(attrs) else ""
     return (
         "---\n"
         f"id: amygdala-{slug}\n"
         f"title: {attrs.get('title') or content[:80].strip()}\n"
         f"severity: {severity}\n"
         f"source: {source}\n"
+        f"{scope_line}"
         f"created: {ts_iso}\n"
         f"{_provenance_frontmatter(provenance)}"
         "---\n\n"

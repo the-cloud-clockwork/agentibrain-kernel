@@ -22,6 +22,7 @@ The kernel is a brain + KB substrate for AI fleets. This index is the entry poin
 
 ## Run
 - [`OPERATIONS.md`](OPERATIONS.md) — day-2: monitoring, scaling, restart, drain, backup.
+- [`operations/project-scope-migration.md`](operations/project-scope-migration.md) — project scoped memory: identity, rollout, rollback.
 - [`SECRETS.md`](SECRETS.md) — two supported paths: plain Opaque Secrets, or your secret store via ESO.
 - [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) — error → fix recipes for the top 15 things that break.
 

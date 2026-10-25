@@ -354,6 +354,8 @@ def extract(vault: Path) -> Step:
             os.environ.get("EXTRACT_MIN_TURNS", "5"),
             "--projects-dir",
             os.environ.get("EXTRACT_PROJECTS_DIR", "/shared/.claude/projects"),
+            "--codex-dir",
+            os.environ.get("EXTRACT_CODEX_DIR", "/shared/.codex/sessions"),
         ],
         stdout=subprocess.PIPE,
     )
