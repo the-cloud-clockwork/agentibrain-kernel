@@ -1,0 +1,64 @@
+{
+  "package": "SV2-MUL-03",
+  "repository": "agentibrain-kernel",
+  "gate": "G7",
+  "state": "committed and verified in CI on the pull request head; not observed on a running docker host or deployed brain",
+  "evidence_kind": "mocked docker host, compose and agentihooks invocations in CI",
+  "tested_commit": "167b62336ffa38299f88d0be107f192786d79f2e",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/168",
+  "fixture": {
+    "path": "tests/unit/test_cli_instances.py",
+    "manifest": "fixture-manifest.json"
+  },
+  "runs": {
+    "red": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40240675651",
+    "green": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40241614498"
+  },
+  "cases": {
+    "T-SV2-MUL-03-A": "passed",
+    "T-SV2-MUL-03-B": "passed",
+    "T-SV2-MUL-03-C": "passed"
+  },
+  "measurement": {
+    "brain_cross_instance_mutation_rejections": "agentibrain.bootstrap Counter per kind (instance, ambiguous, unowned), each increment also printed by the CLI as `brain_cross_instance_mutation_rejections kind=<k> count=<n>`; unowned counts lookalike containers a replacing stop declined to touch",
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ],
+    "macos": "macos-smoke"
+  },
+  "interfaces": [
+    "agentibrain --instance NAME (env AGENTIBRAIN_INSTANCE) on the CLI group; _load_settings loads only that brain's root and refuses a root holding another brain",
+    "config.instance_root(brain_id) and config.root_brain_id(root)",
+    "bootstrap.legacy_stacks() -> (owned project to workdir, unowned containers); bootstrap.LEGACY_CONTAINER_NAMES",
+    "bootstrap.remove_other_stacks(keep) stops only owned legacy projects",
+    "--dry-run inventory on up, build, down, uninstall and install",
+    "install and uninstall --name default to brain or brain-<id>"
+  ],
+  "compatibility": {
+    "down": "before: after stopping its stack, downed every compose project holding agentibrain_* containers; now: stops only the selected stack",
+    "uninstall": "before: same whole-machine teardown and unlink of alias brain; now: stops only the selected stack and unlinks brain for the default brain or brain-<id> for a named one",
+    "up, build, fix, install start (default brain)": "before: downed every agentibrain_* project; now: replaces only owned legacy projects, refuses without --instance when two or more would be replaced, and still replaces a single other legacy stack because it holds the same fixed names (SV2-MUL-02 compatibility)",
+    "named brains": "unchanged from SV2-MUL-02 apart from explicit selection and per-instance alias",
+    "no --instance": "selection by AGENTIBRAIN_HOME and discovery as before"
+  },
+  "rollback": "Run --dry-run first and select --instance default explicitly; reverting this commit restores the previous lifecycle. Config roots, volumes and vaults are never deleted by these commands. Rehearsed in CI by the default-brain tests; not rehearsed on a docker host.",
+  "limitations": [
+    "Ownership reads containers named agentibrain_*; a differently named container carrying an owned project's compose label is still stopped with that project.",
+    "check, sync and logs are covered by settings resolution and the logs passthrough, not by a live brain-api.",
+    "Counters are per CLI process; persistence beyond the printed line is outside this package.",
+    "A tab after export in BRAIN_ID is not parsed; such a root refuses (fails closed)."
+  ],
+  "case_files": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ],
+  "outcomes": {
+    "observed": "CI on a mocked docker host, runs named in runs",
+    "accepted": "not claimed; accepted only when the master or operator accepts the package",
+    "committed": "tested_commit on the pull request branch; merge into dev pending",
+    "externally_verified": "not claimed; no docker host or deployed brain was observed"
+  }
+}

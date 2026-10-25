@@ -1,0 +1,34 @@
+{
+  "package": "SV2-MUL-03",
+  "tested_commit": "167b62336ffa38299f88d0be107f192786d79f2e",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40241614498",
+  "verification": "CI unit fixtures in tests/unit/test_cli_instances.py: named brains personal and swarm in their own config roots, one unowned lookalike container agentibrain_postgres in compose project lookalike, and a swarm install stopped after config and bearer but before compose. Container listing, compose invocations and agentihooks link calls faked at the agentibrain.cli and agentibrain.bootstrap seams. Mocked: no docker daemon or deployed brain was contacted.",
+  "input_hashes": {
+    "agentibrain/templates/compose/compose.yml.j2": "58e6567c7f03f974b8738b5024bab32d4a07bb7d639b3cb9408053256e45ff17"
+  },
+  "test_source_hashes": {
+    "tests/unit/test_cli_instances.py": "365c3dd14fff7d42455dd1f3349020e0cdefb641d52d46213e03d7984f6b6e6f",
+    "tests/conftest.py": "0619bb9002c260b15aab22425819da92696ad5a59f2d06e52fd97d4c72ed770e"
+  },
+  "fixture_dimensions": {
+    "instances": [
+      "personal",
+      "swarm",
+      "default"
+    ],
+    "lookalike": "agentibrain_postgres in project lookalike, workdir without a kernel compose file",
+    "interrupted_install": "swarm root with config.yaml and .env, no compose.yml",
+    "port_layouts": {
+      "first": {
+        "personal": 18103,
+        "swarm": 28103
+      },
+      "second": {
+        "personal": 38103,
+        "swarm": 48103
+      }
+    },
+    "independent_runs": 2
+  },
+  "source_material": "Scratch HOME per test; no operator config root, vault, docker host or credentials."
+}

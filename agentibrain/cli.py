@@ -20,7 +20,13 @@ from rich.markup import escape
 from agentibrain import __version__, bootstrap
 from agentibrain import hooks_env as _hooks_env
 from agentibrain import scaffold as _scaffold
-from agentibrain.config import BrainSettings, config_dir, config_path
+from agentibrain.config import (
+    DEFAULT_BRAIN_ID,
+    BrainSettings,
+    config_dir,
+    instance_root,
+    root_brain_id,
+)
 
 console = Console()
 
@@ -33,21 +39,51 @@ TICK_WAIT_SECONDS = int(os.getenv("AGENTIBRAIN_TICK_WAIT_SECONDS", "900"))
 _TICK_HEARTBEAT_SECONDS = 60
 
 
+def _selected_instance() -> str | None:
+    ctx = click.get_current_context(silent=True)
+    return ctx.find_root().params.get("instance") if ctx else None
+
+
 def _load_settings() -> BrainSettings:
-    """Load BrainSettings from ``~/.agentibrain/config.yaml`` plus env."""
+    """Load BrainSettings from ``~/.agentibrain/config.yaml`` plus env.
+
+    With ``--instance`` the selected brain's own config root is loaded, and a root
+    that holds another brain refuses rather than act on it.
+    """
+    instance = _selected_instance()
+    if instance is None:
+        root = config_dir()
+    else:
+        root = instance_root(instance)
+        held = root_brain_id(root)
+        if held is not None and held != instance:
+            _reject("instance")
+            console.print(
+                f"[red]{escape(str(root))} holds brain {escape(held)}, not {escape(instance)}; "
+                "nothing was touched[/red]"
+            )
+            sys.exit(2)
     payload: dict[str, Any] = {}
-    cfg_path = config_path()
+    cfg_path = root / "config.yaml"
     if cfg_path.exists():
         raw = yaml.safe_load(cfg_path.read_text()) or {}
         payload = {k: v for k, v in raw.items() if v is not None}
-    env_path = config_dir() / ".env"
+    if instance is not None:
+        payload.update(config_dir=root, brain_id=instance)
+    env_path = root / ".env"
     env_file = str(env_path) if env_path.exists() else None
     return BrainSettings(**payload, _env_file=env_file)
 
 
 @click.group()
 @click.version_option(__version__, prog_name="agentibrain")
-def main() -> None:
+@click.option(
+    "--instance",
+    envvar="AGENTIBRAIN_INSTANCE",
+    default=None,
+    help="Brain to act on (default, or a named brain); lifecycle commands touch only it.",
+)
+def main(instance: str | None) -> None:
     """agentibrain — standalone brain + KB kernel."""
 
 
@@ -71,7 +107,16 @@ def _find_deployment_or_exit() -> tuple[str, Path, BrainSettings]:
     return mode, compose_dir, settings
 
 
+def _reject(kind: str, count: int = 1) -> None:
+    """Count a refused cross-instance mutation and print it as one machine-readable line."""
+    if not count:
+        return
+    bootstrap.brain_cross_instance_mutation_rejections[kind] += count
+    console.print(f"brain_cross_instance_mutation_rejections kind={kind} count={count}")
+
+
 def _remove_other_stacks(keep: Path | None) -> None:
+    _reject("unowned", len(bootstrap.legacy_stacks()[1]))
     for project, proc in bootstrap.remove_other_stacks(keep):
         if proc.returncode != 0:
             console.print(f"[red]removing stack {project} failed[/red]\n{proc.stderr}")
@@ -79,11 +124,45 @@ def _remove_other_stacks(keep: Path | None) -> None:
         console.print(f"[yellow]removed stack[/yellow] {project}")
 
 
-def _make_room(settings: BrainSettings, keep: Path | None) -> None:
-    if settings.compose_project is None:
-        _remove_other_stacks(keep)
+def _refuse_ambiguous(settings: BrainSettings, keep: Path | None = None) -> None:
+    """Without an explicit selection, more than one legacy stack to stop leaves no single target."""
+    if _selected_instance() is not None or settings.compose_project is not None:
         return
+    owned = bootstrap.legacy_stacks()[0]
+    others = [w for w in owned.values() if keep is None or w.resolve() != keep.resolve()]
+    if len(others) < 2:
+        return
+    _reject("ambiguous")
+    for project, workdir in sorted(owned.items()):
+        console.print(f"  legacy stack {escape(project)} @ {escape(str(workdir))}")
+    console.print(
+        "[red]ambiguous: several legacy brain stacks run here; select one with "
+        "--instance default from its checkout. Nothing was stopped.[/red]"
+    )
+    sys.exit(2)
+
+
+def _inventory(settings: BrainSettings, mode: str, compose_dir: Path, action: str) -> None:
+    """Dry-run report of what a lifecycle command would touch, mutating nothing."""
+    project = settings.compose_project or compose_dir.name
+    console.print(f"instance {settings.brain_id} ({mode} @ {compose_dir})")
+    console.print(f"  would {action} compose project {project}")
+    if settings.compose_project is not None or action in ("stop", "uninstall"):
+        return
+    owned, unowned = bootstrap.legacy_stacks()
+    for other, workdir in sorted(owned.items()):
+        if workdir.resolve() != compose_dir.resolve():
+            console.print(f"  would remove legacy stack {other} @ {workdir}")
+    for name, other, _ in unowned:
+        console.print(f"  left unowned container {name} (project {other or 'none'})")
+
+
+def _make_room(settings: BrainSettings, keep: Path | None) -> None:
     if keep is None:
+        return
+    if settings.compose_project is None:
+        _refuse_ambiguous(settings, keep)
+        _remove_other_stacks(keep)
         return
     # Re-render so PORT_* edits in the brain's .env reach the literal ports compose publishes.
     bootstrap.write_compose(settings, bootstrap.render_compose(settings))
@@ -105,9 +184,13 @@ def _root_compose_command(settings: BrainSettings, args: list[str]) -> list[str]
 
 
 @main.command("up")
-def up_cmd() -> None:
+@click.option("--dry-run", is_flag=True, help="Report what would start or stop; change nothing.")
+def up_cmd(dry_run: bool) -> None:
     """Start the brain stack wherever it lives (docker compose up -d)."""
     mode, compose_dir, settings = _find_deployment_or_exit()
+    if dry_run:
+        _inventory(settings, mode, compose_dir, "start")
+        return
     _make_room(settings, compose_dir)
     if mode == "home":
         proc = bootstrap.compose_up(settings)
@@ -127,7 +210,8 @@ def up_cmd() -> None:
 
 @main.command("build")
 @click.argument("services", nargs=-1)
-def build_cmd(services: tuple[str, ...]) -> None:
+@click.option("--dry-run", is_flag=True, help="Report what would be rebuilt or stopped.")
+def build_cmd(services: tuple[str, ...], dry_run: bool) -> None:
     """Rebuild + restart the stack (docker compose up -d --build [SERVICES]).
 
     The one command that makes a code change take effect: finds the compose
@@ -135,6 +219,9 @@ def build_cmd(services: tuple[str, ...]) -> None:
     shows the resulting ps.
     """
     mode, compose_dir, settings = _find_deployment_or_exit()
+    if dry_run:
+        _inventory(settings, mode, compose_dir, "rebuild")
+        return
     _make_room(settings, compose_dir)
     console.print(f"[bold]build + up[/bold] @ {compose_dir}")
     args = ["up", "-d", "--build", *services]
@@ -170,9 +257,14 @@ def logs_cmd(service: str | None, follow: bool, since: str | None, tail: int | N
 
 
 @main.command("down")
-def down_cmd() -> None:
-    """Stop the brain stack (docker compose down — volumes survive)."""
+@click.option("--dry-run", is_flag=True, help="Report what would stop; change nothing.")
+def down_cmd(dry_run: bool) -> None:
+    """Stop the selected brain stack (docker compose down — volumes survive)."""
+    _refuse_ambiguous(_load_settings())
     mode, compose_dir, settings = _find_deployment_or_exit()
+    if dry_run:
+        _inventory(settings, mode, compose_dir, "stop")
+        return
     if mode == "home":
         proc = bootstrap.compose_down(settings)
     else:
@@ -181,7 +273,6 @@ def down_cmd() -> None:
         console.print(f"[red]compose down failed[/red]\n{proc.stderr}")
         sys.exit(proc.returncode)
     console.print(proc.stdout or "[green]compose down ok[/green]")
-    _make_room(settings, None)
 
 
 @main.command("fix")
@@ -262,19 +353,22 @@ def fix_cmd(dry_run: bool) -> None:
 
 
 @main.command("uninstall")
-@click.option("--name", default="brain", show_default=True, help="Linked profile alias to remove.")
+@click.option(
+    "--name", default=None, help="Linked profile alias to remove; defaults to the brain's own."
+)
 @click.option("--no-unlink", is_flag=True, help="Keep the agentihooks profile link.")
 @click.option("--dry-run", is_flag=True, help="Report actions without changing anything.")
-def uninstall_cmd(name: str, no_unlink: bool, dry_run: bool) -> None:
-    """Stop the compose stack and unlink the brain profile. Data survives."""
+def uninstall_cmd(name: str | None, no_unlink: bool, dry_run: bool) -> None:
+    """Stop the selected brain's compose stack and unlink its profile. Data survives."""
     settings = _load_settings()
+    _refuse_ambiguous(settings)
     deployment = bootstrap.find_deployment(settings)
     if deployment is None:
         console.print("[yellow]no local compose stack found[/yellow]")
     else:
         mode, compose_dir = deployment
         if dry_run:
-            console.print(f"would run docker compose down ({mode} @ {compose_dir})")
+            _inventory(settings, mode, compose_dir, "uninstall")
         else:
             proc = (
                 bootstrap.compose_down(settings)
@@ -285,18 +379,21 @@ def uninstall_cmd(name: str, no_unlink: bool, dry_run: bool) -> None:
                 console.print(f"[red]compose down failed[/red]\n{proc.stderr}")
                 sys.exit(proc.returncode)
             console.print(proc.stdout or "[green]compose down ok[/green]")
-            _make_room(settings, None)
 
     if no_unlink:
         console.print("[yellow]profile link kept (--no-unlink)[/yellow]")
         return
-    cmd = [_agentihooks_bin(), "link-profile", "unlink", name]
+    cmd = [_agentihooks_bin(), "link-profile", "unlink", name or _profile_alias(settings)]
     if dry_run:
         console.print(f"would run {escape(' '.join(cmd))}")
         return
     result = subprocess.run(cmd)
     if result.returncode != 0:
         sys.exit(result.returncode)
+
+
+def _profile_alias(settings: BrainSettings) -> str:
+    return "brain" if settings.brain_id == DEFAULT_BRAIN_ID else f"brain-{settings.brain_id}"
 
 
 @main.command("status")
@@ -1074,6 +1171,13 @@ def _create_deployment(
     """Render a stack into ~/.agentibrain: bundled MinIO, or S3 when a bucket is named."""
     vault_path = Path(vault).expanduser().resolve() if vault else settings.vault_path
     fresh = BrainSettings(
+        brain_id=settings.brain_id,
+        config_dir=settings.config_dir,
+        port_brain_api=settings.port_brain_api,
+        port_postgres=settings.port_postgres,
+        port_redis=settings.port_redis,
+        port_mcp=settings.port_mcp,
+        port_ollama=settings.port_ollama,
         mode="s3" if s3_bucket else "local",
         vault_path=vault_path,
         s3_bucket=s3_bucket,
@@ -1130,6 +1234,17 @@ def _start_stack(settings: BrainSettings) -> None:
     console.print(f"  [green]✓[/green] up ({mode} @ {compose_dir})")
 
 
+def _install_stack(
+    settings: BrainSettings, deployment: tuple[str, Path] | None, dry_run: bool
+) -> None:
+    if not dry_run:
+        _start_stack(settings)
+    elif deployment is not None:
+        _inventory(settings, *deployment, "start")
+    else:
+        console.print("  would start the compose stack")
+
+
 def _sync_env_manifest(
     settings: BrainSettings,
     deployment: tuple[str, Path] | None,
@@ -1176,7 +1291,9 @@ def _sync_env_manifest(
     help="Bearer for that brain. Defaults to the local deployment's .env.",
 )
 @click.option(
-    "--name", default="brain", show_default=True, help="Alias to register with agentihooks."
+    "--name",
+    default=None,
+    help="Alias to register with agentihooks; brain, or brain-<id> for a named brain.",
 )
 @click.option(
     "--profile",
@@ -1207,7 +1324,7 @@ def install_cmd(
     use_ollama: bool,
     brain_url: str | None,
     token: str | None,
-    name: str,
+    name: str | None,
     profile_name: str,
     for_target: str | None,
     no_stack: bool,
@@ -1362,7 +1479,7 @@ def install_cmd(
         migrated = _hooks_env.migrate_client_defaults(brain_env)
         if migrated:
             console.print(f"       migrated {', '.join(migrated)}", markup=False)
-        swept = _hooks_env.sweep_managed_file()
+        swept = settings.compose_project is None and _hooks_env.sweep_managed_file()
         if swept:
             console.print(f"  [green]✓[/green] removed duplicated copy → {swept}")
         console.print(
@@ -1375,16 +1492,15 @@ def install_cmd(
         console.print("  [--] skipped — client-only")
     elif no_stack:
         console.print("  [--] skipped (--no-stack)")
-    elif dry_run:
-        console.print("  would start the compose stack")
     else:
-        _start_stack(settings)
+        _install_stack(settings, deployment, dry_run)
 
     console.print("\n[bold]5. profile[/bold]")
     if no_link:
         console.print("  [--] skipped (--no-link)")
     else:
-        cmd = [_agentihooks_bin(), "link-profile", "link", str(profile_dir), "--name", name]
+        cmd = [_agentihooks_bin(), "link-profile", "link", str(profile_dir), "--name"]
+        cmd.append(name or _profile_alias(settings))
         if for_target:
             cmd += ["--for-target", for_target]
         if no_init:

@@ -1,0 +1,23 @@
+{
+  "package": "SV2-MUL-03",
+  "tested_commit": "167b62336ffa38299f88d0be107f192786d79f2e",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40241614498",
+  "verification": "CI unit fixtures in tests/unit/test_cli_instances.py: named brains personal and swarm in their own config roots, one unowned lookalike container agentibrain_postgres in compose project lookalike, and a swarm install stopped after config and bearer but before compose. Container listing, compose invocations and agentihooks link calls faked at the agentibrain.cli and agentibrain.bootstrap seams. Mocked: no docker daemon or deployed brain was contacted.",
+  "case": "T-SV2-MUL-03-A",
+  "outcome": "passed",
+  "state": "observed in CI on mocked host",
+  "assertions": [
+    "--instance personal down runs compose down only in the personal root; the swarm root's .env, config.yaml and compose.yml hash unchanged and no agentihooks call is made.",
+    "A second independent port layout repeats the same result.",
+    "--instance personal uninstall unlinks only alias brain-personal and leaves the swarm root unchanged; no bearer appears in output.",
+    "up, build, logs and down with --instance swarm run compose only in the swarm root and never by project name.",
+    "check and sync load the selected brain's id, config root and brain URL; AGENTIBRAIN_INSTANCE selects like the option.",
+    "A lookalike container's project is never stopped, alone or when it shares a legacy project's label (that project is disowned)."
+  ],
+  "measurement": {
+    "brain_cross_instance_mutation_rejections": {
+      "expected_increments": 0,
+      "unowned_on_default_up": 1
+    }
+  }
+}
