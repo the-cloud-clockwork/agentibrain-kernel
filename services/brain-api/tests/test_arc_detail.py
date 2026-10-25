@@ -243,3 +243,45 @@ def test_invalid_publications_never_replace_accepted_document(
     response = client.post("/knowledge/detail", json={**payload, **changes}, headers=_auth(ROUTER))
     assert response.status_code == 422
     assert _read(client).json() == before
+
+
+def test_neighbors_have_explicit_scoped_keyset_pages(monkeypatch, vault, tmp_path):
+    client = _client(monkeypatch, vault, tmp_path / "neighbors.db", "hive-a@alpha=worker")
+    _publish(client)
+    for ident, project in [("lesson:a", "alpha"), ("lesson:b", "alpha"), ("lesson:hidden", "beta")]:
+        assert (
+            client.post(
+                "/graph/entity", json=_entity(ident, project=project), headers=_auth(ROUTER)
+            ).status_code
+            == 201
+        )
+        edge = {
+            "source": "arc:long",
+            "target": ident,
+            "type": "has_lesson",
+            "revision": 1,
+            "status": "accepted",
+            "confidence": "observed",
+            "evidence": ["fixture:1"],
+        }
+        assert client.post("/graph/relation", json=edge, headers=_auth(ROUTER)).status_code == 201
+    first = client.get(
+        "/knowledge/neighbors",
+        params={"entity_id": "arc:long", "limit": 1},
+        headers=_auth("worker"),
+    )
+    assert first.status_code == 200, first.text
+    first = first.json()
+    assert len(first["relations"]) == 1
+    assert first["next_after"]
+    second = client.get(
+        "/knowledge/neighbors",
+        params={"entity_id": "arc:long", "limit": 1, "after": first["next_after"]},
+        headers=_auth("worker"),
+    ).json()
+    assert second["next_after"] is None
+    assert {r["target"] for r in first["relations"] + second["relations"]} == {
+        "lesson:a",
+        "lesson:b",
+    }
+    assert "hidden" not in str(first) + str(second)
