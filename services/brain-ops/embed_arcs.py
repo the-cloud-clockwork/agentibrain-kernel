@@ -86,7 +86,8 @@ def _clean_section(text: str) -> str:
     unrelated documents came back with the SAME similarity score, so
     brain_search_arcs was returning noise rather than matches.
     """
-    return "\n".join(l for l in _STUB_NOISE_RE.sub("", text).splitlines() if l.strip()).strip()
+    lines = _STUB_NOISE_RE.sub("", text).splitlines()
+    return "\n".join(line for line in lines if line.strip()).strip()
 
 
 def _body_excerpt(body: str, limit: int = 800) -> str:

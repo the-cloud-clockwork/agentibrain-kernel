@@ -16,7 +16,6 @@ import os
 import aiohttp
 from mcp.server.fastmcp import FastMCP
 
-
 EMBEDDINGS_URL = os.getenv("EMBEDDINGS_URL", "http://agentibrain-embeddings:8080")
 EMBEDDINGS_API_KEY = os.environ.get("EMBEDDINGS_API_KEY") or ""
 BRAIN_API_URL = os.getenv(

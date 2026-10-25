@@ -63,7 +63,7 @@ def parse_since(s: str) -> datetime:
     try:
         return datetime.fromisoformat(s.replace("Z", "+00:00"))
     except ValueError:
-        raise SystemExit(f"ERROR: cannot parse --since '{s}'")
+        raise SystemExit(f"ERROR: cannot parse --since '{s}'") from None
 
 
 def iter_content_texts(msg) -> list[str]:
@@ -170,7 +170,7 @@ def process_session(jsonl_path: Path, since: datetime, until: datetime) -> dict 
     session_id = jsonl_path.stem
 
     try:
-        with open(jsonl_path, "r", encoding="utf-8", errors="replace") as fh:
+        with open(jsonl_path, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:

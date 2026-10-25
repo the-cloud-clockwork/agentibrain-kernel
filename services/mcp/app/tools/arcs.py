@@ -6,9 +6,7 @@ import json
 import os
 
 from mcp.server.fastmcp import FastMCP
-
 from tools.common import http_request
-
 
 EMBED_URL = os.getenv("EMBEDDINGS_URL", "http://agentibrain-embeddings:8080")
 EMBED_KEY = os.getenv("EMBEDDINGS_API_KEY", "")
