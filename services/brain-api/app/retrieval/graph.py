@@ -146,16 +146,21 @@ def _save(state: Traversal) -> str | None:
     return key
 
 
-def expand(store: GraphStore, request: ExpansionRequest, grant: frozenset[str], actor: str) -> dict:
+def _state(
+    store: GraphStore, request: ExpansionRequest, grant: frozenset[str], actor: str
+) -> Traversal:
     if any(kind not in RELATION_TYPES for kind in request.relation_types):
         raise HTTPException(422, "unknown relation type")
     owner = (actor, tuple(sorted(grant)), request.project)
     if request.continuation:
-        state = _take(request, owner, store)
-    else:
-        if not request.seed_ids or len(set(request.seed_ids)) > request.max_nodes:
-            raise HTTPException(422, "provide between one and max_nodes scoped seeds")
-        state = Traversal(request, owner, store, time.monotonic() + 60)
+        return _take(request, owner, store)
+    if not request.seed_ids or len(set(request.seed_ids)) > request.max_nodes:
+        raise HTTPException(422, "provide between one and max_nodes scoped seeds")
+    return Traversal(request, owner, store, time.monotonic() + 60)
+
+
+def expand(store: GraphStore, request: ExpansionRequest, grant: frozenset[str], actor: str) -> dict:
+    state = _state(store, request, grant, actor)
     enabled = os.getenv("BRAIN_GRAPH_EXPANSION", "false").lower() == "true"
     state.deadline = (
         time.monotonic() + min(request.time_budget_ms, state.request.time_budget_ms) / 1000
