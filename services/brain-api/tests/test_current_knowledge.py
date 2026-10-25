@@ -3,10 +3,12 @@ import importlib
 import pytest
 
 from tests.test_graph import ROUTER, _auth, _client
+from tests.test_graph_expansion import _freeze_clock
 
 
 def _setup(monkeypatch, vault, tmp_path):
     client = _client(monkeypatch, vault, tmp_path / "graph.db", "hive-a@alpha=worker")
+    _freeze_clock(monkeypatch)
     monkeypatch.setenv("BRAIN_GRAPH_EXPANSION", "true")
     for ident, project in [
         ("lesson:old", "alpha"),

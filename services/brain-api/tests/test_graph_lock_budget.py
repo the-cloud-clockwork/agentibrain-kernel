@@ -1,3 +1,4 @@
+import importlib
 import sqlite3
 import time
 
@@ -33,6 +34,8 @@ def test_sqlite_lock_timeout_is_partial_even_when_expansion_is_disabled(
 @pytest.mark.wall_clock
 def test_sqlite_busy_wait_cannot_use_the_default_five_second_timeout(monkeypatch, vault, tmp_path):
     client = _setup(monkeypatch, vault, tmp_path)
+    for name in ("app.retrieval.graph", "app.graph"):
+        monkeypatch.setattr(importlib.import_module(name), "time", time)
     with sqlite3.connect(tmp_path / "graph.db") as writer:
         writer.execute("BEGIN EXCLUSIVE")
         try:

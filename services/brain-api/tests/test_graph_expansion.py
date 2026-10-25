@@ -1,4 +1,5 @@
 import importlib
+from types import SimpleNamespace
 
 import pytest
 
@@ -44,8 +45,15 @@ def _fixture(client):
         )
 
 
+def _freeze_clock(monkeypatch):
+    clock = SimpleNamespace(monotonic=lambda: 0.0)
+    for name in ("app.retrieval.graph", "app.graph"):
+        monkeypatch.setattr(importlib.import_module(name), "time", clock)
+
+
 def _setup(monkeypatch, vault, tmp_path):
     client = _client(monkeypatch, vault, tmp_path / "graph.db", "hive-a@alpha=worker")
+    _freeze_clock(monkeypatch)
     monkeypatch.setenv("BRAIN_GRAPH_EXPANSION", "true")
     _fixture(client)
     assert client.get("/graph/entity/session:seed", headers=_auth("worker")).status_code == 200
