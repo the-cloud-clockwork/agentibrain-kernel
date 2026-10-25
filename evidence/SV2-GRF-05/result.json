@@ -1,0 +1,84 @@
+{
+  "package": "SV2-GRF-05",
+  "tested_commit": "e00afa37808bd34054f896ba7c5c7cc6f456465d",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40191816684",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40191816684/job/121164213497",
+  "verification": "CI fixture HTTP with real SQLite; grants and transport are fixture-local, not production.",
+  "dependency": "SV2-GRF-04",
+  "integration_gate": "G6",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/154",
+  "image_ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40191816683",
+  "interfaces": [
+    "POST /knowledge/detail",
+    "GET /knowledge/detail",
+    "GET /knowledge/neighbors",
+    "brain_read_detail",
+    "brain_get_arc (legacy preview)"
+  ],
+  "supported_versions": {
+    "detail_contract": "initial section and revision contract",
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ]
+  },
+  "state": {
+    "observed": "All ten pull request checks pass on the tested source commit.",
+    "accepted": "Twelve new API fixture cases and two MCP cases pass within their full suites.",
+    "committed": "e00afa37808bd34054f896ba7c5c7cc6f456465d",
+    "externally_verified": "Built MCP transport authentication passes; production G6 rollout remains unverified."
+  },
+  "commands": [
+    {
+      "invocation": "python -m pytest -q services/brain-api/tests",
+      "output": "276 passed, 2 warnings in 41.90s"
+    },
+    {
+      "invocation": "python -m pytest -q services/mcp/tests",
+      "output": "30 passed, 1 warning in 0.89s"
+    },
+    {
+      "invocation": "python -m pytest -q tests/unit",
+      "output": "208 passed in 7.22s"
+    },
+    {
+      "invocation": "built image transport authentication pytest",
+      "output": "11 passed, 1 warning in 13.72s"
+    }
+  ],
+  "red_proofs": [
+    {
+      "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40189412749",
+      "output": "5 failed, 264 passed, 2 warnings in 51.03s",
+      "cause": "Canonical publication endpoint absent."
+    },
+    {
+      "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40190599306",
+      "output": "2 failed, 28 passed, 1 warning in 0.98s",
+      "cause": "Full MCP tool and preview completeness labels absent."
+    },
+    {
+      "run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40191030026",
+      "output": "2 failed, 274 passed, 2 warnings in 36.19s",
+      "cause": "Neighbor endpoint absent and rebuild fixture setup error; both subsequently fixed."
+    }
+  ],
+  "acceptance": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ],
+  "rollback": {
+    "switch": "BRAIN_FULL_DETAIL=false",
+    "rehearsal": "Fixture disables reads then restores them and compares the authoritative revision unchanged.",
+    "data_safety": "Immutable knowledge detail is authoritative, retained across graph projection rebuilds and rollback. Legacy previews remain available."
+  },
+  "limitations": [
+    "Existing vault/index previews require explicit router canonical publication; absent historical bodies return unavailable.",
+    "Evidence ranges resolve only fixture or router-published canonical evidence, using documented character offsets. External archive transport is not verified here.",
+    "Neighbor keysets page current authorized graph state, not a historical snapshot; graph mutations before the cursor require a fresh scan.",
+    "Section publication caps are 256 sections, eight million UTF-8 bytes, and one thousand references.",
+    "No production rollout is claimed; the G6 integration rollout must validate deployed behavior."
+  ]
+}

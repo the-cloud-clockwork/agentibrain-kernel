@@ -1,0 +1,22 @@
+{
+  "package": "SV2-GRF-05",
+  "tested_commit": "e00afa37808bd34054f896ba7c5c7cc6f456465d",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40191816684",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40191816684/job/121164213497",
+  "verification": "CI fixture HTTP with real SQLite; grants and transport are fixture-local, not production.",
+  "case": "T-SV2-GRF-05-C",
+  "outcome": "passed",
+  "assertions": [
+    "Historical revision one stays byte identical after revision two is published.",
+    "Identical publication replays and a conflicting rewrite is rejected.",
+    "A populated graph rebuild preserves immutable detail and comparison snapshot.",
+    "Closing the SQLite connection, removing its process cache and reopening preserves both revisions.",
+    "Disabling full reads returns unavailable; restoring the switch serves the identical stored revision."
+  ],
+  "rollback": {
+    "switch": "BRAIN_FULL_DETAIL=false",
+    "authoritative_data_preserved": true,
+    "legacy_preview_retained": true,
+    "live_rehearsal": false
+  }
+}

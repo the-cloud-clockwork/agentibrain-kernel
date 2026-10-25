@@ -1,0 +1,21 @@
+{
+  "package": "SV2-GRF-05",
+  "tested_commit": "e00afa37808bd34054f896ba7c5c7cc6f456465d",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40191816684",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40191816684/job/121164213497",
+  "verification": "CI fixture HTTP with real SQLite; grants and transport are fixture-local, not production.",
+  "case": "T-SV2-GRF-05-A",
+  "outcome": "passed",
+  "assertions": [
+    "Two independent long arc fixtures return whole sections and SHA256 hashes.",
+    "A selected section is complete across explicit section pagination boundaries.",
+    "Authorized lesson and evidence references resolve their exact revision and content hash.",
+    "Explicit graph neighborhood pages include both authorized lessons and exclude the other project."
+  ],
+  "measurement": {
+    "knowledge_reference_resolution_failures": {
+      "normal_available_references": 0,
+      "intentional_out_of_bounds_range": 1
+    }
+  }
+}
