@@ -1,0 +1,23 @@
+{
+  "package": "SV2-MUL-03",
+  "tested_commit": "167b62336ffa38299f88d0be107f192786d79f2e",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40241614498",
+  "red_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40240675651",
+  "verification": "CI unit fixtures in tests/unit/test_cli_instances.py: named brains personal and swarm in their own config roots, one unowned lookalike container agentibrain_postgres in compose project lookalike, and a swarm install stopped after config and bearer but before compose. Container listing, compose invocations and agentihooks link calls faked at the agentibrain.cli and agentibrain.bootstrap seams. Mocked: no docker daemon or deployed brain was contacted.",
+  "case": "T-SV2-MUL-03-B",
+  "outcome": "passed",
+  "state": "observed in CI on mocked host",
+  "assertions": [
+    "An unselected down with two owned legacy stacks exits 2, lists both, issues no compose call and counts kind=ambiguous once.",
+    "An unselected up that would replace two or more other legacy stacks exits 2 with no compose call and prints the kind=ambiguous count line.",
+    "--instance swarm on a root whose .env names brain personal exits 2, names the held brain, prints no bearer, leaves the root's files unchanged and counts kind=instance once.",
+    "Correcting the request means a new explicit --instance default; it stops only the selected stack.",
+    "--dry-run on up, build, down, uninstall and install prints the instance, its compose project and root and any legacy stack it would replace, with no compose or agentihooks call and unchanged roots."
+  ],
+  "measurement": {
+    "brain_cross_instance_mutation_rejections": {
+      "ambiguous": 1,
+      "instance": 1
+    }
+  }
+}
