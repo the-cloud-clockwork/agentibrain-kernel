@@ -16,7 +16,8 @@ import os
 import re
 import sqlite3
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -171,6 +172,16 @@ class GraphStore:
         self._lock = threading.Lock()
         self._migrate()
 
+    @contextmanager
+    def _transaction(self) -> Iterator[None]:
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except BaseException:
+            self._conn.execute("ROLLBACK")
+            raise
+        self._conn.execute("COMMIT")
+
     def _migrate(self) -> None:
         with self._lock:
             self._conn.execute(
@@ -223,7 +234,7 @@ class GraphStore:
     def put_entity(self, record: dict) -> str:
         """Return created, updated or replayed; stale when the stored revision is newer."""
         entity = _entity(record)
-        with self._lock:
+        with self._lock, self._transaction():
             stored = self._read_entity(entity["id"])
             if stored == entity:
                 return "replayed"
@@ -278,20 +289,20 @@ class GraphStore:
         """Store a relation, or raise GraphRejection; quarantine=True holds a bad one instead."""
         with self._lock:
             try:
-                relation = self._check_relation(record, visible)
+                with self._transaction():
+                    relation = self._check_relation(record, visible)
+                    action = self._upsert_relation(relation)
             except GraphRejection as exc:
-                self._conn.execute("BEGIN IMMEDIATE")
-                self._count_invalid(exc.reason)
-                if quarantine:
-                    self._conn.execute(
-                        "INSERT INTO graph_quarantine (reason, record) VALUES (?, ?)",
-                        (exc.reason, json.dumps(record, sort_keys=True)),
-                    )
-                self._conn.execute("COMMIT")
+                with self._transaction():
+                    self._count_invalid(exc.reason)
+                    if quarantine:
+                        self._conn.execute(
+                            "INSERT INTO graph_quarantine (reason, record) VALUES (?, ?)",
+                            (exc.reason, json.dumps(record, sort_keys=True)),
+                        )
                 if not quarantine:
                     raise
                 return {"action": "quarantined", "reason": exc.reason}
-            action = self._upsert_relation(relation)
         ident = relation_id(relation["source"], relation["type"], relation["target"])
         return {"action": action, "relation_id": ident, "relation": relation}
 

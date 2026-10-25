@@ -701,8 +701,12 @@ def post_graph_entity(
 ) -> dict:
     """Create or revise a graph entity; a stale or conflicting revision is a 409."""
     store = _graph_store()
+    grant = _caller_grant(authorization)
     projects = payload.get("projects") if isinstance(payload.get("projects"), list) else []
-    if not scope.admits(_caller_grant(authorization), set(projects), unattributed=True):
+    stored = store.get_entity(payload["id"]) if isinstance(payload.get("id"), str) else None
+    if not scope.admits(grant, set(projects), unattributed=False) or (
+        stored is not None and not scope.admits(grant, set(stored["projects"]), unattributed=False)
+    ):
         scope.record_denial(
             scope.worker_brain(_bearer(authorization)) or "",
             "POST /graph/entity",
@@ -712,7 +716,9 @@ def post_graph_entity(
     try:
         action = store.put_entity(payload)
     except graph.GraphRejection as exc:
-        raise HTTPException(status_code=422, detail={"reason": exc.reason, "error": str(exc)})
+        raise HTTPException(
+            status_code=422, detail={"reason": exc.reason, "error": str(exc)}
+        ) from exc
     if action == "stale":
         raise HTTPException(status_code=409, detail="a newer or different revision is stored")
     return {"ok": True, "action": action, "id": payload["id"]}
@@ -737,7 +743,7 @@ def post_graph_relation(
         raise HTTPException(
             status_code=422,
             detail={"reason": exc.reason, "graph_invalid_relations_total": total},
-        )
+        ) from exc
     if result["action"] == "quarantined":
         total = sum(store.invalid_relations_total().values())
         log.warning("graph_invalid_relations_total=%d reason=%s", total, result["reason"])

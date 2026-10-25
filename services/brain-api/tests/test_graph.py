@@ -489,3 +489,27 @@ def test_a_relation_to_a_hidden_entity_is_omitted_from_a_scoped_read(monkeypatch
 
     assert beta_evidence not in {r["other"] for r in scoped["relations"]}
     assert beta_evidence in {r["other"] for r in full["relations"]}
+
+
+def test_a_scoped_worker_cannot_take_over_a_foreign_entity(monkeypatch, vault, tmp_path):
+    client = _client(monkeypatch, vault, tmp_path / "graph.db", "hive-a@proj-alpha=alpha-token")
+    _seed(client, FIXTURE["beta"])
+    beta_arc = FIXTURE["beta"]["entities"][0]
+    takeover = dict(beta_arc, projects=["proj-alpha"], revision=beta_arc["revision"] + 1)
+
+    response = client.post("/graph/entity", json=takeover, headers=_auth("alpha-token"))
+    stored = client.get(f"/graph/entity/{beta_arc['id']}", headers=_auth(ROUTER)).json()
+
+    assert response.status_code == 403
+    assert stored["entity"]["projects"] == ["proj-beta"]
+    assert stored["entity"]["revision"] == beta_arc["revision"]
+
+
+def test_a_scoped_worker_cannot_write_an_entity_with_no_project(monkeypatch, vault, tmp_path):
+    client = _client(monkeypatch, vault, tmp_path / "graph.db", "hive-a@proj-alpha=alpha-token")
+    unscoped = dict(FIXTURE["alpha"]["entities"][0], projects=[])
+
+    response = client.post("/graph/entity", json=unscoped, headers=_auth("alpha-token"))
+
+    assert response.status_code == 403
+    assert client.get(f"/graph/entity/{unscoped['id']}", headers=_auth(ROUTER)).status_code == 404
