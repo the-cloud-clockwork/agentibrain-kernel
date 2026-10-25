@@ -1,7 +1,8 @@
 import importlib
 
 import pytest
-from test_graph import ROUTER, _auth, _client
+
+from tests.test_graph import ROUTER, _auth, _client
 
 
 def _setup(monkeypatch, vault, tmp_path):
