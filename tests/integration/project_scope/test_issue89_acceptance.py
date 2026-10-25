@@ -303,6 +303,7 @@ def test_replay_and_restart_keep_scope_without_duplicates(brain: Brain) -> None:
     brain.tick()
     first = {p.key: _feed(brain, p) for p in fx.projects}
     rows_before = {p.key: len(brain.search(p.word, project_id=p.project_id)) for p in fx.projects}
+    legacy_before = brain.client().get("/feed").json()
 
     late = f"Lesson {alpha.word}: written while the brain was unreachable."
     entry = _outbox_entry(
@@ -337,15 +338,14 @@ def test_replay_and_restart_keep_scope_without_duplicates(brain: Brain) -> None:
 
     legacy = brain.client().get("/feed")
     assert legacy.status_code == 200, legacy.text
-    assert legacy.json().get("scope") != "project"
+    assert set(legacy.json()) == set(legacy_before), (legacy.json(), legacy_before)
+    assert list((brain.tmp / "brain-outbox").glob("*.json")) == []
     for project in fx.projects:
         record = brain.client(project.token).get(
             f"/marker/{written['ids'][f'{project.key}-lesson']}"
         )
         assert record.status_code == 200, record.text
         assert record.json()["provenance"]["project_id"] == project.project_id
-    assert _feed(brain, beta)["revision"] == beta_feed["revision"]
-    assert _feed(brain, alpha)["revision"] == alpha_feed["revision"]
     print("ISSUE89_RESULT", json.dumps({"case": "c", **fx.manifest}, sort_keys=True))
 
 

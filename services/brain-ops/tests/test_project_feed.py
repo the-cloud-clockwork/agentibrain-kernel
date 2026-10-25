@@ -197,6 +197,29 @@ def test_only_explicitly_shared_warnings_reach_the_fleet_record(tmp_path, fx):
     assert fleet["warnings"][0]["ref"].startswith("signal:")
 
 
+def test_posted_fleet_signals_reach_the_fleet_record_until_resolved(tmp_path):
+    amygdala = tmp_path / "amygdala"
+    amygdala.mkdir()
+
+    def posted(name: str, extra: str, body: str) -> None:
+        (amygdala / f"{name}.md").write_text(
+            f"---\nid: amygdala-{name}\nseverity: warning\nsource: fleet-monitor\n{extra}---\n\n{body}\n",
+            encoding="utf-8",
+        )
+
+    posted("live", "scope: fleet\n", "Shared runner pool is at capacity.")
+    posted("resolved", "scope: fleet\n_resolved: true\n", "Registry was read only.")
+    posted("mitigated", "scope: fleet\n_mitigated: true\n", "Object store was slow.")
+    posted("private", "", "One project's queue backed up.")
+
+    fleet = project_feed.fleet_warnings([], NOW, tmp_path)
+
+    assert [w["content"] for w in fleet["warnings"]] == ["Shared runner pool is at capacity."]
+    assert fleet["warnings"][0]["scope"] == "fleet"
+    assert fleet["warnings"][0]["projects"] == []
+    assert project_feed.fleet_warnings([], NOW)["warnings"] == []
+
+
 def test_snapshots_are_written_per_project_with_a_stable_revision(tmp_path, fx):
     vault = tmp_path / "vault"
     feed = vault / "brain-feed"

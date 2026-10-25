@@ -297,7 +297,7 @@ def _build_fixture(tmp_path: Path, name: str) -> Fixture:
             f"codex-{alpha.word}",
             alpha.worktree,
             "alpha-task",
-            alpha.remote,
+            "",
             [f"Add the {alpha.word} worktree export from codex", "Push the branch"],
         ),
         write_codex_session(
@@ -305,7 +305,7 @@ def _build_fixture(tmp_path: Path, name: str) -> Fixture:
             f"codex-{beta.word}",
             beta.checkout,
             "dev",
-            "",
+            beta.remote,
             [f"Tune the {beta.word} queue consumer from codex", "Measure it again"],
         ),
         write_claude_session(
@@ -324,6 +324,7 @@ def _build_fixture(tmp_path: Path, name: str) -> Fixture:
         },
         "projects": {p.key: p.project_id for p in (alpha, beta)},
         "tested_commit": git(ROOT, "rev-parse", "HEAD"),
+        "tree_clean": git(ROOT, "status", "--porcelain") == "",
         "model": "mocked: word hash embeddings; intent echoes the tick's active project list",
     }
     return Fixture(
