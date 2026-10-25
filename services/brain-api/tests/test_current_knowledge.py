@@ -1,7 +1,6 @@
 import importlib
 
 import pytest
-
 from test_graph import ROUTER, _auth, _client
 
 
