@@ -324,7 +324,7 @@ def seed_sql() -> str:
         )
         lines.append(
             "INSERT INTO graph_relation_types"
-            " (relation, inverse, symmetric, allow_self, requires_evidence)"
+            " (relation, inverse, is_symmetric, allow_self, requires_evidence)"
             f" VALUES ({_sql_text(name)}, {_sql_text(spec.inverse)}, {flags})"
             " ON CONFLICT DO NOTHING;"
         )

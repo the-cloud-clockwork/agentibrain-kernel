@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS graph_entity_kinds (
 CREATE TABLE IF NOT EXISTS graph_relation_types (
     relation text PRIMARY KEY,
     inverse text NOT NULL UNIQUE,
-    symmetric boolean NOT NULL,
+    is_symmetric boolean NOT NULL,
     allow_self boolean NOT NULL,
     requires_evidence boolean NOT NULL
 );
@@ -64,15 +64,15 @@ INSERT INTO graph_entity_kinds (kind) VALUES ('lesson') ON CONFLICT DO NOTHING;
 INSERT INTO graph_entity_kinds (kind) VALUES ('decision') ON CONFLICT DO NOTHING;
 INSERT INTO graph_entity_kinds (kind) VALUES ('session') ON CONFLICT DO NOTHING;
 INSERT INTO graph_entity_kinds (kind) VALUES ('evidence') ON CONFLICT DO NOTHING;
-INSERT INTO graph_relation_types (relation, inverse, symmetric, allow_self, requires_evidence) VALUES ('derived_from', 'source_of', false, false, false) ON CONFLICT DO NOTHING;
-INSERT INTO graph_relation_types (relation, inverse, symmetric, allow_self, requires_evidence) VALUES ('has_lesson', 'lesson_of', false, false, false) ON CONFLICT DO NOTHING;
-INSERT INTO graph_relation_types (relation, inverse, symmetric, allow_self, requires_evidence) VALUES ('applies_decision', 'decision_applies_to', false, false, false) ON CONFLICT DO NOTHING;
-INSERT INTO graph_relation_types (relation, inverse, symmetric, allow_self, requires_evidence) VALUES ('supported_by', 'supports', false, false, false) ON CONFLICT DO NOTHING;
-INSERT INTO graph_relation_types (relation, inverse, symmetric, allow_self, requires_evidence) VALUES ('parent', 'child', false, false, false) ON CONFLICT DO NOTHING;
-INSERT INTO graph_relation_types (relation, inverse, symmetric, allow_self, requires_evidence) VALUES ('supersedes', 'superseded_by', false, false, false) ON CONFLICT DO NOTHING;
-INSERT INTO graph_relation_types (relation, inverse, symmetric, allow_self, requires_evidence) VALUES ('unblocks', 'blocked_by', false, false, true) ON CONFLICT DO NOTHING;
-INSERT INTO graph_relation_types (relation, inverse, symmetric, allow_self, requires_evidence) VALUES ('sibling', 'sibling', true, false, false) ON CONFLICT DO NOTHING;
-INSERT INTO graph_relation_types (relation, inverse, symmetric, allow_self, requires_evidence) VALUES ('related', 'related', true, false, false) ON CONFLICT DO NOTHING;
+INSERT INTO graph_relation_types (relation, inverse, is_symmetric, allow_self, requires_evidence) VALUES ('derived_from', 'source_of', false, false, false) ON CONFLICT DO NOTHING;
+INSERT INTO graph_relation_types (relation, inverse, is_symmetric, allow_self, requires_evidence) VALUES ('has_lesson', 'lesson_of', false, false, false) ON CONFLICT DO NOTHING;
+INSERT INTO graph_relation_types (relation, inverse, is_symmetric, allow_self, requires_evidence) VALUES ('applies_decision', 'decision_applies_to', false, false, false) ON CONFLICT DO NOTHING;
+INSERT INTO graph_relation_types (relation, inverse, is_symmetric, allow_self, requires_evidence) VALUES ('supported_by', 'supports', false, false, false) ON CONFLICT DO NOTHING;
+INSERT INTO graph_relation_types (relation, inverse, is_symmetric, allow_self, requires_evidence) VALUES ('parent', 'child', false, false, false) ON CONFLICT DO NOTHING;
+INSERT INTO graph_relation_types (relation, inverse, is_symmetric, allow_self, requires_evidence) VALUES ('supersedes', 'superseded_by', false, false, false) ON CONFLICT DO NOTHING;
+INSERT INTO graph_relation_types (relation, inverse, is_symmetric, allow_self, requires_evidence) VALUES ('unblocks', 'blocked_by', false, false, true) ON CONFLICT DO NOTHING;
+INSERT INTO graph_relation_types (relation, inverse, is_symmetric, allow_self, requires_evidence) VALUES ('sibling', 'sibling', true, false, false) ON CONFLICT DO NOTHING;
+INSERT INTO graph_relation_types (relation, inverse, is_symmetric, allow_self, requires_evidence) VALUES ('related', 'related', true, false, false) ON CONFLICT DO NOTHING;
 INSERT INTO graph_relation_pairs (relation, source_kind, target_kind) VALUES ('derived_from', 'arc', 'session') ON CONFLICT DO NOTHING;
 INSERT INTO graph_relation_pairs (relation, source_kind, target_kind) VALUES ('has_lesson', 'arc', 'lesson') ON CONFLICT DO NOTHING;
 INSERT INTO graph_relation_pairs (relation, source_kind, target_kind) VALUES ('applies_decision', 'arc', 'decision') ON CONFLICT DO NOTHING;
