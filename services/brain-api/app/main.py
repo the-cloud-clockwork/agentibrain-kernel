@@ -935,6 +935,7 @@ async def post_receipt_verify(
         graph.active_store(),
         _graph_visible(authorization),
         _receipt_denial(authorization, "POST /v2/context/receipts/verify", x_session_title),
+        context.latest_revision,
     )
 
 
@@ -954,6 +955,7 @@ async def post_receipt_delivery(
         body,
         _caller_grant(authorization),
         _receipt_denial(authorization, "POST /v2/context/{receipt}/delivery", x_session_title),
+        context.latest_revision,
     )
 
 

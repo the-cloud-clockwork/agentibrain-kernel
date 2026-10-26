@@ -37,6 +37,7 @@ ERROR_CLASSES = {
 
 log = logging.getLogger("brain-api.receipts")
 clock: Callable[[], float] = time.time
+Latest = Callable[[str, str], int]
 
 _failures: Counter[str] = Counter()
 _acks: OrderedDict[tuple[str, str], dict] = OrderedDict()
@@ -213,7 +214,7 @@ def _authorize(claims: dict, grant: frozenset[str], deny: Callable[[], None]) ->
         raise _reject(403, "forbidden_scope", "receipt project is outside this token's grant")
 
 
-def _bind(claims: dict, request: VerifyRequest) -> None:
+def _bind(claims: dict, request: VerifyRequest, latest: Latest) -> None:
     if int(clock() * 1000) >= claims["expires_at_ms"]:
         raise _reject(409, "expired", "receipt has expired")
     expect = request.expect
@@ -221,18 +222,18 @@ def _bind(claims: dict, request: VerifyRequest) -> None:
         raise _reject(409, "wrong_generation", "receipt belongs to another execution")
     if (claims["task_id"], claims["task_revision"]) != (expect.task_id, expect.task_revision):
         raise _reject(409, "wrong_task_revision", "receipt belongs to another task revision")
-    from . import context
-
-    if claims["task_revision"] < context.latest_revision(claims["project_ids"][0], expect.task_id):
+    if claims["task_revision"] < latest(claims["project_ids"][0], expect.task_id):
         raise _reject(409, "stale_task_revision", "a newer task revision was already accepted")
     if request.payload is not None and payload_digest(request.payload) != claims["payload_digest"]:
         raise _reject(409, "payload_mismatch", "payload differs from the issued context")
 
 
-def _check(request: VerifyRequest, grant: frozenset[str], deny: Callable[[], None]) -> dict:
+def _check(
+    request: VerifyRequest, grant: frozenset[str], deny: Callable[[], None], latest: Latest
+) -> dict:
     claims = _authenticate(request.receipt)
     _authorize(claims, grant, deny)
-    _bind(claims, request)
+    _bind(claims, request, latest)
     return claims
 
 
@@ -269,9 +270,10 @@ def verify(
     store,
     visible: Callable[[dict], bool],
     deny: Callable[[], None],
+    latest: Latest,
 ) -> dict:
     request = _parse(body, VerifyRequest)
-    claims = _check(request, grant, deny)
+    claims = _check(request, grant, deny, latest)
     references = _resolve(store, claims["references"], visible)
     return {
         "valid": True,
@@ -291,19 +293,26 @@ def verify(
     }
 
 
-def deliver(receipt_id: str, body: bytes, grant: frozenset[str], deny: Callable[[], None]) -> dict:
+def deliver(
+    receipt_id: str,
+    body: bytes,
+    grant: frozenset[str],
+    deny: Callable[[], None],
+    latest: Latest,
+) -> dict:
     request = _parse(body, DeliveryRequest)
     claims = request.receipt.get("claims")
     if not isinstance(claims, dict) or claims.get("receipt_id") != receipt_id:
         raise _reject(409, "receipt_path_mismatch", "path names another receipt")
-    claims = _check(request, grant, deny)
+    claims = _check(request, grant, deny, latest)
     key = (receipt_id, request.adapter)
     with _lock:
         stored = _acks.get(key)
         if stored is not None:
             return {**stored, "replayed": True}
         row = {
-            "ack_id": "rack-" + payload_digest([receipt_id, request.adapter])[:32],
+            "ack_id": "rack-"
+            + hashlib.sha256(f"{receipt_id}\n{request.adapter}".encode()).hexdigest()[:32],
             "receipt_id": receipt_id,
             "adapter": request.adapter,
             "payload_digest": claims["payload_digest"],
@@ -311,5 +320,6 @@ def deliver(receipt_id: str, body: bytes, grant: frozenset[str], deny: Callable[
         }
         _acks[key] = row
         while len(_acks) > int(os.getenv("BRAIN_RECEIPT_ACKS_KEPT", "10000")):
-            _acks.popitem(last=False)
+            evicted = _acks.popitem(last=False)[1]
+            log.warning("context receipt delivery evicted ack_id=%s", evicted["ack_id"])
     return {**row, "replayed": False}
