@@ -777,9 +777,9 @@ paths:
           application/json:
             schema: {type: object}
       responses:
-        "200": {description: "valid=true, receipt_id, authority=recalled_evidence, proves=retrieval_and_delivery_not_comprehension, references resolved inside the caller grant (availability, current_revision, stale), a redacted explanation (omitted counts by reason, excluded counts, reduced, stale ids, unavailable count) and deliveries."}
+        "200": {description: "valid=true, receipt_id, payload_verified (false when no payload was sent, which a gate must not accept), authority=recalled_evidence, proves=retrieval_and_delivery_not_comprehension, references resolved inside the caller grant (availability, current_revision, stale), a redacted explanation (omitted counts by reason, excluded counts, reduced, stale ids, unavailable count) and deliveries."}
         "403": {description: "valid=false: brain_audience (issued by another brain) or forbidden_scope (project outside the grant); recorded as a denial."}
-        "409": {description: "valid=false: unknown_key_version, signature_mismatch, expired, wrong_generation, wrong_task_revision or payload_mismatch."}
+        "409": {description: "valid=false: unknown_key_version, signature_mismatch, expired, wrong_generation, wrong_task_revision, stale_task_revision (a newer revision of the task was accepted by this process) or payload_mismatch. Every rejection carries reason, error_class (invalid_request, forbidden_scope, stale_generation, revision_conflict or dependency_unavailable) and retry_safe."}
         "413": {description: Request body exceeds the size limit.}
         "422": {description: "valid=false, invalid_request: not JSON or invalid fields."}
         "503": {description: "receipts_not_configured: BRAIN_RECEIPT_KEYS is empty."}
@@ -796,5 +796,5 @@ paths:
           application/json:
             schema: {type: object}
       responses:
-        "200": {description: "ack_id, receipt_id, adapter, payload_digest, acknowledged_at_ms and replayed; one acknowledgement per receipt and adapter, kept per process."}
+        "200": {description: "ack_id (derived from receipt and adapter, so a retry keeps it), receipt_id, adapter, payload_digest, acknowledged_at_ms and replayed; one acknowledgement per receipt and adapter, kept per process."}
         "409": {description: "valid=false: receipt_path_mismatch or any verification failure."}

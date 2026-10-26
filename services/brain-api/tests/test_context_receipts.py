@@ -164,6 +164,7 @@ def test_a_a_receipt_binds_the_task_and_verifies_with_every_visible_supporting_i
     assert verified.status_code == 200, verified.text
     result = verified.json()
     assert result["valid"] is True
+    assert result["payload_verified"] is True
     assert result["receipt_id"] == claims["receipt_id"]
     assert result["authority"] == "recalled_evidence"
     assert result["proves"] == "retrieval_and_delivery_not_comprehension"
@@ -197,7 +198,9 @@ def test_a_a_receipt_binds_the_task_and_verifies_with_every_visible_supporting_i
     assert again.json() == {**claude.json(), "replayed": True}
     assert codex.json()["ack_id"] != claude.json()["ack_id"]
     assert claude.json()["payload_digest"] == claims["payload_digest"]
-    delivered = _verify(client, receipt, _expect(fixture)).json()["deliveries"]
+    claims_only = _verify(client, receipt, _expect(fixture)).json()
+    assert claims_only["payload_verified"] is False
+    delivered = claims_only["deliveries"]
     assert [d["adapter"] for d in delivered] == ["claude-hook", "codex-hook"]
     assert _failures(client) == {}
 
@@ -264,6 +267,16 @@ def _outside_grant(client, fixture, issued, clock, monkeypatch):
     return _verify(client, issued["receipt"], _expect(fixture), token="outsider")
 
 
+ERROR_CLASSES = {
+    "payload_mismatch": "invalid_request",
+    "signature_mismatch": "invalid_request",
+    "expired": "revision_conflict",
+    "unknown_key_version": "invalid_request",
+    "wrong_task_revision": "revision_conflict",
+    "wrong_generation": "stale_generation",
+    "forbidden_scope": "forbidden_scope",
+}
+
 REJECTIONS = {
     "altered_payload": (_altered_payload, 409, "payload_mismatch"),
     "modified_receipt": (_modified_receipt, 409, "signature_mismatch"),
@@ -291,7 +304,9 @@ def test_b_a_bad_receipt_never_satisfies_verification_or_delivery(
     detail = response.json()["detail"]
     assert detail["valid"] is False
     assert detail["reason"] == reason
-    assert detail["context_receipt_validation_failures"] == 1
+    assert detail["error_class"] == ERROR_CLASSES[reason]
+    assert detail["retry_safe"] is False
+    assert "context_receipt_validation_failures" not in detail
     text = response.text
     assert all(secret not in text for secret in fixture["keys"].values())
     assert all(e["title"] not in text for e in fixture["entities"])
@@ -360,6 +375,10 @@ def test_b_a_corrected_task_revision_needs_a_new_receipt(monkeypatch, vault, tmp
     stale = _verify(client, old["receipt"], _expect(fixture, task_revision=4))
     assert stale.status_code == 409
     assert stale.json()["detail"]["reason"] == "wrong_task_revision"
+    superseded = _verify(client, old["receipt"], _expect(fixture), payload=old["context"])
+    assert superseded.status_code == 409
+    assert superseded.json()["detail"]["reason"] == "stale_task_revision"
+    assert superseded.json()["detail"]["error_class"] == "revision_conflict"
     current = _verify(client, new["receipt"], _expect(fixture, task_revision=4))
     assert current.status_code == 200, current.text
     assert current.json()["valid"] is True
@@ -387,6 +406,11 @@ def test_c_a_receipt_survives_restart_until_expiry_while_its_key_version_stays(
     assert after.status_code == 200, after.text
     assert after.json()["valid"] is True
     assert after.json()["deliveries"] == []
+    retried = _deliver(
+        client, issued["receipt"], _expect(fixture), issued["context"], "claude-hook"
+    )
+    assert retried.status_code == 200, retried.text
+    assert retried.json()["ack_id"] == first.json()["ack_id"]
     rotated = _issue(client, fixture)
     assert rotated["replayed"] is False
     assert rotated["receipt"]["claims"]["key_version"] == "v3"

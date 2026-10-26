@@ -1,6 +1,7 @@
 """Context receipts: signed proof that a scoped retrieval was served, never that a model read it.
 
-BRAIN_RECEIPT_KEYS lists signing keys as ``version=secret`` pairs, comma separated;
+BRAIN_RECEIPT_KEYS lists signing keys as ``version=secret`` pairs, comma separated, so a
+secret cannot contain a comma;
 BRAIN_RECEIPT_KEY_VERSION names the one that signs new receipts. A receipt keeps
 verifying across restarts until it expires while its key version stays listed.
 """
@@ -25,6 +26,14 @@ from . import scope
 
 RECEIPT_VERSION = "1"
 PROVES = "retrieval_and_delivery_not_comprehension"
+ERROR_CLASSES = {
+    "brain_audience": "forbidden_scope",
+    "forbidden_scope": "forbidden_scope",
+    "wrong_generation": "stale_generation",
+    "wrong_task_revision": "revision_conflict",
+    "stale_task_revision": "revision_conflict",
+    "expired": "revision_conflict",
+}
 
 log = logging.getLogger("brain-api.receipts")
 clock: Callable[[], float] = time.time
@@ -95,8 +104,9 @@ def _reject(status: int, reason: str, error: str) -> HTTPException:
         detail={
             "valid": False,
             "reason": reason,
+            "error_class": ERROR_CLASSES.get(reason, "invalid_request"),
+            "retry_safe": False,
             "error": error,
-            "context_receipt_validation_failures": total,
         },
     )
 
@@ -174,7 +184,13 @@ def _authenticate(receipt: dict) -> dict:
     if not keys:
         raise HTTPException(
             status_code=503,
-            detail={"valid": False, "reason": "receipts_not_configured", "error": "no keys"},
+            detail={
+                "valid": False,
+                "reason": "receipts_not_configured",
+                "error_class": "dependency_unavailable",
+                "retry_safe": True,
+                "error": "no keys",
+            },
         )
     claims, signature = receipt.get("claims"), receipt.get("signature")
     if not isinstance(claims, dict) or not isinstance(signature, str):
@@ -205,6 +221,10 @@ def _bind(claims: dict, request: VerifyRequest) -> None:
         raise _reject(409, "wrong_generation", "receipt belongs to another execution")
     if (claims["task_id"], claims["task_revision"]) != (expect.task_id, expect.task_revision):
         raise _reject(409, "wrong_task_revision", "receipt belongs to another task revision")
+    from . import context
+
+    if claims["task_revision"] < context.latest_revision(claims["project_ids"][0], expect.task_id):
+        raise _reject(409, "stale_task_revision", "a newer task revision was already accepted")
     if request.payload is not None and payload_digest(request.payload) != claims["payload_digest"]:
         raise _reject(409, "payload_mismatch", "payload differs from the issued context")
 
@@ -250,11 +270,13 @@ def verify(
     visible: Callable[[dict], bool],
     deny: Callable[[], None],
 ) -> dict:
-    claims = _check(_parse(body, VerifyRequest), grant, deny)
+    request = _parse(body, VerifyRequest)
+    claims = _check(request, grant, deny)
     references = _resolve(store, claims["references"], visible)
     return {
         "valid": True,
         "receipt_id": claims["receipt_id"],
+        "payload_verified": request.payload is not None,
         "authority": "recalled_evidence",
         "proves": PROVES,
         "references": references,
@@ -281,7 +303,7 @@ def deliver(receipt_id: str, body: bytes, grant: frozenset[str], deny: Callable[
         if stored is not None:
             return {**stored, "replayed": True}
         row = {
-            "ack_id": f"rack-{uuid.uuid4().hex}",
+            "ack_id": "rack-" + payload_digest([receipt_id, request.adapter])[:32],
             "receipt_id": receipt_id,
             "adapter": request.adapter,
             "payload_digest": claims["payload_digest"],

@@ -92,6 +92,11 @@ def failures() -> dict[str, int]:
         return dict(_failures)
 
 
+def latest_revision(project_id: str, task_id: str) -> int:
+    with _lock:
+        return _latest.get((scope.BRAIN_ID, project_id, task_id), 0)
+
+
 def _reject(status: int, reason: str, error: str, **extra) -> HTTPException:
     with _lock:
         _failures[reason] += 1
