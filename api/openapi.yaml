@@ -735,6 +735,17 @@ paths:
             complete=false) within the same budget with
             pack.degraded=packing_disabled; BRAIN_CONTEXT_RANKING=false still
             returns the SV2-CTX-01 response with no context.
+            With ranking on, cache reports how context was served (SV2-CTX-04):
+            state hit, coalesced, miss, bypass or disabled, negative and
+            ttl_seconds. Equivalent requests share one retrieval, keyed by brain,
+            project id, task id and revision, lane, purpose, retrieval inputs and
+            budget, ranking and scope policy revisions, the caller's grant and the
+            graph knowledge revision; execution_id and request_id are not part of
+            the key. A grant, policy or graph change clears cached results before
+            the next response. An empty or reduced result is negative and kept
+            BRAIN_CONTEXT_CACHE_NEGATIVE_TTL_SECONDS (2) instead of
+            BRAIN_CONTEXT_CACHE_TTL_SECONDS (30). BRAIN_CONTEXT_CACHE=false
+            retrieves per request with state disabled.
         "403": {description: Request names another brain, or a project outside the token grant; recorded as a denial.}
         "409": {description: A newer task revision was already accepted for this task.}
         "413": {description: Request body exceeds the size limit.}
@@ -742,8 +753,8 @@ paths:
         "503": {description: BRAIN_TASK_CONTEXT=false, BRAIN_ID unset, or BRAIN_RANKING_POLICY names no known revision; the feed stays available.}
   /v2/context/stats:
     get:
-      summary: context_request_validation_failures by reason (router tokens only).
+      summary: context_request_validation_failures by reason and context_cache counters (router tokens only).
       security: [{bearerAuth: []}]
       responses:
-        "200": {description: "context_request_validation_failures: reason to count."}
+        "200": {description: "context_request_validation_failures: reason to count. context_cache: context_cache_requests, context_cache_hits, context_cache_misses, context_coalesced_requests, context_cache_hit_ratio ((hits + coalesced) / requests), context_cache_invalidations and context_cache_entries."}
         "403": {description: Not a router token.}

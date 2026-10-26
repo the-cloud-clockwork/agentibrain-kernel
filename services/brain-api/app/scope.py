@@ -9,6 +9,8 @@ name no brain and stay unscoped.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import threading
@@ -67,6 +69,20 @@ def project_grant(token: str) -> frozenset[str]:
 def role_grant(token: str) -> frozenset[str]:
     """Lanes a worker token may act as; empty means any lane."""
     return ROLE_GRANTS.get(token, frozenset())
+
+
+def grants_version() -> str:
+    """A digest of every worker token's brain, project and lane grant; changes on revocation."""
+    rows = sorted(
+        (
+            token,
+            brain,
+            sorted(PROJECT_GRANTS.get(token, ())),
+            sorted(ROLE_GRANTS.get(token, ())),
+        )
+        for token, brain in WORKER_TOKENS.items()
+    )
+    return hashlib.sha256(json.dumps(rows).encode("utf-8")).hexdigest()
 
 
 def admits(grant: frozenset[str], claimed: set[str], *, unattributed: bool) -> bool:

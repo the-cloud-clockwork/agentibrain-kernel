@@ -187,7 +187,14 @@ class GraphStore:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._lock = threading.Lock()
+        self._watch = sqlite3.connect(str(path), check_same_thread=False, isolation_level=None)
+        self._watch_lock = threading.Lock()
         self._migrate()
+
+    def knowledge_revision(self) -> int:
+        """Changes once any connection, this store's own included, commits a write."""
+        with self._watch_lock:
+            return self._watch.execute("PRAGMA data_version").fetchone()[0]
 
     @contextmanager
     def _transaction(self) -> Iterator[None]:
