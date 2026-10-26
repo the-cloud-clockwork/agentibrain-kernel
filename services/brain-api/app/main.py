@@ -36,6 +36,7 @@ import logging
 import os
 import threading
 import time
+from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
 from fastapi import (
@@ -56,7 +57,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from . import arcs, context, graph, pipeline, provenance, scope, vault_reader
+from . import arcs, context, graph, instance_claim, pipeline, provenance, scope, vault_reader
 from .feed import VAULT_ROOT, feed_payload, project_feed_payload
 from .markers import (
     MarkerError,
@@ -148,7 +149,13 @@ def require_router_token(
         raise HTTPException(status_code=403, detail="denials are served to router tokens only")
 
 
-app = FastAPI(title="agentibrain brain-api", version="0.3.0")
+@asynccontextmanager
+async def _claim_vault(_: FastAPI):
+    instance_claim.claim_vault(VAULT_ROOT, scope.BRAIN_ID or "default")
+    yield
+
+
+app = FastAPI(title="agentibrain brain-api", version="0.3.0", lifespan=_claim_vault)
 
 
 @app.get("/health")

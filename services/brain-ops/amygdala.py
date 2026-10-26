@@ -29,18 +29,23 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import instance_scope
+
 try:
     import redis
 except ImportError:
     redis = None
 
-_DEFAULT_STREAMS = "events:health,events:host,events:deploy,events:system,events:brain"
+BRAIN_STREAM = os.getenv("EVENT_BUS_STREAM") or instance_scope.namespaced("events:brain")
+_DEFAULT_STREAMS = f"events:health,events:host,events:deploy,events:system,{BRAIN_STREAM}"
 # Operators with an existing namespaced prefix (e.g. <prefix>:events:*) override via
 # AMYGDALA_STREAMS="<prefix>:events:health,<prefix>:events:host,...".
 STREAMS = [
-    s.strip() for s in os.getenv("AMYGDALA_STREAMS", _DEFAULT_STREAMS).split(",") if s.strip()
+    s.strip() for s in (os.getenv("AMYGDALA_STREAMS") or _DEFAULT_STREAMS).split(",") if s.strip()
 ]
-GROUP = "amygdala"
+# Fleet streams are shared by design; a group per brain keeps one brain from
+# acknowledging events away from another.
+GROUP = instance_scope.namespaced("amygdala")
 CONSUMER = os.getenv("AMYGDALA_CONSUMER", "amygdala-cron")
 CLEAR_WINDOW_SEC = int(os.getenv("AMYGDALA_CLEAR_WINDOW", "900"))  # 15 min
 
@@ -195,7 +200,10 @@ def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: boo
         socket_timeout=5,
         retry=redis.retry.Retry(redis.backoff.NoBackoff(), 0),
     )
-    last_event_key = "amygdala:last_event_ts"
+    last_event_key = instance_scope.namespaced("amygdala:last_event_ts")
+    for stream in STREAMS:
+        if stream == BRAIN_STREAM or stream.split(":")[-2:] == ["events", "brain"]:
+            instance_scope.claim_stream(r, stream)
 
     # Ensure consumer groups exist
     for stream in STREAMS:

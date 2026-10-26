@@ -25,6 +25,9 @@ tpl:
       # Protected routes refuse every request until the secret delivers
       # API_KEYS. AUTH_MODE=local is for an unauthenticated local deployment.
       AUTH_MODE: required
+      # The schema POSTGRES_URL connects to is claimed for BRAIN_ID at startup.
+      # A schema claimed by another brain, or a principal that can read another
+      # brain's schema, refuses startup: give each brain its own principal and schema.
       LOG_LEVEL: INFO
   global:
     environment: dev

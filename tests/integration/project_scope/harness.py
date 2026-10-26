@@ -477,6 +477,7 @@ class Brain:
             [sys.executable, str(BRAIN_OPS / "tick_cycle.py"), "drain", "--vault", str(self.vault)],
             env={
                 **base,
+                "BRAIN_ID": BRAIN_ID,
                 "REDIS_URL": "",
                 "CLICKHOUSE_URL": "",
                 "INFERENCE_URL": self.model,

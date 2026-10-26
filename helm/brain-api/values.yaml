@@ -57,6 +57,8 @@ tpl:
       # `brain-classify` as the canonical name — wire your gateway to alias it
       # at whatever underlying model you want. See docs/GATEWAY-CONTRACT.md.
       BRAIN_CLASSIFY_MODEL: brain-classify
+      # brain-api claims this vault for BRAIN_ID at startup and refuses one
+      # another brain claimed; give every brain its own vault volume.
       VAULT_ROOT: /vault
       LOG_LEVEL: INFO
       # /health/pipeline thresholds — how far behind each stage may fall

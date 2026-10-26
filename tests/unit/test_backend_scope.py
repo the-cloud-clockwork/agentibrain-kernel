@@ -15,10 +15,10 @@ import tarfile
 from pathlib import Path
 
 import pytest
-from agentibrain.backends import BackendBinding, BackendScopeError
 from click.testing import CliRunner
 
 from agentibrain import backends, bootstrap, cli
+from agentibrain.backends import BackendBinding, BackendScopeError
 from agentibrain.config import BrainSettings
 
 SERVER = "postgresql://{user}@db.shared:5432/brains?options=-csearch_path%3D{schema}"

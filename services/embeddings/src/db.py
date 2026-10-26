@@ -4,6 +4,7 @@ import logging
 import os
 
 import embed
+from psycopg import sql
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
@@ -18,6 +19,7 @@ HNSW_MAX_DIM = 2000  # pgvector HNSW indexes reject vectors wider than this
 _SCHEMA_LOCK_KEY = 0x0A6B_312D  # "agentibrain-embeddings schema"
 
 POSTGRES_URL = os.environ.get("POSTGRES_URL", "")
+BRAIN_ID = os.environ.get("BRAIN_ID", "").strip() or "default"
 
 
 def _force_migrate() -> bool:
@@ -46,8 +48,13 @@ def get_pool() -> ConnectionPool:
         url = POSTGRES_URL
         if not url:
             raise RuntimeError("POSTGRES_URL not set")
-        _pool = ConnectionPool(url, min_size=1, max_size=4, open=True)
-        _ensure_schema(_pool)
+        pool = ConnectionPool(url, min_size=1, max_size=4, open=True)
+        try:
+            _ensure_schema(pool)
+        except Exception:
+            pool.close()
+            raise
+        _pool = pool
     return _pool
 
 
@@ -60,7 +67,47 @@ def _ensure_schema(pool: ConnectionPool):
                 conn.execute(f.read().replace("{{EMBED_DIM}}", str(dim)))
             conn.commit()
         log.info(f"schema_initialized dim={dim}")
+        _claim_instance(pool)
     _reconcile_dim(pool, dim)
+
+
+def _claim_instance(pool: ConnectionPool) -> None:
+    """Claim this schema for BRAIN_ID; refuse a schema, or a principal, another brain reaches.
+
+    A principal that can read another brain's claim can read that brain's
+    knowledge, so separate schemas behind one unrestricted login are refused.
+    """
+    with pool.connection() as conn:
+        conn.execute(
+            "INSERT INTO brain_instance (brain_id) VALUES (%s) ON CONFLICT (singleton) DO NOTHING",
+            (BRAIN_ID,),
+        )
+        held = conn.execute("SELECT brain_id FROM brain_instance").fetchone()[0]
+        visible = conn.execute(
+            """SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+               WHERE c.relname = 'brain_instance' AND c.relkind = 'r'
+                 AND c.oid <> 'brain_instance'::regclass
+                 AND has_schema_privilege(n.oid, 'USAGE')
+                 AND has_table_privilege(c.oid, 'SELECT')"""
+        ).fetchall()
+        foreign = []
+        for (schema,) in visible:
+            row = conn.execute(
+                sql.SQL("SELECT brain_id FROM {}.brain_instance").format(sql.Identifier(schema))
+            ).fetchone()
+            if row and row[0] != BRAIN_ID:
+                foreign.append((row[0], schema))
+        conn.commit()
+    if held != BRAIN_ID:
+        log.error(f"brain_backend_scope_conflicts kind=schema held={held} brain={BRAIN_ID}")
+        raise RuntimeError(f"database schema belongs to brain {held}, not {BRAIN_ID}")
+    if foreign:
+        other, schema = foreign[0]
+        log.error(f"brain_backend_scope_conflicts kind=principal schema={schema} brain={other}")
+        raise RuntimeError(
+            f"this database principal can read brain {other}'s schema {schema}; "
+            "give each brain its own principal"
+        )
 
 
 def get_schema_dim(pool: ConnectionPool | None = None) -> int | None:

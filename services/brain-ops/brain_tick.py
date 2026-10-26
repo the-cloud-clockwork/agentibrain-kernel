@@ -43,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import brain_apply
 import brain_keeper
 import brain_tick_prompt
+import instance_scope
 import redact
 
 # INFERENCE_URL is optional — when empty, the AI reasoning phase is skipped and
@@ -83,7 +84,7 @@ CLICKHOUSE_TICK_TABLE = os.getenv("CLICKHOUSE_TICK_TABLE", "tick_health")
 # own prefix. EVENT_BUS_TOPIC is the routing label embedded in the payload.
 EVENT_BUS_REDIS_URL = os.getenv("REDIS_URL", "")
 EVENT_BUS_DB = os.getenv("EVENT_BUS_DB", "11")
-EVENT_BUS_STREAM = os.getenv("EVENT_BUS_STREAM", "events:brain")
+EVENT_BUS_STREAM = os.getenv("EVENT_BUS_STREAM") or instance_scope.namespaced("events:brain")
 EVENT_BUS_TOPIC = os.getenv("EVENT_BUS_TOPIC", "agentibrain-system")
 
 
@@ -204,6 +205,11 @@ def _push_event_bus(report: dict, source: str = "brain-cron") -> None:
         "graduations": str(det.get("graduations", 0)),
         "total_ms": str(report.get("total_ms", 0)),
     }
+    try:
+        instance_scope.claim_stream(r, EVENT_BUS_STREAM)
+    except instance_scope.ScopeError as exc:
+        print(f"event bus announce refused: {exc}")
+        return
     r.xadd(EVENT_BUS_STREAM, payload, maxlen=10000, approximate=True)
 
 
@@ -293,9 +299,7 @@ def _push_clickhouse(report: dict, brain_feed_dir: Path | None = None) -> None:
         else CLICKHOUSE_PASSWORD
     )
     if username:
-        creds = base64.b64encode(
-            f"{username}:{password}".encode()
-        ).decode()
+        creds = base64.b64encode(f"{username}:{password}".encode()).decode()
         auth_header = f"Basic {creds}"
 
     for ddl in _brain_schema_ddl(database, table):

@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from rich.console import Console
 from rich.markup import escape
 
 from agentibrain import __version__, bootstrap
+from agentibrain import backends as _backends
 from agentibrain import hooks_env as _hooks_env
 from agentibrain import scaffold as _scaffold
 from agentibrain.config import (
@@ -177,6 +179,27 @@ def _make_room(settings: BrainSettings, keep: Path | None) -> None:
         sys.exit(1)
 
 
+def _refuse_shared_backends(settings: BrainSettings) -> None:
+    """Refuse to start a brain whose external state another installed brain reaches."""
+    conflicts = _backends.installed_conflicts(settings)
+    for other, kind, detail in conflicts:
+        _backends.brain_backend_scope_conflicts[kind] += 1
+        console.print(f"[red]{kind} shared with brain {escape(other)}:[/red] {escape(detail)}")
+    for kind, count in sorted(Counter(kind for _, kind, _ in conflicts).items()):
+        console.print(f"brain_backend_scope_conflicts kind={kind} count={count}")
+    if conflicts:
+        console.print(
+            f"[red]refusing to start brain {settings.brain_id}; nothing was started[/red]"
+        )
+        sys.exit(1)
+    try:
+        _backends.claim_vault(settings.vault_path, settings.brain_id)
+    except _backends.BackendScopeError as exc:
+        console.print(f"brain_backend_scope_conflicts kind={exc.kind} count=1")
+        console.print(f"[red]{escape(str(exc))}; nothing was started[/red]")
+        sys.exit(1)
+
+
 def _root_compose_command(settings: BrainSettings, args: list[str]) -> list[str]:
     if settings.ollama:
         return ["-f", "compose.yml", "-f", "local/compose.ollama.yml", *args]
@@ -191,6 +214,7 @@ def up_cmd(dry_run: bool) -> None:
     if dry_run:
         _inventory(settings, mode, compose_dir, "start")
         return
+    _refuse_shared_backends(settings)
     _make_room(settings, compose_dir)
     if mode == "home":
         proc = bootstrap.compose_up(settings)
@@ -1219,6 +1243,7 @@ def _start_stack(settings: BrainSettings) -> None:
     if mode == "root-compose" and bootstrap.link_checkout_env(settings, compose_dir):
         brain_env = settings.config_dir.expanduser() / ".env"
         console.print(f"  [green]✓[/green] linked {compose_dir / '.env'} → {brain_env}")
+    _refuse_shared_backends(settings)
     _make_room(settings, compose_dir)
     if mode == "home":
         proc = bootstrap.compose_up(settings)
