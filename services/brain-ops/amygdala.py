@@ -188,6 +188,13 @@ def _read_events(client) -> list:
     return client.xreadgroup(GROUP, CONSUMER, dict.fromkeys(STREAMS, ">"), count=50, block=2000)
 
 
+def _claim_brain_streams(client) -> None:
+    """Fleet streams are shared; a brain's own event stream must belong to this brain."""
+    for stream in STREAMS:
+        if stream == BRAIN_STREAM or stream.split(":")[-2:] == ["events", "brain"]:
+            instance_scope.claim_stream(client, stream)
+
+
 def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: bool = False) -> dict:
     """One-shot consume: read pending events, classify, write signals."""
     if redis is None:
@@ -201,9 +208,7 @@ def consume(redis_url: str, vault_root: Path, brain_feed_dir: Path, dry_run: boo
         retry=redis.retry.Retry(redis.backoff.NoBackoff(), 0),
     )
     last_event_key = instance_scope.namespaced("amygdala:last_event_ts")
-    for stream in STREAMS:
-        if stream == BRAIN_STREAM or stream.split(":")[-2:] == ["events", "brain"]:
-            instance_scope.claim_stream(r, stream)
+    _claim_brain_streams(r)
 
     # Ensure consumer groups exist
     for stream in STREAMS:
