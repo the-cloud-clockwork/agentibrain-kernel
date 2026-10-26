@@ -746,6 +746,14 @@ paths:
             BRAIN_CONTEXT_CACHE_NEGATIVE_TTL_SECONDS (2) instead of
             BRAIN_CONTEXT_CACHE_TTL_SECONDS (30). BRAIN_CONTEXT_CACHE=false
             retrieves per request with state disabled.
+            receipt (SV2-CTX-05) is null unless BRAIN_RECEIPT_KEYS lists the
+            BRAIN_RECEIPT_KEY_VERSION key; otherwise claims bind brain, project,
+            execution_id, task_id and task_revision, lane, purpose, operation_id,
+            policy, knowledge_revision, the packed references, omitted and
+            excluded material, a payload_digest of context, issued_at_ms,
+            expires_at_ms (BRAIN_RECEIPT_TTL_SECONDS, 3600) and key_version,
+            signed with HMAC-SHA256. A receipt proves retrieval, never
+            comprehension; an exact replay returns the same receipt.
         "403": {description: Request names another brain, or a project outside the token grant; recorded as a denial.}
         "409": {description: A newer task revision was already accepted for this task.}
         "413": {description: Request body exceeds the size limit.}
@@ -756,5 +764,37 @@ paths:
       summary: context_request_validation_failures by reason and context_cache counters (router tokens only).
       security: [{bearerAuth: []}]
       responses:
-        "200": {description: "context_request_validation_failures: reason to count. context_cache: context_cache_requests, context_cache_hits, context_cache_misses, context_coalesced_requests, context_cache_hit_ratio ((hits + coalesced) / requests), context_cache_invalidations and context_cache_entries."}
+        "200": {description: "context_request_validation_failures: reason to count. context_cache: context_cache_requests, context_cache_hits, context_cache_misses, context_coalesced_requests, context_cache_hit_ratio ((hits + coalesced) / requests), context_cache_invalidations and context_cache_entries. context_receipt_validation_failures: reason to count."}
         "403": {description: Not a router token.}
+  /v2/context/receipts/verify:
+    post:
+      summary: Verify a context receipt for the caller's current task (SV2-CTX-05).
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        description: "{receipt, expect: {execution_id, task_id, task_revision}, payload?}; payload is the delivered context and must match the receipt payload_digest. At most BRAIN_RECEIPT_MAX_BODY_BYTES (262144)."
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200": {description: "valid=true, receipt_id, authority=recalled_evidence, proves=retrieval_and_delivery_not_comprehension, references resolved inside the caller grant (availability, current_revision, stale), a redacted explanation (omitted counts by reason, excluded counts, reduced, stale ids, unavailable count) and deliveries."}
+        "403": {description: "valid=false: brain_audience (issued by another brain) or forbidden_scope (project outside the grant); recorded as a denial."}
+        "409": {description: "valid=false: unknown_key_version, signature_mismatch, expired, wrong_generation, wrong_task_revision or payload_mismatch."}
+        "413": {description: Request body exceeds the size limit.}
+        "422": {description: "valid=false, invalid_request: not JSON or invalid fields."}
+        "503": {description: "receipts_not_configured: BRAIN_RECEIPT_KEYS is empty."}
+  /v2/context/{receipt_id}/delivery:
+    post:
+      summary: Record a target adapter's delivery of the context a valid receipt names (SV2-CTX-05).
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: receipt_id, in: path, required: true, schema: {type: string, maxLength: 64}}
+      requestBody:
+        required: true
+        description: "{receipt, expect, payload, adapter}; verified as in /v2/context/receipts/verify with payload required."
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200": {description: "ack_id, receipt_id, adapter, payload_digest, acknowledged_at_ms and replayed; one acknowledgement per receipt and adapter, kept per process."}
+        "409": {description: "valid=false: receipt_path_mismatch or any verification failure."}
