@@ -1,8 +1,8 @@
 {
   "package": "SV2-CTX-05",
-  "tested_commit": "c6b1435e02b4620579e451de14815e4fb66cf0e0",
-  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40258804047",
-  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40258804047/job/121366415233",
+  "tested_commit": "bb5b0ba93df47cd60010522940e53d3ac962ab3d",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40259666523",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40259666523/job/121369084033",
   "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source, fixture signing keys and a fake clock; receipts, context, scope and graph are the production modules.",
   "dependency": [
     "SV2-CTX-04"
@@ -32,9 +32,9 @@
     ]
   },
   "state": {
-    "observed": "Every pull request check passes on the tested commit (run https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40258804047).",
+    "observed": "Every pull request check passes on the tested commit (run https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40259666523).",
     "accepted": "The 34 SV2-CTX-05 tests pass in the full brain-api suite on three Python versions (404 passed); the SV2-CTX-01 to 04 context tests pass unchanged.",
-    "committed": "c6b1435e02b4620579e451de14815e4fb66cf0e0",
+    "committed": "bb5b0ba93df47cd60010522940e53d3ac962ab3d",
     "externally_verified": "None; mocked fixture evidence only. G6 rollout must validate deployed behavior."
   },
   "red": {
