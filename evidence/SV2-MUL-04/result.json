@@ -1,0 +1,66 @@
+{
+  "package": "SV2-MUL-04",
+  "repository": "agentibrain-kernel",
+  "gate": "G7",
+  "state": "committed and verified in CI on the pull request head; not observed on a deployed brain",
+  "evidence_kind": "real Postgres principals and schemas in CI; mocked Redis, docker and compose",
+  "tested_commit": "f9a7448f22ee2850857549f302c7cdfae9aca367",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/176",
+  "fixture": {
+    "paths": [
+      "tests/unit/test_backend_scope.py",
+      "tests/unit/test_migration_identity.py",
+      "services/brain-ops/tests/test_instance_scope.py",
+      "services/brain-api/tests/test_vault_claim.py",
+      "services/embeddings/tests/test_instance_claim.py"
+    ],
+    "manifest": "fixture-manifest.json"
+  },
+  "runs": {
+    "red": {
+      "unit": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40248595090",
+      "brain-ops": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40249241301",
+      "brain-api": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40249892223",
+      "embeddings": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40250357084"
+    },
+    "green": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40250294779",
+    "red_note": "Each red run is a dispatched diffcheck of the red test commit with the earlier failing seam's test removed, because a failing pytest step stops the later service steps."
+  },
+  "cases": {
+    "T-SV2-MUL-04-A": "passed",
+    "T-SV2-MUL-04-B": "passed",
+    "T-SV2-MUL-04-C": "passed"
+  },
+  "measurement": {
+    "brain_backend_scope_conflicts": "Counter per kind (vault, principal, schema, redis, backup) in agentibrain.backends, printed by the CLI as brain_backend_scope_conflicts kind=<k> count=<n>; embeddings logs the same line on refusal; brain-api and brain-ops refuse with the owning brain named",
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ],
+    "macos": "macos-smoke"
+  },
+  "interfaces": [
+    "agentibrain.backends: BackendBinding.from_settings, scope_conflicts, installed_conflicts, claim_vault, backup_vault, restore_vault, namespaced, BackendScopeError",
+    "agentibrain up and install refuse shared backends before compose starts and claim the vault",
+    "run_migrations passes brain_id to psql and reports a database held by another brain; up and install exit 1 on it",
+    "migration 004_brain_instance and embeddings init.sql: one row brain_instance claim",
+    "embeddings get_pool refuses a foreign schema claim or a principal that can read another brain's claim",
+    "brain-api lifespan claims VAULT_ROOT/.brain-instance",
+    "brain-ops instance_scope: namespaced keys, claim_vault, claim_stream; used by brain_tick, amygdala and tick_cycle"
+  ],
+  "compatibility": "An unnamed brain keeps the legacy Redis keys and stream names and claims its vault, schema and stream as default on first start; no migration. The brain-ops chart no longer pins EVENT_BUS_STREAM, so a named brain's stream follows its BRAIN_ID.",
+  "rollback": "Stop only the misconfigured brain and restore its previous BRAIN_ID, POSTGRES_URL, REDIS_URL and vault. Claims are authoritative ownership state and are not deleted to pass a refusal. Rehearsed in CI by the misbinding fixtures; not rehearsed on a deployed brain.",
+  "limitations": [
+    "Vault restore is a library function, agentibrain.backends.restore_vault, with no CLI command yet",
+    "Services log or raise on conflicts; only the CLI keeps an in-process counter",
+    "installed_conflicts sees only brains installed on the same host; cross host misbinding is caught by the vault, schema and stream claims at startup",
+    "Compose stacks keep the legacy AMYGDALA_STREAMS default; a named brain on a shared external Redis is refused by the stream claim rather than namespaced",
+    "The brain-ops scope claim code is duplicated in brain-api because neither image ships the agentibrain package"
+  ],
+  "case_files": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ]
+}

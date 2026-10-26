@@ -86,10 +86,13 @@ env:
   BRAIN_LESSON_FEED_MAX: "6"
   BRAIN_DECAY_START_DAYS: "2"
   BRAIN_DECAY_INTERVAL_DAYS: "2"
-  # Event bus identifiers (see services/brain-ops/brain_tick.py). Override
-  # per environment to namespace the stream and topic — the amygdala consumer
-  # must read from the same stream key.
-  EVENT_BUS_STREAM: "events:brain"
+  # Event bus identifiers (see services/brain-ops/brain_tick.py). The brain's
+  # own stream follows BRAIN_ID: events:brain for the default brain and
+  # brain:<id>:events:brain for a named one, and the amygdala reads it with a
+  # consumer group of its own. Set BRAIN_ID (and a distinct database principal,
+  # schema and vault) for every brain that shares a Redis or Postgres server;
+  # a stream, vault or schema claimed by another brain refuses the run.
+  # EVENT_BUS_STREAM overrides the stream name.
   EVENT_BUS_TOPIC: "agentibrain-system"
   EVENT_BUS_DB: "11"
 

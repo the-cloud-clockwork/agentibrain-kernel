@@ -174,6 +174,33 @@ named brain; a root whose `.env` names another brain is refused untouched.
   machine-wide file alone.
 - Rollback: run `--dry-run` first and select `--instance default` explicitly.
 
+### Backend isolation
+
+Separate namespaces or config roots are not isolation when two brains still
+reach one vault, database principal, schema or Redis keyspace. Each brain claims
+what it owns and refuses what another brain claimed:
+
+- The vault root holds `.brain-instance` naming its brain. brain-api, the tick
+  and `agentibrain up` / `install` claim an unclaimed vault and refuse one
+  claimed by, or nested inside, another brain's vault.
+- The embeddings schema and the migrations database hold a one-row
+  `brain_instance` table. Embeddings refuses to start on a schema claimed by
+  another brain, or through a principal that can read another brain's claimed
+  schema: give each brain its own principal and schema
+  (`?options=-csearch_path%3D<schema>` in `POSTGRES_URL`).
+- A named brain's Redis keys carry `brain:<id>:`: its event stream
+  `brain:<id>:events:brain`, its amygdala consumer group and its last event key.
+  The default brain keeps the legacy names. The brain's stream carries an
+  `<stream>:owner` claim; a tick or amygdala run refuses a stream another brain holds.
+- `agentibrain up` and `install` compare the selected brain with every brain
+  installed on the host and refuse a shared vault, principal, schema or Redis
+  key, printing `brain_backend_scope_conflicts kind=<kind> count=<n>`.
+- Vault backups carry the claim. `agentibrain.backends.restore_vault` restores
+  only a backup made by the same brain, into a vault that brain owns.
+- Rollback: stop only the misconfigured brain and restore its previous
+  `BRAIN_ID`, `POSTGRES_URL`, `REDIS_URL` and vault. A claim is authoritative
+  ownership state, not a cache; never delete one to get past a refusal.
+
 ## Image strategy
 
 Each kernel service has its own image, tagged per branch:

@@ -414,6 +414,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--vault", required=True, type=Path)
     ap.add_argument("--mode", default=os.environ.get("TICK_CYCLE_MODE", ""))
     args = ap.parse_args(argv)
+    scope = runpy.run_path(str(HERE / "instance_scope.py"))
+    try:
+        scope["claim_vault"](args.vault)
+    except scope["ScopeError"] as exc:
+        print(f"ERROR: {exc}")
+        return 2
     if args.cycle == "drain":
         return drain(args.vault)
     if args.mode not in MODES:

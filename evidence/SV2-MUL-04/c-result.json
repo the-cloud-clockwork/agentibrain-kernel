@@ -1,0 +1,14 @@
+{
+  "package": "SV2-MUL-04",
+  "tested_commit": "f9a7448f22ee2850857549f302c7cdfae9aca367",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40250294779",
+  "verification": "CI fixtures: two named brains, personal and swarm, holding an arc with the same key and the same project. Embeddings cases run against the CI pgvector server with two login principals mul04_personal and mul04_swarm, each owning one schema. Vaults are distinct scratch directories under a fake HOME. Redis is a dict backed fake in brain-ops tests (mocked); CLI compose and docker calls are faked. No deployed brain was contacted.",
+  "case": "T-SV2-MUL-04-C",
+  "outcome": "passed",
+  "state": "observed in CI; Redis and docker mocked, Postgres real",
+  "assertions": [
+    "A backup made by the personal brain restores the personal vault, and the swarm vault digests are unchanged.",
+    "The personal backup restored into the swarm vault is refused and the swarm vault digests are unchanged.",
+    "A backup that carries no brain identity is refused without changing the target vault."
+  ]
+}

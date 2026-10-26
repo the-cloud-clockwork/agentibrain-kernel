@@ -1,0 +1,17 @@
+{
+  "package": "SV2-MUL-04",
+  "tested_commit": "f9a7448f22ee2850857549f302c7cdfae9aca367",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40250294779",
+  "verification": "CI fixtures: two named brains, personal and swarm, holding an arc with the same key and the same project. Embeddings cases run against the CI pgvector server with two login principals mul04_personal and mul04_swarm, each owning one schema. Vaults are distinct scratch directories under a fake HOME. Redis is a dict backed fake in brain-ops tests (mocked); CLI compose and docker calls are faked. No deployed brain was contacted.",
+  "case": "T-SV2-MUL-04-B",
+  "outcome": "passed",
+  "state": "observed in CI; Redis and docker mocked, Postgres real",
+  "assertions": [
+    "A shared principal, a shared schema, a shared event stream and a shared or nested vault are each reported as exactly one conflict kind.",
+    "up refuses a brain sharing another installed brain's principal before starting anything or claiming its vault, printing brain_backend_scope_conflicts kind=principal count=1.",
+    "up exits 1 when migrations find a database claimed by another brain.",
+    "Embeddings refuses to start on another brain's schema and through a principal granted read on another brain's claimed schema; no pool is kept and the owner's rows are unchanged.",
+    "brain-api, the tick cycle, the tick announcement and amygdala each refuse a vault or stream claimed by another brain without writing to it.",
+    "Separate namespaces pointing at the same vault, principal or schema are refused, not accepted as isolation."
+  ]
+}

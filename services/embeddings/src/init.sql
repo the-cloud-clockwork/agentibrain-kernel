@@ -20,3 +20,10 @@ CREATE INDEX IF NOT EXISTS idx_ce_producer ON content_embeddings (producer);
 CREATE INDEX IF NOT EXISTS idx_ce_key ON content_embeddings (key);
 CREATE INDEX IF NOT EXISTS idx_ce_metadata ON content_embeddings USING gin (metadata);
 CREATE INDEX IF NOT EXISTS idx_ce_projects ON content_embeddings USING gin ((metadata->'projects'));
+
+-- The brain that owns this schema; one row, claimed on first start.
+CREATE TABLE IF NOT EXISTS brain_instance (
+    singleton BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+    brain_id TEXT NOT NULL,
+    claimed_at TIMESTAMPTZ DEFAULT NOW()
+);

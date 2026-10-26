@@ -20,6 +20,7 @@ from pathlib import Path
 import yaml
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from agentibrain import backends as _backends
 from agentibrain.config import DEFAULT_BRAIN_ID, BrainSettings
 
 COMPOSE_TEMPLATE = "compose.yml.j2"
@@ -1070,7 +1071,7 @@ def run_migrations(settings: BrainSettings) -> list[str]:
     results: list[str] = []
     for path in sorted(migrations_dir().glob("*.sql")):
         proc = subprocess.run(
-            ["psql", dsn, "-f", str(path)],
+            ["psql", dsn, "-v", f"brain_id={settings.brain_id}", "-f", str(path)],
             check=False,
             capture_output=True,
             text=True,
@@ -1079,4 +1080,13 @@ def run_migrations(settings: BrainSettings) -> list[str]:
             results.append(f"✓ {path.name}")
         else:
             results.append(f"✗ {path.name}: {proc.stderr.strip()[:200]}")
+    held = subprocess.run(
+        ["psql", dsn, "-tA", "-c", "SELECT brain_id FROM brain_instance"],
+        check=False,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if held and held != settings.brain_id:
+        _backends.brain_backend_scope_conflicts["schema"] += 1
+        results.append(f"✗ database belongs to brain {held}, not {settings.brain_id}")
     return results

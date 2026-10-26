@@ -1,0 +1,17 @@
+{
+  "package": "SV2-MUL-04",
+  "tested_commit": "f9a7448f22ee2850857549f302c7cdfae9aca367",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40250294779",
+  "verification": "CI fixtures: two named brains, personal and swarm, holding an arc with the same key and the same project. Embeddings cases run against the CI pgvector server with two login principals mul04_personal and mul04_swarm, each owning one schema. Vaults are distinct scratch directories under a fake HOME. Redis is a dict backed fake in brain-ops tests (mocked); CLI compose and docker calls are faked. No deployed brain was contacted.",
+  "case": "T-SV2-MUL-04-A",
+  "outcome": "passed",
+  "state": "observed in CI; Redis and docker mocked, Postgres real",
+  "assertions": [
+    "Two brains on one Postgres server through distinct principals and schemas store the same arc key and project; a search by the swarm brain returns only swarm knowledge and the personal schema still holds only personal knowledge and its claim.",
+    "A principal cannot read the other brain's schema (InsufficientPrivilege).",
+    "Distinct principals, schemas, vaults and namespaced Redis keys report no scope conflict; installed brains with distinct backends report none.",
+    "Named brains announce ticks on brain:<id>:events:brain and read with consumer group brain:<id>:amygdala; the default brain keeps legacy keys.",
+    "brain-api claims an unclaimed vault at startup; the claim file is not served by /vault/list.",
+    "Every migration receives the brain id and the brain_instance claim migration runs."
+  ]
+}
