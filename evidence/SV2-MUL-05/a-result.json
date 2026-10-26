@@ -1,0 +1,23 @@
+{
+  "package": "SV2-MUL-05",
+  "tested_commit": "2e0f3fd9e954b329a6ef11ea9ad2e5e9d3fffcca",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40275788145",
+  "verification": "mocked: CI fixtures. brain-api runs in process through the FastAPI test client, restarted per brain by module reload, and in test_a_c_two_running_brains_keep_independent_packs_caches_and_budgets as two separate uvicorn processes, personal and swarm, each with its own vault, graph database, policy document and worker token. The shared limited inference backend is the deployment ceiling (first: 4 concurrent, 16000 tokens per minute; second: 2 and 9000); the gateway is a fake httpx client. No deployed brain or gateway was contacted.",
+  "case": "T-SV2-MUL-05-A",
+  "outcome": "passed",
+  "state": "observed in CI on 3.10, 3.11 and 3.12; gateway mocked",
+  "tests": [
+    "test_a_swarm_policy_change_affects_only_swarm_packs[first|second]",
+    "test_a_inference_budgets_bound_concurrency_and_tokens_separately[first|second]",
+    "test_a_router_inference_spends_the_brain_synthesis_budget[first|second]",
+    "test_a_c_two_running_brains_keep_independent_packs_caches_and_budgets[first|second]"
+  ],
+  "assertions": [
+    "Moving the swarm brain from revision 1 to its experimental revision changes its ranking revision, packing and item count and its policy digest; the personal pack (context and brain_policy) is equal before and after.",
+    "In two running processes the swarm tune invalidates the swarm context cache once while the personal cache records 0 invalidations and serves a hit. Budget isolation across brains holds by process construction; no inference call is driven in this fixture, so the unchanged personal budget usage is not offered as proof of it.",
+    "Concurrency and the per-minute token window are enforced separately: one reservation over the concurrency limit and one over the token window are refused, and the window reopens after sixty seconds on a fake clock.",
+    "A classification call sends the revision's synthesis_max_tokens and is counted as granted; with the brain's concurrency held it falls back to regex without reaching the gateway and is counted as refused_concurrency.",
+    "Policy revision and digest are exposed in every context response and in /v2/context/stats; /instance serves brain_id, revision and source."
+  ],
+  "repeat": "Every case runs on the independent first and second fixtures."
+}

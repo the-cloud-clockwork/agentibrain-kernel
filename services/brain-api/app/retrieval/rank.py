@@ -233,16 +233,18 @@ def retrieve(
     active: Policy,
     sources: Sources = NO_SOURCES,
     time_budget: float = 0.25,
+    edge_budget: int | None = None,
 ) -> dict:
     if store is None:
         return _unavailable("not_configured", active)
+    budget = EDGE_BUDGET if edge_budget is None else edge_budget
     try:
         with store.read_view(time.monotonic() + time_budget) as view:
             nodes = view.entities(project, TYPES, SCAN_LIMIT)
             ids = {node["id"] for node in nodes}
-            edges, edges_complete = _edges(view, ids, EDGE_BUDGET)
+            edges, edges_complete = _edges(view, ids, budget)
             labelled = select_current(
-                view, nodes, lambda e: e is not None and project in e["projects"], EDGE_BUDGET
+                view, nodes, lambda e: e is not None and project in e["projects"], budget
             )["nodes"]
     except (TimeoutError, sqlite3.Error):
         log.warning("graph candidate source failed")

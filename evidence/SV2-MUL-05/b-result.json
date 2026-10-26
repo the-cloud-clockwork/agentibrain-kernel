@@ -1,0 +1,22 @@
+{
+  "package": "SV2-MUL-05",
+  "tested_commit": "2e0f3fd9e954b329a6ef11ea9ad2e5e9d3fffcca",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40275788145",
+  "verification": "mocked: CI fixtures. brain-api runs in process through the FastAPI test client, restarted per brain by module reload, and in test_a_c_two_running_brains_keep_independent_packs_caches_and_budgets as two separate uvicorn processes, personal and swarm, each with its own vault, graph database, policy document and worker token. The shared limited inference backend is the deployment ceiling (first: 4 concurrent, 16000 tokens per minute; second: 2 and 9000); the gateway is a fake httpx client. No deployed brain or gateway was contacted.",
+  "case": "T-SV2-MUL-05-B",
+  "outcome": "passed",
+  "state": "observed in CI on 3.10, 3.11 and 3.12",
+  "tests": [
+    "test_b_a_budget_above_the_ceiling_is_refused_without_raising_it[first|second]",
+    "test_b_a_policy_cannot_carry_a_ceiling_or_another_brain[invalid_policy|brain_audience]",
+    "test_b_a_policy_without_a_deployment_ceiling_is_refused[first|second]",
+    "test_an_unparsable_ceiling_refuses_rather_than_failing[four|-1|\u00b2]"
+  ],
+  "assertions": [
+    "A swarm revision whose budget exceeds the deployment ceiling is refused with 503 policy_refused, refusal budget_exceeds_ceiling; the ceiling, the policy document bytes and the personal pack and budget usage are unchanged.",
+    "While refused, no inference reservation is granted, budget usage is null and /instance reports no active policy; refusals count each refused request and reservation.",
+    "A policy that carries its own ceiling is invalid_policy; one naming another brain is brain_audience; a policy served with no ceiling is ceiling_unset; a non-decimal ceiling is invalid_ceiling.",
+    "Error details carry the refusal reason only; the policy document path is not disclosed.",
+    "Selecting a valid revision is a new request: the experimental revision is then served."
+  ]
+}

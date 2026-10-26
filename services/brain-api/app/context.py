@@ -18,7 +18,7 @@ from typing import Annotated, Literal
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import context_cache, graph, receipts, scope
+from . import brain_policy, context_cache, graph, receipts, scope
 from .retrieval import packing, rank
 
 SCHEMA_VERSION = "2.0"
@@ -74,14 +74,10 @@ def enabled() -> bool:
     return os.getenv("BRAIN_TASK_CONTEXT", "true").lower() != "false"
 
 
-def packing_enabled() -> bool:
-    return os.getenv("BRAIN_CONTEXT_PACKING", "true").lower() != "false"
-
-
-def ranking_policy() -> rank.Policy | None:
+def ranking_policy(revision: str | None = None) -> rank.Policy | None:
     if os.getenv("BRAIN_CONTEXT_RANKING", "true").lower() == "false":
         return None
-    revision = os.getenv("BRAIN_RANKING_POLICY", rank.CURRENT)
+    revision = revision or os.getenv("BRAIN_RANKING_POLICY", rank.CURRENT)
     if revision not in rank.POLICIES:
         raise HTTPException(status_code=503, detail="BRAIN_RANKING_POLICY names no known revision")
     return rank.policy(revision)
@@ -172,7 +168,12 @@ def _knowledge(store: graph.GraphStore | None) -> str:
 
 
 def _epoch(store: graph.GraphStore | None) -> tuple:
-    return (scope.grants_version(), scope.POLICY_REVISION, _knowledge(store))
+    return (
+        scope.grants_version(),
+        scope.POLICY_REVISION,
+        brain_policy.digest_or_refusal(),
+        _knowledge(store),
+    )
 
 
 def _shared(key_of: Callable[[str], context_cache.Key], store, load: Callable[[], dict]) -> dict:
@@ -188,6 +189,7 @@ def _admit(
     request: ContextRequest,
     trusted: dict,
     operation: str,
+    policy: brain_policy.Active,
     ranked: Callable[[], dict] = dict,
 ) -> dict:
     task = (trusted["brain_id"], request.project_id, request.task_id)
@@ -213,6 +215,7 @@ def _admit(
         "scope": trusted,
         "request": request.model_dump(exclude={"schema_version", "brain_id", "project_id"}),
         "authority": "recalled_evidence",
+        "brain_policy": policy.describe(),
         "replayed": False,
     }
     response.update(ranked())
@@ -243,19 +246,29 @@ def accept(
         deny()
         raise _reject(403, "role_grant", "lane is outside this token's grant")
     trusted = {"brain_id": scope.BRAIN_ID, "project_ids": [request.project_id]}
-    active = ranking_policy()
+    try:
+        current = brain_policy.active()
+    except brain_policy.PolicyRefused as exc:
+        brain_policy.record_refusal(exc.reason)
+        detail = {"reason": "policy_refused", "refusal": exc.reason, "error": str(exc)}
+        raise HTTPException(status_code=503, detail=detail) from exc
+    policy = current.policy
+    active = ranking_policy(policy.ranking)
     if active is None:
-        return _admit(request, trusted, operation_id(request, trusted))
-    conservative = not packing_enabled()
+        return _admit(request, trusted, operation_id(request, trusted), current)
+    conservative = policy.packing == "conservative"
     identity = {
         **trusted,
         "ranking_policy": active.revision,
         "packing": "conservative" if conservative else "full",
     }
+    if current.source == "file":
+        identity["brain_policy"] = current.digest
     return _admit(
         request,
         trusted,
         operation_id(request, identity),
+        current,
         lambda: _shared(
             lambda knowledge: cache_key(request, trusted, grant, lanes, identity, knowledge),
             store,
@@ -266,12 +279,13 @@ def accept(
                     rank.Task(
                         f"{request.intent} {request.query}",
                         (*request.subsystems, *request.errors),
-                        request.budget.max_items,
+                        min(request.budget.max_items, policy.max_items),
                     ),
                     active,
                     rank.Sources(semantic_source, heat_source),
+                    edge_budget=policy.edge_budget,
                 ),
-                request.budget.max_tokens,
+                min(request.budget.max_tokens, policy.max_tokens),
                 conservative,
             ),
         ),

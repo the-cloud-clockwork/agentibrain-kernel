@@ -1,0 +1,69 @@
+{
+  "first": {
+    "project": "org-a/ingest",
+    "ceiling": {"concurrency": 4, "tokens_per_minute": 16000},
+    "request": {
+      "task_id": "implement-session-ingestion",
+      "task_revision": 3,
+      "intent": "Implement incremental transcript ingestion with durable acknowledgements.",
+      "query": "transcript ingestion acknowledgement",
+      "subsystems": ["session-catalog"],
+      "budget": {"max_tokens": 3000, "max_graph_depth": 2, "max_items": 12}
+    },
+    "entities": [
+      {"id": "lesson:a-ack", "type": "lesson", "revision": 1, "projects": ["org-a/ingest"], "vault_ref": null, "title": "Acknowledge transcript ingestion only after the commit lands", "provenance": {"source": "fixture:lesson:a-ack", "revision": "p1"}},
+      {"id": "lesson:a-cursor", "type": "lesson", "revision": 1, "projects": ["org-a/ingest"], "vault_ref": null, "title": "Advance the transcript ingestion cursor once per acknowledgement", "provenance": {"source": "fixture:lesson:a-cursor", "revision": "p1"}},
+      {"id": "decision:a-durable", "type": "decision", "revision": 1, "projects": ["org-a/ingest"], "vault_ref": null, "title": "Durable acknowledgement store for session catalog ingestion", "provenance": {"source": "fixture:decision:a-durable", "revision": "p1"}},
+      {"id": "arc:a-catalog", "type": "arc", "revision": 1, "projects": ["org-a/ingest"], "vault_ref": null, "title": "Session catalog transcript ingestion rollout", "provenance": {"source": "fixture:arc:a-catalog", "revision": "p1"}},
+      {"id": "lesson:a-replay", "type": "lesson", "revision": 1, "projects": ["org-a/ingest"], "vault_ref": null, "title": "Replay ingestion from the last acknowledgement after a crash", "provenance": {"source": "fixture:lesson:a-replay", "revision": "p1"}}
+    ],
+    "semantic": {"lesson:a-ack": 0.1, "lesson:a-cursor": 0.2, "decision:a-durable": 0.9, "arc:a-catalog": 0.8, "lesson:a-replay": 0.3},
+    "personal": {
+      "brain_id": "personal",
+      "revisions": {
+        "1": {"ranking": "1", "max_items": 2, "edge_budget": 200, "packing": "conservative", "max_tokens": 600, "synthesis_max_tokens": 256, "inference_concurrency": 1, "inference_tokens_per_minute": 2000}
+      }
+    },
+    "swarm": {
+      "brain_id": "swarm",
+      "revisions": {
+        "1": {"ranking": "1", "max_items": 3, "edge_budget": 400, "packing": "conservative", "max_tokens": 1200, "synthesis_max_tokens": 512, "inference_concurrency": 2, "inference_tokens_per_minute": 6000},
+        "2": {"ranking": "2", "max_items": 12, "edge_budget": 2000, "packing": "full", "max_tokens": 4000, "synthesis_max_tokens": 1024, "inference_concurrency": 3, "inference_tokens_per_minute": 12000},
+        "3": {"ranking": "2", "max_items": 12, "edge_budget": 2000, "packing": "full", "max_tokens": 4000, "synthesis_max_tokens": 1024, "inference_concurrency": 6, "inference_tokens_per_minute": 48000}
+      }
+    }
+  },
+  "second": {
+    "project": "team-x/shards",
+    "ceiling": {"concurrency": 2, "tokens_per_minute": 9000},
+    "request": {
+      "task_id": "repair-unit-shard",
+      "task_revision": 5,
+      "intent": "Repair the failing unit shard on the merge group.",
+      "query": "unit shard merge group",
+      "subsystems": ["merge-queue"],
+      "budget": {"max_tokens": 2000, "max_graph_depth": 2, "max_items": 8}
+    },
+    "entities": [
+      {"id": "lesson:x-pin", "type": "lesson", "revision": 1, "projects": ["team-x/shards"], "vault_ref": null, "title": "Pin the unit shard image before the merge group runs", "provenance": {"source": "fixture:lesson:x-pin", "revision": "p1"}},
+      {"id": "lesson:x-split", "type": "lesson", "revision": 1, "projects": ["team-x/shards"], "vault_ref": null, "title": "Split the slowest unit shard by test file weight", "provenance": {"source": "fixture:lesson:x-split", "revision": "p1"}},
+      {"id": "decision:x-queue", "type": "decision", "revision": 1, "projects": ["team-x/shards"], "vault_ref": null, "title": "Merge queue runs one unit shard set per group", "provenance": {"source": "fixture:decision:x-queue", "revision": "p1"}},
+      {"id": "arc:x-shards", "type": "arc", "revision": 1, "projects": ["team-x/shards"], "vault_ref": null, "title": "Unit shard repair on the merge group", "provenance": {"source": "fixture:arc:x-shards", "revision": "p1"}}
+    ],
+    "semantic": {"lesson:x-pin": 0.05, "lesson:x-split": 0.95, "decision:x-queue": 0.6, "arc:x-shards": 0.2},
+    "personal": {
+      "brain_id": "personal",
+      "revisions": {
+        "4": {"ranking": "1", "max_items": 1, "edge_budget": 100, "packing": "conservative", "max_tokens": 400, "synthesis_max_tokens": 128, "inference_concurrency": 1, "inference_tokens_per_minute": 1000}
+      }
+    },
+    "swarm": {
+      "brain_id": "swarm",
+      "revisions": {
+        "1": {"ranking": "1", "max_items": 2, "edge_budget": 300, "packing": "conservative", "max_tokens": 900, "synthesis_max_tokens": 256, "inference_concurrency": 1, "inference_tokens_per_minute": 3000},
+        "2": {"ranking": "2", "max_items": 8, "edge_budget": 2000, "packing": "full", "max_tokens": 2000, "synthesis_max_tokens": 1024, "inference_concurrency": 2, "inference_tokens_per_minute": 8000},
+        "3": {"ranking": "2", "max_items": 8, "edge_budget": 2000, "packing": "full", "max_tokens": 2000, "synthesis_max_tokens": 1024, "inference_concurrency": 2, "inference_tokens_per_minute": 9001}
+      }
+    }
+  }
+}

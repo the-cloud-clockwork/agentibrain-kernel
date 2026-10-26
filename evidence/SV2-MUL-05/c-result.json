@@ -1,0 +1,21 @@
+{
+  "package": "SV2-MUL-05",
+  "tested_commit": "2e0f3fd9e954b329a6ef11ea9ad2e5e9d3fffcca",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40275788145",
+  "verification": "mocked: CI fixtures. brain-api runs in process through the FastAPI test client, restarted per brain by module reload, and in test_a_c_two_running_brains_keep_independent_packs_caches_and_budgets as two separate uvicorn processes, personal and swarm, each with its own vault, graph database, policy document and worker token. The shared limited inference backend is the deployment ceiling (first: 4 concurrent, 16000 tokens per minute; second: 2 and 9000); the gateway is a fake httpx client. No deployed brain or gateway was contacted.",
+  "case": "T-SV2-MUL-05-C",
+  "outcome": "passed",
+  "state": "observed in CI on 3.10, 3.11 and 3.12",
+  "tests": [
+    "test_c_reverting_a_revision_invalidates_only_that_instance_cache[first|second]",
+    "test_c_a_load_begun_under_an_older_revision_is_not_stored[first|second]",
+    "test_a_c_two_running_brains_keep_independent_packs_caches_and_budgets[first|second]"
+  ],
+  "assertions": [
+    "Reverting the swarm revision restores its earlier pack exactly and records one more swarm invalidation; the personal brain running beside it records none.",
+    "A change to another brain's policy document does not invalidate this brain's cache.",
+    "A retrieval begun under the experimental revision that finishes after the revert is not stored; only the result under the restored revision is cached.",
+    "After a restart on the restored revision an identical request replays with the same operation_id and no duplicate effect."
+  ],
+  "durability": "Policy documents and evidence are read only; no vault or graph content is migrated or deleted on revert. Context caches and budget counters are per process and do not survive a restart."
+}

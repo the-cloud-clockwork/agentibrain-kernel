@@ -55,17 +55,26 @@ def test_an_unnamed_brain_answers_default_without_credentials(monkeypatch, vault
     response = _serve(monkeypatch, vault, None).get("/instance")
 
     assert response.status_code == 200
-    assert response.json() == {
+    body = response.json()
+    policy = body.pop("brain_policy")
+    assert body == {
         "schema": "brain-instance-v2",
         "brain_id": "default",
         "policy_revision": 1,
     }
+    assert (policy["brain_id"], policy["revision"], policy["source"]) == (
+        "default",
+        "1",
+        "environment",
+    )
 
 
 def test_a_named_brain_answers_its_name_and_policy_revision(monkeypatch, vault):
     body = _serve(monkeypatch, vault, "swarm", "3").get("/instance").json()
+    policy = body.pop("brain_policy")
 
     assert body == {"schema": "brain-instance-v2", "brain_id": "swarm", "policy_revision": 3}
+    assert (policy["brain_id"], policy["revision"]) == ("swarm", "3")
     assert str(vault) not in str(body)
     assert TEST_BEARER not in str(body)
 

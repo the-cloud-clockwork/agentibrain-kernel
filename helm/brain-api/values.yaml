@@ -75,6 +75,12 @@ tpl:
       # window the tick writes with, so a divergence reads as a real defect.
       BRAIN_LESSON_FEED_MAX: "6"
       BRAIN_STALE_LESSON_DAYS: "14"
+      # Per-brain policy document (mount it with extraVolumes) and this brain's
+      # share of the shared inference backend. A revision whose budget exceeds
+      # either ceiling is refused; empty keeps the environment behavior.
+      BRAIN_POLICY_FILE: ""
+      BRAIN_INFERENCE_CEILING_CONCURRENCY: ""
+      BRAIN_INFERENCE_CEILING_TOKENS_PER_MINUTE: ""
   secrets:
     enabled: true
     external:
