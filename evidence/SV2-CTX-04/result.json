@@ -1,0 +1,64 @@
+{
+  "package": "SV2-CTX-04",
+  "tested_commit": "47072fe97bba67d842ee48a985db93ff342d2cab",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40254063629",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40254063629/job/121352012400",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source; the cache, key, invalidation and retrieval are the production modules.",
+  "dependency": [
+    "SV2-CTX-03"
+  ],
+  "integration_gate": "G6",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/178",
+  "issue": "https://github.com/the-cloud-clockwork/agentibrain-kernel/issues/177",
+  "interfaces": [
+    "POST /v2/context response cache {state, negative, ttl_seconds}",
+    "GET /v2/context/stats context_cache counters",
+    "app.context_cache: ContextCache, Key, negative, digest, enabled",
+    "app.context.cache_key",
+    "GraphStore.knowledge_revision",
+    "scope.grants_version",
+    "BRAIN_CONTEXT_CACHE, BRAIN_CONTEXT_CACHE_TTL_SECONDS, BRAIN_CONTEXT_CACHE_NEGATIVE_TTL_SECONDS, BRAIN_CONTEXT_CACHE_ENTRIES, BRAIN_CONTEXT_CACHE_WAIT_SECONDS"
+  ],
+  "supported_versions": {
+    "context_request": [
+      "2.0"
+    ],
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ]
+  },
+  "state": {
+    "observed": "Every pull request check passes on the tested commit.",
+    "accepted": "The SV2-CTX-04 cases pass in the full brain-api suite on three Python versions; the SV2-CTX-01 to 03 context tests pass unchanged.",
+    "committed": "47072fe97bba67d842ee48a985db93ff342d2cab",
+    "externally_verified": "None; mocked fixture evidence only. G6 rollout must validate deployed behavior."
+  },
+  "red": {
+    "commit": "85b28561a91037186e587b0d9f285bedb3ce6f7e",
+    "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40251495964",
+    "outcome": "failure in CI on 3.10, 3.11 and 3.12: ModuleNotFoundError app.context_cache, no context.cache and no cache field in the response"
+  },
+  "compatibility": "Against the SV2-CTX-03 response every field is unchanged; a ranked response gains a top level cache object and stats gain context_cache. Exact replays keep the SV2-CTX-01 operation semantics.",
+  "cases": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ],
+  "rollback_rehearsal": "BRAIN_CONTEXT_CACHE=false keeps bounded per-request retrieval with cache.state disabled (test_disabled_caching_keeps_bounded_per_request_retrieval). The cache holds copies of retrieval results only; no authoritative object is written or deleted by caching or its rollback. Running the context request in a threadpool is request dispatch, not caching, and stays on under the rollback.",
+  "limitations": [
+    "The cache is per process; separate brain-api replicas do not share entries.",
+    "The knowledge revision is the SQLite data_version of the graph file, so any graph write clears every entry, not only the affected project.",
+    "Grants load at process start; the in-process revocation path is exercised by changing the loaded grants.",
+    "Optional semantic and heat sources are not part of the knowledge revision; positive entries expire after thirty seconds and reduced results after two."
+  ],
+  "measurement": {
+    "context_cache_hit_ratio": {
+      "burst": 0.9607843137254902
+    },
+    "context_coalesced_requests": {
+      "burst": 49
+    }
+  }
+}

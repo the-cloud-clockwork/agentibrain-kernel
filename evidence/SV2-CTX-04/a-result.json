@@ -1,0 +1,36 @@
+{
+  "package": "SV2-CTX-04",
+  "tested_commit": "47072fe97bba67d842ee48a985db93ff342d2cab",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40254063629",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40254063629/job/121352012400",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source; the cache, key, invalidation and retrieval are the production modules.",
+  "case": "T-SV2-CTX-04-A",
+  "outcome": "passed",
+  "tests": [
+    "test_a_a_launch_burst_shares_one_retrieval_while_another_project_stays_independent[first]",
+    "test_a_a_launch_burst_shares_one_retrieval_while_another_project_stays_independent[second]",
+    "test_a_every_key_field_separates_cached_results"
+  ],
+  "assertions": [
+    "Fifty equivalent authorized requests with distinct execution and request ids run concurrently: one retrieval, one miss and forty nine coalesced responses with equal context.",
+    "A request for another project with the same basename runs its own retrieval during the burst and returns only that project's entities.",
+    "context_cache_hit_ratio is 49/51 and context_coalesced_requests is 49 after the burst; a later request is a hit with no new retrieval.",
+    "Every response carries authority recalled_evidence and the caller's project scope; the graph store snapshot is unchanged.",
+    "Changing any one of the ten key fields alone, brain included, produces a separate load.",
+    "The second fixture repeats every assertion independently."
+  ],
+  "measurement": {
+    "context_coalesced_requests": {
+      "first": 49,
+      "second": 49
+    },
+    "context_cache_hit_ratio": {
+      "first": 0.9607843137254902,
+      "second": 0.9607843137254902
+    },
+    "retrievals": {
+      "burst_project": 1,
+      "other_project": 1
+    }
+  }
+}

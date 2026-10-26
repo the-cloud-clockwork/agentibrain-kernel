@@ -879,7 +879,8 @@ async def post_context(
         raise HTTPException(status_code=503, detail="task-context requests are disabled")
     body = await context.read_bounded(request.stream())
     token = _bearer(authorization)
-    return context.accept(
+    return await run_in_threadpool(
+        context.accept,
         body,
         _caller_grant(authorization),
         frozenset() if token in KB_ROUTER_TOKENS else scope.role_grant(token),
@@ -893,7 +894,10 @@ async def post_context(
 
 @app.get("/v2/context/stats")
 def get_context_stats(_: None = Depends(require_router_token)) -> dict:
-    return {"context_request_validation_failures": context.failures()}
+    return {
+        "context_request_validation_failures": context.failures(),
+        "context_cache": context.cache.stats(),
+    }
 
 
 @app.get("/graph/stats")

@@ -18,7 +18,7 @@ from typing import Annotated, Literal
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import graph, scope
+from . import context_cache, graph, scope
 from .retrieval import packing, rank
 
 SCHEMA_VERSION = "2.0"
@@ -67,6 +67,7 @@ _latest: OrderedDict[tuple[str, str, str], int] = OrderedDict()
 _lock = threading.Lock()
 semantic_source: rank.Source | None = None
 heat_source: rank.Source | None = None
+cache = context_cache.ContextCache()
 
 
 def enabled() -> bool:
@@ -138,11 +139,51 @@ def operation_id(request: ContextRequest, trusted: dict) -> str:
     return "ctxop-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
+def cache_key(
+    request: ContextRequest,
+    trusted: dict,
+    grant: frozenset[str],
+    lanes: frozenset[str],
+    identity: dict,
+    knowledge: str,
+) -> context_cache.Key:
+    retrieval = request.model_dump(include={"intent", "query", "errors", "subsystems", "budget"})
+    return context_cache.Key(
+        brain_id=trusted["brain_id"],
+        project_id=request.project_id,
+        task_id=request.task_id,
+        task_revision=request.task_revision,
+        lane=request.lane,
+        purpose=request.purpose,
+        retrieval=context_cache.digest(retrieval),
+        policy=context_cache.digest({**identity, "scope_policy": scope.POLICY_REVISION}),
+        grant=context_cache.digest({"projects": grant, "lanes": lanes}),
+        knowledge=knowledge,
+    )
+
+
+def _knowledge(store: graph.GraphStore | None) -> str:
+    return "none" if store is None else str(store.knowledge_revision())
+
+
+def _epoch(store: graph.GraphStore | None) -> tuple:
+    return (scope.grants_version(), scope.POLICY_REVISION, _knowledge(store))
+
+
+def _shared(key_of: Callable[[str], context_cache.Key], store, load: Callable[[], dict]) -> dict:
+    if not context_cache.enabled():
+        value = load()
+        meta = {"state": "disabled", "negative": context_cache.negative(value), "ttl_seconds": 0}
+        return {"context": value, "cache": meta}
+    value, meta = cache.get(key_of(_knowledge(store)), lambda: _epoch(store), load)
+    return {"context": value, "cache": meta}
+
+
 def _admit(
     request: ContextRequest,
     trusted: dict,
     operation: str,
-    ranked: Callable[[], dict | None] = lambda: None,
+    ranked: Callable[[], dict] = dict,
 ) -> dict:
     task = (trusted["brain_id"], request.project_id, request.task_id)
     with _lock:
@@ -169,9 +210,7 @@ def _admit(
         "authority": "recalled_evidence",
         "replayed": False,
     }
-    selected = ranked()
-    if selected is not None:
-        response["context"] = selected
+    response.update(ranked())
     with _lock:
         _accepted[operation] = response
         while len(_accepted) > ACCEPTED_KEPT:
@@ -184,6 +223,9 @@ def accept(
 ) -> dict:
     if not scope.BRAIN_ID:
         raise HTTPException(status_code=503, detail="BRAIN_ID is not configured")
+    store = graph.active_store()
+    if context_cache.enabled():
+        cache.observe(_epoch(store))
     request = _parse(body)
     if request.brain_id != scope.BRAIN_ID:
         deny()
@@ -208,19 +250,23 @@ def accept(
         request,
         trusted,
         operation_id(request, identity),
-        lambda: packing.pack(
-            rank.retrieve(
-                graph.active_store(),
-                request.project_id,
-                rank.Task(
-                    f"{request.intent} {request.query}",
-                    (*request.subsystems, *request.errors),
-                    request.budget.max_items,
+        lambda: _shared(
+            lambda knowledge: cache_key(request, trusted, grant, lanes, identity, knowledge),
+            store,
+            lambda: packing.pack(
+                rank.retrieve(
+                    store,
+                    request.project_id,
+                    rank.Task(
+                        f"{request.intent} {request.query}",
+                        (*request.subsystems, *request.errors),
+                        request.budget.max_items,
+                    ),
+                    active,
+                    rank.Sources(semantic_source, heat_source),
                 ),
-                active,
-                rank.Sources(semantic_source, heat_source),
+                request.budget.max_tokens,
+                conservative,
             ),
-            request.budget.max_tokens,
-            conservative,
         ),
     )

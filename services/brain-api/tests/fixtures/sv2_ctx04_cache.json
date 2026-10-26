@@ -1,0 +1,194 @@
+{
+  "first": {
+    "projects": [
+      "org-a/ingest",
+      "org-b/ingest",
+      "org-c/ingest"
+    ],
+    "burst": 50,
+    "request": {
+      "task_id": "implement-session-ingestion",
+      "task_revision": 3,
+      "intent": "Implement incremental transcript ingestion with durable acknowledgements.",
+      "query": "transcript ingestion acknowledgement",
+      "subsystems": [
+        "session-catalog"
+      ],
+      "budget": {
+        "max_tokens": 3000,
+        "max_graph_depth": 2,
+        "max_items": 12
+      }
+    },
+    "entities": [
+      {
+        "id": "lesson:a-ack",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "org-a/ingest"
+        ],
+        "vault_ref": null,
+        "title": "Acknowledge transcript ingestion only after the commit lands",
+        "provenance": {
+          "source": "fixture:lesson:a-ack",
+          "revision": "p1"
+        }
+      },
+      {
+        "id": "decision:a-ack",
+        "type": "decision",
+        "revision": 1,
+        "projects": [
+          "org-a/ingest"
+        ],
+        "vault_ref": null,
+        "title": "Transcript ingestion acknowledgement is sent once per batch",
+        "provenance": {
+          "source": "fixture:decision:a-ack",
+          "revision": "p1"
+        }
+      },
+      {
+        "id": "lesson:b-ack",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "org-b/ingest"
+        ],
+        "vault_ref": null,
+        "title": "Acknowledge transcript ingestion only after the commit lands",
+        "provenance": {
+          "source": "fixture:lesson:b-ack",
+          "revision": "p1"
+        }
+      },
+      {
+        "id": "decision:b-ack",
+        "type": "decision",
+        "revision": 1,
+        "projects": [
+          "org-b/ingest"
+        ],
+        "vault_ref": null,
+        "title": "Transcript ingestion acknowledgement is sent once per batch",
+        "provenance": {
+          "source": "fixture:decision:b-ack",
+          "revision": "p1"
+        }
+      }
+    ],
+    "relations": [],
+    "update": {
+      "id": "decision:a-ack",
+      "type": "decision",
+      "revision": 2,
+      "projects": [
+        "org-a/ingest"
+      ],
+      "vault_ref": null,
+      "title": "Transcript ingestion acknowledgement is sent once per event",
+      "provenance": {
+        "source": "fixture:decision:a-ack",
+        "revision": "p2"
+      }
+    },
+    "stale_title": "Transcript ingestion acknowledgement is sent once per batch"
+  },
+  "second": {
+    "projects": [
+      "team-x/shards",
+      "team-y/shards",
+      "team-z/shards"
+    ],
+    "burst": 50,
+    "request": {
+      "task_id": "repair-unit-shard",
+      "task_revision": 5,
+      "intent": "Repair the failing unit shard on the merge group.",
+      "query": "unit shard merge group",
+      "subsystems": [
+        "merge-queue"
+      ],
+      "budget": {
+        "max_tokens": 2000,
+        "max_graph_depth": 2,
+        "max_items": 8
+      }
+    },
+    "entities": [
+      {
+        "id": "lesson:a-shard",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "team-x/shards"
+        ],
+        "vault_ref": null,
+        "title": "Pin the unit shard image before the merge group runs",
+        "provenance": {
+          "source": "fixture:lesson:a-shard",
+          "revision": "p1"
+        }
+      },
+      {
+        "id": "decision:a-shard",
+        "type": "decision",
+        "revision": 1,
+        "projects": [
+          "team-x/shards"
+        ],
+        "vault_ref": null,
+        "title": "A failing unit shard on the merge group is retried once",
+        "provenance": {
+          "source": "fixture:decision:a-shard",
+          "revision": "p1"
+        }
+      },
+      {
+        "id": "lesson:b-shard",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "team-y/shards"
+        ],
+        "vault_ref": null,
+        "title": "Pin the unit shard image before the merge group runs",
+        "provenance": {
+          "source": "fixture:lesson:b-shard",
+          "revision": "p1"
+        }
+      },
+      {
+        "id": "decision:b-shard",
+        "type": "decision",
+        "revision": 1,
+        "projects": [
+          "team-y/shards"
+        ],
+        "vault_ref": null,
+        "title": "A failing unit shard on the merge group is retried once",
+        "provenance": {
+          "source": "fixture:decision:b-shard",
+          "revision": "p1"
+        }
+      }
+    ],
+    "relations": [],
+    "update": {
+      "id": "decision:a-shard",
+      "type": "decision",
+      "revision": 2,
+      "projects": [
+        "team-x/shards"
+      ],
+      "vault_ref": null,
+      "title": "A failing unit shard on the merge group is never retried",
+      "provenance": {
+        "source": "fixture:decision:a-shard",
+        "revision": "p2"
+      }
+    },
+    "stale_title": "A failing unit shard on the merge group is retried once"
+  }
+}

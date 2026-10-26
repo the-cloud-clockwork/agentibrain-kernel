@@ -1,0 +1,27 @@
+{
+  "package": "SV2-CTX-04",
+  "tested_commit": "47072fe97bba67d842ee48a985db93ff342d2cab",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40254063629",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40254063629/job/121352012400",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source; the cache, key, invalidation and retrieval are the production modules.",
+  "case": "T-SV2-CTX-04-B",
+  "outcome": "passed",
+  "tests": [
+    "test_b_an_equal_query_in_a_project_with_the_same_basename_is_retrieved_separately[first]",
+    "test_b_an_equal_query_in_a_project_with_the_same_basename_is_retrieved_separately[second]",
+    "test_b_an_equal_query_to_two_brains_returns_each_brain_its_own_context[first]",
+    "test_b_an_equal_query_to_two_brains_returns_each_brain_its_own_context[second]",
+    "test_b_another_brain_and_an_ungranted_project_are_refused_before_any_cached_read[first]",
+    "test_b_another_brain_and_an_ungranted_project_are_refused_before_any_cached_read[second]"
+  ],
+  "assertions": [
+    "An equal query in two projects sharing a basename is two misses and two retrievals, each returning only its own project's entities.",
+    "An equal query sent to a second brain instance returns that brain's own context, scoped to that brain; the first brain's cached context carries none of it.",
+    "A token of another brain, a request naming another brain and a token outside the project grant are refused with 403 and reveal no cached titles.",
+    "The refused requests leave the graph snapshot, the accepted operations and the cache counters unchanged.",
+    "A corrected request under a valid grant is a new miss; a different grant never shares a cached result."
+  ],
+  "measurement": {
+    "context_cache_requests_on_refusal": 0
+  }
+}
