@@ -1,0 +1,29 @@
+{
+  "package": "SV2-MUL-05",
+  "tested_commit": "2e0f3fd9e954b329a6ef11ea9ad2e5e9d3fffcca",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40275788145",
+  "verification": "mocked: CI fixtures. brain-api runs in process through the FastAPI test client, restarted per brain by module reload, and in test_a_c_two_running_brains_keep_independent_packs_caches_and_budgets as two separate uvicorn processes, personal and swarm, each with its own vault, graph database, policy document and worker token. The shared limited inference backend is the deployment ceiling (first: 4 concurrent, 16000 tokens per minute; second: 2 and 9000); the gateway is a fake httpx client. No deployed brain or gateway was contacted.",
+  "input_hashes": {
+    "services/brain-api/tests/fixtures/sv2_mul05_policy.json": "bc8649abb960c61449adb18c86c159cfb28e476157dd5530209b5323f8cb2479",
+    "services/brain-api/tests/test_brain_policy.py": "88497daeb5d26ee208f702f26cf550277bdaf178ee58ec3844f3162649ad003c"
+  },
+  "fixture_dimensions": {
+    "brains": [
+      "personal",
+      "swarm"
+    ],
+    "personal_policy": "conservative: ranking 1, conservative packing, 1 to 2 items, 1 concurrent, 1000 to 2000 tokens per minute",
+    "swarm_policy": "revision 1 steady, revision 2 experimental (ranking 2, full packing, up to 12 items, 2 to 3 concurrent, 8000 to 12000 tokens per minute), revision 3 above the ceiling",
+    "shared_backend_ceiling": {
+      "first": {
+        "concurrency": 4,
+        "tokens_per_minute": 16000
+      },
+      "second": {
+        "concurrency": 2,
+        "tokens_per_minute": 9000
+      }
+    }
+  },
+  "source_material": "Scratch tmp vaults, graph databases and policy documents per test; no operator config, vault or credential."
+}

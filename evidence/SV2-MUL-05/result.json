@@ -1,0 +1,84 @@
+{
+  "package": "SV2-MUL-05",
+  "tested_commit": "2e0f3fd9e954b329a6ef11ea9ad2e5e9d3fffcca",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40275788145",
+  "verification": "mocked: CI fixtures. brain-api runs in process through the FastAPI test client, restarted per brain by module reload, and in test_a_c_two_running_brains_keep_independent_packs_caches_and_budgets as two separate uvicorn processes, personal and swarm, each with its own vault, graph database, policy document and worker token. The shared limited inference backend is the deployment ceiling (first: 4 concurrent, 16000 tokens per minute; second: 2 and 9000); the gateway is a fake httpx client. No deployed brain or gateway was contacted.",
+  "issue": "https://github.com/the-cloud-clockwork/agentibrain-kernel/issues/181",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/182",
+  "dependency": [
+    "SV2-MUL-04"
+  ],
+  "integration_gate": "G7",
+  "interfaces": [
+    "BRAIN_POLICY_FILE policy document {brain_id, revisions{ranking, max_items, edge_budget, packing, max_tokens, synthesis_max_tokens, inference_concurrency, inference_tokens_per_minute}}",
+    "BRAIN_POLICY_REVISION selects the served revision",
+    "BRAIN_INFERENCE_CEILING_CONCURRENCY, BRAIN_INFERENCE_CEILING_TOKENS_PER_MINUTE",
+    "POST /v2/context brain_policy {brain_id, revision, source, digest}; 503 policy_refused with refusal reason",
+    "GET /v2/context/stats brain_policy {active, refusal, ceiling, refusals} and brain_inference_budget_usage",
+    "GET /instance brain_policy {brain_id, revision, source}",
+    "app.brain_policy: active, ceiling, reserve, InferenceBudget, diagnostics, public, usage",
+    "rank.retrieve edge_budget"
+  ],
+  "supported_versions": {
+    "context_request": [
+      "2.0"
+    ],
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ]
+  },
+  "state": {
+    "observed": "Every pull request check passed on the tested commit.",
+    "accepted": "The SV2-MUL-05 cases pass in the full brain-api suite (426 passed) on three Python versions; earlier context and instance tests pass.",
+    "committed": "2e0f3fd9e954b329a6ef11ea9ad2e5e9d3fffcca",
+    "externally_verified": "None; mocked fixture evidence only. G7 rollout must validate deployed behavior."
+  },
+  "red": {
+    "commit": "718d5839ecdb5ac1f1447010072b237edf4620b4",
+    "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40274084617",
+    "outcome": "failure in CI on 3.10, 3.11 and 3.12: 17 failed, ModuleNotFoundError app.brain_policy"
+  },
+  "implementation_steps": {
+    "1 versioned policies per brain": "delivered in brain-api: retrieval (ranking, items), graph (edge budget), injection (packing, tokens) and synthesis (tokens per call) per revision",
+    "2 separate concurrency and token budgets": "delivered: inference_concurrency and inference_tokens_per_minute enforced separately",
+    "3 shared inference behind scoped keys and limits": "not verified in this repo: each brain holds its own INFERENCE_API_KEY and the gateway is expected to enforce that key's limits; brain-api enforces only its own brain's budget under the declared ceiling",
+    "4 policy revision in packs and diagnostics": "delivered"
+  },
+  "compatibility": "Without BRAIN_POLICY_FILE every context field is unchanged and brain_policy reports source environment; ranking and packing still follow BRAIN_RANKING_POLICY and BRAIN_CONTEXT_PACKING. /instance gains brain_policy; existing fields unchanged.",
+  "cases": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ],
+  "rollback_rehearsal": "test_c_reverting_a_revision_invalidates_only_that_instance_cache restores the previous revision and its earlier pack exactly without touching vault or graph content; removing BRAIN_POLICY_FILE returns to the environment behavior (test_without_a_policy_file_the_environment_behavior_is_kept).",
+  "limitations": [
+    "Budgets and caches are per brain-api process; replicas of one brain do not share a budget.",
+    "The sum of brains' ceilings against the shared backend is not enforced in this repo; it depends on gateway key limits.",
+    "brain-ops tick synthesis keeps BRAIN_LLM_MAX_TOKENS and is not yet under the policy budget.",
+    "A refused classification call falls back to regex classification; it is visible only in budget usage counters.",
+    "The two-process fixture does not drive an inference call, so cross-brain budget isolation rests on per-process budgets.",
+    "The policy document is read on every request."
+  ],
+  "measurement": {
+    "brain_inference_budget_usage": {
+      "first_swarm_revision_2": {
+        "concurrency_limit": 3,
+        "tokens_per_minute_limit": 12000,
+        "granted": 11,
+        "tokens_reserved_window": 11264,
+        "refused_concurrency": 1,
+        "refused_tokens": 1
+      },
+      "second_swarm_revision_2": {
+        "concurrency_limit": 2,
+        "tokens_per_minute_limit": 8000,
+        "granted": 7,
+        "tokens_reserved_window": 7168,
+        "refused_concurrency": 1,
+        "refused_tokens": 1
+      }
+    }
+  }
+}
