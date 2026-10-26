@@ -97,6 +97,9 @@ def test_a_swarm_policy_change_affects_only_swarm_packs(monkeypatch, vault, tmp_
     steady = _pack(_ask(swarm, fixture, "swarm"))
     swarm, _ = _instance(monkeypatch, tmp_path, fixture, "swarm", "2", swarm_file)
     tuned = _pack(_ask(swarm, fixture, "swarm"))
+    public = {k: tuned["brain_policy"][k] for k in ("brain_id", "revision", "source")}
+    assert swarm.get("/instance").json()["brain_policy"] == public
+    assert _stats(swarm)["brain_policy"]["active"] == tuned["brain_policy"]
 
     personal, _ = _instance(monkeypatch, tmp_path, fixture, "personal", personal_revision)
     after = _pack(_ask(personal, fixture, "personal"))
@@ -124,9 +127,6 @@ def test_a_swarm_policy_change_affects_only_swarm_packs(monkeypatch, vault, tmp_
     assert tuned["context"]["pack"]["degraded"] is None
     assert len(tuned["context"]["items"]) > len(steady["context"]["items"])
     assert len(steady["context"]["items"]) <= fixture["swarm"]["revisions"]["1"]["max_items"]
-    public = {k: tuned["brain_policy"][k] for k in ("brain_id", "revision", "source")}
-    assert swarm.get("/instance").json()["brain_policy"] == public
-    assert _stats(swarm)["brain_policy"]["active"] == tuned["brain_policy"]
 
 
 @pytest.mark.parametrize("name", SETS)
@@ -332,13 +332,13 @@ def test_c_reverting_a_revision_invalidates_only_that_instance_cache(
     steady = _pack(_ask(swarm, fixture, "swarm"))
     swarm, _ = _instance(monkeypatch, tmp_path, fixture, "swarm", "2", swarm_file)
     tuned = _pack(_ask(swarm, fixture, "swarm"))
-    assert _pack(_ask(swarm, fixture, "swarm"))["context"] == tuned["context"]
+    assert _pack(_ask(swarm, fixture, "swarm", 2))["context"] == tuned["context"]
     assert _stats(swarm)["context_cache"]["context_cache_hits"] == 1
 
     other = copy.deepcopy(fixture["personal"])
     next(iter(other["revisions"].values()))["max_items"] = 50
     _write(personal_file, other)
-    _ask(swarm, fixture, "swarm")
+    _ask(swarm, fixture, "swarm", 3)
     cache = _stats(swarm)["context_cache"]
     assert cache["context_cache_invalidations"] == 0
     assert cache["context_cache_hits"] == 2
@@ -346,7 +346,7 @@ def test_c_reverting_a_revision_invalidates_only_that_instance_cache(
     reverted = copy.deepcopy(fixture["swarm"])
     reverted["revisions"]["2"] = reverted["revisions"]["1"]
     _write(swarm_file, reverted)
-    restored = _pack(_ask(swarm, fixture, "swarm"))
+    restored = _pack(_ask(swarm, fixture, "swarm", 4))
     cache = _stats(swarm)["context_cache"]
     assert cache["context_cache_invalidations"] == 1
     assert cache["context_cache_misses"] == 2
