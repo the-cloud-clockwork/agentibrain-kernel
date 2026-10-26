@@ -250,6 +250,7 @@ def test_up_refuses_a_brain_sharing_another_brains_principal(monkeypatch):
 def test_up_fails_when_migrations_find_another_brains_database(monkeypatch):
     root = _install("swarm", _vault("swarm"), _env("swarm", "brain_swarm"))
     monkeypatch.setattr(bootstrap, "find_deployment", lambda *a, **kw: ("home", root))
+    monkeypatch.setattr(bootstrap, "instance_conflicts", lambda settings: [])
     monkeypatch.setattr(
         bootstrap, "compose_up", lambda settings: subprocess.CompletedProcess([], 0, "", "")
     )
