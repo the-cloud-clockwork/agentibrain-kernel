@@ -1,0 +1,40 @@
+{
+  "package": "SV2-MUL-04",
+  "tested_commit": "f9a7448f22ee2850857549f302c7cdfae9aca367",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40250294779",
+  "verification": "CI fixtures: two named brains, personal and swarm, holding an arc with the same key and the same project. Embeddings cases run against the CI pgvector server with two login principals mul04_personal and mul04_swarm, each owning one schema. Vaults are distinct scratch directories under a fake HOME. Redis is a dict backed fake in brain-ops tests (mocked); CLI compose and docker calls are faked. No deployed brain was contacted.",
+  "test_source_hashes": {
+    "tests/unit/test_backend_scope.py": "ef05a0fbedcedf32437b3098f05fa29c1f22624c002f5fa1c5edb7cf54805f45",
+    "tests/unit/test_migration_identity.py": "c307a799437232cf8f1606e48452d0b3ca3b45036be9bfd82a6d6b276b83ef4e",
+    "services/brain-ops/tests/test_instance_scope.py": "9d5cafd7300e14ccec4ca4f3a3e66e1a84952f862799a0f811dc687a3f02e51b",
+    "services/brain-api/tests/test_vault_claim.py": "4b9b5d85137c6d3ee0ba15ae6fc2c6c15f27780b8260b16b85737fa0944f215b",
+    "services/embeddings/tests/test_instance_claim.py": "ccfe86956d9c8951c4f8639d8f46134252aeaadfb31de1d38460fddcedb265fc",
+    "tests/conftest.py": "0619bb9002c260b15aab22425819da92696ad5a59f2d06e52fd97d4c72ed770e"
+  },
+  "fixture_dimensions": {
+    "brains": [
+      "personal",
+      "swarm",
+      "default"
+    ],
+    "shared_database_server": "CI pgvector service; principals mul04_personal and mul04_swarm, schemas of the same names, search_path set per DSN",
+    "overlap": {
+      "arc_key": "arcs/2026-10-26-shared-arc.md",
+      "project": "github.com/org/app"
+    },
+    "misbinding_cases": [
+      "shared vault",
+      "vault nested in another brain's vault",
+      "shared principal",
+      "shared schema",
+      "principal granted read on another brain's schema",
+      "shared event stream",
+      "foreign backup",
+      "backup without identity",
+      "migrations on another brain's database",
+      "tick on another brain's vault",
+      "brain-api on another brain's vault"
+    ]
+  },
+  "source_material": "Scratch HOME and tmp vaults per test; fixture roles and schemas dropped after each embeddings test; no operator config, vault or credential."
+}
