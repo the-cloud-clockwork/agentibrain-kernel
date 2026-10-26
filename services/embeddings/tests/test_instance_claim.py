@@ -16,8 +16,8 @@ import secrets
 import pytest
 
 psycopg = pytest.importorskip("psycopg")
-from psycopg import sql  # noqa: E402
-from psycopg.conninfo import conninfo_to_dict, make_conninfo  # noqa: E402
+sql = pytest.importorskip("psycopg.sql")
+conninfo = pytest.importorskip("psycopg.conninfo")
 
 DSN = os.environ.get("EMBED_TEST_POSTGRES_URL", "")
 BRAINS = ("personal", "swarm")
@@ -35,9 +35,9 @@ def _principal(brain: str) -> str:
 
 
 def _dsn(principal: str, schema: str) -> str:
-    base = conninfo_to_dict(DSN)
+    base = conninfo.conninfo_to_dict(DSN)
     base.update(user=principal, password=LOGIN, options=f"-csearch_path={schema},public")
-    return make_conninfo("", **base)
+    return conninfo.make_conninfo("", **base)
 
 
 def _admin(*statements: sql.Composable) -> None:
