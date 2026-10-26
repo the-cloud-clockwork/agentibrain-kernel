@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import subprocess
 import tarfile
 from pathlib import Path
 
@@ -244,3 +245,24 @@ def test_up_refuses_a_brain_sharing_another_brains_principal(monkeypatch):
     assert started == []
     assert "brain_backend_scope_conflicts kind=principal count=1" in result.output
     assert not (Path.home() / "swarm-vault" / backends.VAULT_CLAIM).exists()
+
+
+def test_up_fails_when_migrations_find_another_brains_database(monkeypatch):
+    root = _install("swarm", _vault("swarm"), _env("swarm", "brain_swarm"))
+    monkeypatch.setattr(bootstrap, "find_deployment", lambda *a, **kw: ("home", root))
+    monkeypatch.setattr(
+        bootstrap, "compose_up", lambda settings: subprocess.CompletedProcess([], 0, "", "")
+    )
+    monkeypatch.setattr(
+        bootstrap,
+        "run_migrations",
+        lambda settings: [
+            "✓ 004_brain_instance.sql",
+            "✗ database belongs to brain personal, not swarm",
+        ],
+    )
+
+    result = CliRunner().invoke(cli.main, ["--instance", "swarm", "up"])
+
+    assert result.exit_code == 1, result.output
+    assert "brain_backend_scope_conflicts kind=schema count=1" in result.output

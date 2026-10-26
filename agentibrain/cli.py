@@ -200,6 +200,15 @@ def _refuse_shared_backends(settings: BrainSettings) -> None:
         sys.exit(1)
 
 
+def _migrate(settings: BrainSettings, indent: str) -> None:
+    lines = bootstrap.run_migrations(settings)
+    for line in lines:
+        console.print(f"{indent}{line}")
+    if any(line.startswith("✗ database belongs") for line in lines):
+        console.print("brain_backend_scope_conflicts kind=schema count=1")
+        sys.exit(1)
+
+
 def _root_compose_command(settings: BrainSettings, args: list[str]) -> list[str]:
     if settings.ollama:
         return ["-f", "compose.yml", "-f", "local/compose.ollama.yml", *args]
@@ -223,8 +232,7 @@ def up_cmd(dry_run: bool) -> None:
             sys.exit(proc.returncode)
         console.print(proc.stdout or "[green]compose up ok[/green]")
         console.print("\nRunning migrations…")
-        for line in bootstrap.run_migrations(settings):
-            console.print(f"  {line}")
+        _migrate(settings, "  ")
         return
     console.print(f"[bold]starting[/bold] ({mode} @ {compose_dir})")
     rc = bootstrap.compose_stream(_root_compose_command(settings, ["up", "-d"]), compose_dir)
@@ -1250,8 +1258,7 @@ def _start_stack(settings: BrainSettings) -> None:
         if proc.returncode != 0:
             console.print(f"  [red]✗ compose up failed[/red]\n{proc.stderr}")
             sys.exit(proc.returncode)
-        for line in bootstrap.run_migrations(settings):
-            console.print(f"  {line}")
+        _migrate(settings, "  ")
     else:
         rc = bootstrap.compose_stream(_root_compose_command(settings, ["up", "-d"]), compose_dir)
         if rc != 0:
