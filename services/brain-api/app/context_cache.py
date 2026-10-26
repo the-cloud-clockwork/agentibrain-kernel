@@ -7,6 +7,7 @@ and a load that began before such a change is never stored.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -46,10 +47,8 @@ class Key:
 
 
 def negative(context: dict) -> bool:
-    """An empty or reduced result: nothing ranked, or a source failed or was cut short."""
-    return bool(context.get("reduced")) or not (
-        context["items"] or context.get("pack", {}).get("omitted")
-    )
+    """An empty or reduced result: no items, or a source failed or was cut short."""
+    return bool(context.get("reduced")) or not context["items"]
 
 
 @dataclass
@@ -94,7 +93,7 @@ class ContextCache:
         ttl = NEGATIVE_TTL_SECONDS if entry.negative else TTL_SECONDS
         return {"state": state, "negative": entry.negative, "ttl_seconds": ttl}
 
-    def _join(self, key: Key, epoch: object) -> tuple[_Entry | None, _Flight, bool]:
+    def _join(self, key: Key, epoch: object) -> tuple[_Entry | None, _Flight | None, bool]:
         with self._lock:
             self._counts["requests"] += 1
             self._observe(epoch)
@@ -102,7 +101,7 @@ class ContextCache:
             if entry is not None and entry.expires > self.clock():
                 self._entries.move_to_end(key)
                 self._counts["hits"] += 1
-                return entry, _Flight(self._generation), False
+                return entry, None, False
             self._entries.pop(key, None)
             flight = self._flights.get(key)
             if flight is not None:
@@ -135,13 +134,13 @@ class ContextCache:
         """Return the context for key and how it was served: hit, coalesced, miss or bypass."""
         cached, flight, leader = self._join(key, epoch())
         if cached is not None:
-            return cached.value, self._meta("hit", cached)
+            return copy.deepcopy(cached.value), self._meta("hit", cached)
         if not leader:
             flight.done.wait(FOLLOWER_WAIT_SECONDS)
             with self._lock:
                 current = flight.generation == self._generation
             if flight.entry is not None and current:
-                return flight.entry.value, self._meta("coalesced", flight.entry)
+                return copy.deepcopy(flight.entry.value), self._meta("coalesced", flight.entry)
             value = load()
             return value, self._meta("bypass", _Entry(value, 0.0, negative(value)))
         try:
@@ -151,7 +150,7 @@ class ContextCache:
             raise
         is_negative = negative(value)
         ttl = NEGATIVE_TTL_SECONDS if is_negative else TTL_SECONDS
-        entry = _Entry(value, self.clock() + ttl, is_negative)
+        entry = _Entry(copy.deepcopy(value), self.clock() + ttl, is_negative)
         self._store(key, flight, entry, epoch())
         flight.entry = entry
         flight.done.set()

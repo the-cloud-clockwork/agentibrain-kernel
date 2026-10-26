@@ -11,9 +11,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from .test_context_request import _post, _request
-from .test_graph import ROUTER, _auth, _client
+from .test_graph import _MODULES, ROUTER, _auth, _client
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "sv2_ctx04_cache.json").read_text())
 SETS = ["first", "second"]
@@ -42,10 +43,24 @@ def _context(monkeypatch, vault, tmp_path, name, **env):
         monkeypatch.setenv(key, value)
     client = _client(monkeypatch, vault, db, _tokens(fixture))
     store = _loaded(db, fixture)
+    return client, store, fixture, _sources(monkeypatch)
+
+
+def _sources(monkeypatch, semantic=None):
     ctx = importlib.import_module("app.context")
-    monkeypatch.setattr(ctx, "semantic_source", lambda _q, ids: {i: 0.0 for i in ids})
+    monkeypatch.setattr(ctx, "semantic_source", semantic or (lambda _q, ids: {i: 0.0 for i in ids}))
     monkeypatch.setattr(ctx, "heat_source", None)
-    return client, store, fixture, ctx
+    return ctx
+
+
+def _brain(monkeypatch, brain: str, db: Path):
+    monkeypatch.setenv("BRAIN_ID", brain)
+    monkeypatch.setenv("BRAIN_GRAPH_DB", str(db))
+    for name in _MODULES:
+        importlib.reload(importlib.import_module(name))
+    from app.main import app
+
+    return TestClient(app), _sources(monkeypatch)
 
 
 def _counting(monkeypatch, hold=None):
@@ -111,6 +126,7 @@ def test_a_a_launch_burst_shares_one_retrieval_while_another_project_stays_indep
             )
         )
 
+    monkeypatch.setattr(_cache_module(), "FOLLOWER_WAIT_SECONDS", 60.0)
     calls = _counting(monkeypatch, hold)
     before = store.snapshot()
     with ThreadPoolExecutor(burst) as pool:
@@ -217,6 +233,31 @@ def test_b_an_equal_query_in_a_project_with_the_same_basename_is_retrieved_separ
 
 
 @pytest.mark.parametrize("name", SETS)
+def test_b_an_equal_query_to_two_brains_returns_each_brain_its_own_context(
+    monkeypatch, vault, tmp_path, name
+):
+    client, _, fixture, _ = _context(monkeypatch, vault, tmp_path, name)
+    first = fixture["projects"][0]
+    a = _ask(client, fixture, first, 1).json()
+    other = copy.deepcopy(fixture)
+    for entity in other["entities"]:
+        entity["title"] = f"{entity['title']} in brain b"
+    _loaded(tmp_path / f"{name}-b.db", other)
+    client_b, _ = _brain(monkeypatch, "hive-b", tmp_path / f"{name}-b.db")
+    calls = _counting(monkeypatch)
+    b = _ask(client_b, fixture, first, 1, token="other", brain_id="hive-b")
+    assert b.status_code == 200, b.text
+    assert b.json()["cache"]["state"] == "miss"
+    assert b.json()["scope"] == {"brain_id": "hive-b", "project_ids": [first]}
+    titles_b = [i["title"] for i in b.json()["context"]["items"]]
+    assert titles_b and all(t.endswith(" in brain b") for t in titles_b)
+    assert not any(i["title"].endswith(" in brain b") for i in a["context"]["items"])
+    again = _ask(client_b, fixture, first, 2, token="other", brain_id="hive-b").json()
+    assert again["cache"]["state"] == "hit" and again["context"] == b.json()["context"]
+    assert calls == {first: 1}
+
+
+@pytest.mark.parametrize("name", SETS)
 def test_b_another_brain_and_an_ungranted_project_are_refused_before_any_cached_read(
     monkeypatch, vault, tmp_path, name
 ):
@@ -244,8 +285,8 @@ def test_b_another_brain_and_an_ungranted_project_are_refused_before_any_cached_
 
     corrected = _ask(client, fixture, second, 5, token="solo").json()
     assert corrected["cache"]["state"] == "miss"
-    shared = _ask(client, fixture, second, 6).json()
-    assert shared["cache"]["state"] == "miss"
+    burst_grant = _ask(client, fixture, second, 6).json()
+    assert burst_grant["cache"]["state"] == "miss"
     assert calls == {first: 1, second: 2}
 
 
@@ -330,14 +371,12 @@ def test_c_a_load_that_began_before_a_decision_update_is_never_stored(
 def test_c_a_restarted_process_starts_empty_and_serves_the_same_context(
     monkeypatch, vault, tmp_path, name
 ):
-    client, store, fixture, ctx = _context(monkeypatch, vault, tmp_path, name)
+    client, _, fixture, _ = _context(monkeypatch, vault, tmp_path, name)
     first = fixture["projects"][0]
     cached = _ask(client, fixture, first, 1).json()
     assert _ask(client, fixture, first, 2).json()["cache"]["state"] == "hit"
     restarted = _client(monkeypatch, vault, tmp_path / f"{name}.db", _tokens(fixture))
-    ctx = importlib.import_module("app.context")
-    monkeypatch.setattr(ctx, "semantic_source", lambda _q, ids: {i: 0.0 for i in ids})
-    monkeypatch.setattr(ctx, "heat_source", None)
+    _sources(monkeypatch)
     assert _stats(restarted)["context_cache_entries"] == 0
     after = _ask(restarted, fixture, first, 3).json()
     assert after["cache"]["state"] == "miss"
@@ -373,6 +412,24 @@ def test_c_negative_results_expire_sooner_than_positive_ones(monkeypatch, vault,
     now[0] += cache_module.TTL_SECONDS
     assert _ask(client, fixture, first, 6).json()["cache"]["state"] == "miss"
     assert calls == {empty: 2, first: 2}
+
+
+@pytest.mark.parametrize("name", SETS)
+def test_c_a_reduced_result_is_negative_even_with_items(monkeypatch, vault, tmp_path, name):
+    client, _, fixture, _ = _context(monkeypatch, vault, tmp_path, name)
+    cache_module = _cache_module()
+
+    def failing(_query, _ids):
+        raise RuntimeError("semantic source down")
+
+    _sources(monkeypatch, failing)
+    reduced = _ask(client, fixture, fixture["projects"][0], 1).json()
+    assert reduced["context"]["reduced"] is True and reduced["context"]["items"]
+    assert reduced["cache"] == {
+        "state": "miss",
+        "negative": True,
+        "ttl_seconds": cache_module.NEGATIVE_TTL_SECONDS,
+    }
 
 
 def test_c_followers_load_alone_when_the_leader_fails_and_nothing_is_stored():
