@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,6 +20,7 @@ HERE = Path(__file__).resolve().parents[1]
 def _load(name: str):
     spec = importlib.util.spec_from_file_location(f"{name}_scope_test", HERE / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -124,7 +126,7 @@ def test_two_named_tick_announcements_land_on_separate_streams(brain, monkeypatc
             from_url=lambda *a, **kw: clients.append(FakeRedis(store)) or clients[-1]
         )
     )
-    monkeypatch.setitem(__import__("sys").modules, "redis", redis)
+    monkeypatch.setitem(sys.modules, "redis", redis)
     monkeypatch.setenv("REDIS_URL", "redis://cache.shared:6379/0")
     for name in ("personal", "swarm"):
         brain(name)
@@ -144,7 +146,7 @@ def test_a_misbound_tick_announcement_is_not_written(brain, monkeypatch, capsys)
     store = {"events:brain:owner": "personal"}
     client = FakeRedis(store)
     redis = SimpleNamespace(Redis=SimpleNamespace(from_url=lambda *a, **kw: client))
-    monkeypatch.setitem(__import__("sys").modules, "redis", redis)
+    monkeypatch.setitem(sys.modules, "redis", redis)
     monkeypatch.setenv("REDIS_URL", "redis://cache.shared:6379/0")
     brain("swarm")
     monkeypatch.setenv("EVENT_BUS_STREAM", "events:brain")
