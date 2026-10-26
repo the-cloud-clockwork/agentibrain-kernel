@@ -1,8 +1,8 @@
 {
   "package": "SV2-CTX-04",
-  "tested_commit": "c47aa04265f2cbf9124470e6be232c14846e08c1",
-  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40252723451",
-  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40252723451/job/121347906532",
+  "tested_commit": "47072fe97bba67d842ee48a985db93ff342d2cab",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40254063629",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40254063629/job/121352012400",
   "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source; the cache, key, invalidation and retrieval are the production modules.",
   "case": "T-SV2-CTX-04-B",
   "outcome": "passed",

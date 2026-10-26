@@ -1,8 +1,8 @@
 {
   "package": "SV2-CTX-04",
-  "tested_commit": "c47aa04265f2cbf9124470e6be232c14846e08c1",
-  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40252723451",
-  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40252723451/job/121347906532",
+  "tested_commit": "47072fe97bba67d842ee48a985db93ff342d2cab",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40254063629",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40254063629/job/121352012400",
   "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source; the cache, key, invalidation and retrieval are the production modules.",
   "case": "T-SV2-CTX-04-C",
   "outcome": "passed",
@@ -20,6 +20,8 @@
     "test_c_a_reduced_result_is_negative_even_with_items[first]",
     "test_c_a_reduced_result_is_negative_even_with_items[second]",
     "test_c_followers_load_alone_when_the_leader_fails_and_nothing_is_stored",
+    "test_c_a_budget_that_omits_every_item_is_negative[first]",
+    "test_c_a_budget_that_omits_every_item_is_negative[second]",
     "test_disabled_caching_keeps_bounded_per_request_retrieval[first]",
     "test_disabled_caching_keeps_bounded_per_request_retrieval[second]"
   ],
@@ -29,6 +31,7 @@
     "A load that began before a decision update is returned to its caller but never stored; the next request misses and reads the new revision.",
     "A restarted process starts with an empty cache and serves the same context for the same knowledge.",
     "Empty or reduced results are marked negative with a two second TTL against thirty seconds for positive results, under a fake clock.",
+    "A budget that omits every item serves no items, so it is negative with the two second TTL and expires under the fake clock.",
     "Followers of a failed leader load alone and nothing is stored.",
     "BRAIN_CONTEXT_CACHE=false retrieves per request with state disabled and counts no cache requests."
   ],

@@ -1,8 +1,8 @@
 {
   "package": "SV2-CTX-04",
-  "tested_commit": "c47aa04265f2cbf9124470e6be232c14846e08c1",
-  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40252723451",
-  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40252723451/job/121347906532",
+  "tested_commit": "47072fe97bba67d842ee48a985db93ff342d2cab",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40254063629",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40254063629/job/121352012400",
   "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source; the cache, key, invalidation and retrieval are the production modules.",
   "input_hashes": {
     "first": "4c240933ecef55b2afe55a93843ca71016f863de6f9ed62acbb9ba3240309a15",
@@ -11,7 +11,7 @@
   "input_hash_method": "sha256 of sort_keys JSON of each fixture set",
   "file_hashes": {
     "services/brain-api/tests/fixtures/sv2_ctx04_cache.json": "a0c5fc16516330a7a10dcf1255aba7640f7561c7ab6e6c48c4fc2c698a162673",
-    "services/brain-api/tests/test_context_cache.py": "cc9256bf8a22bbabb5eba649263d0c42d51a4c7774944c3953be9f7afd0b9cc8",
+    "services/brain-api/tests/test_context_cache.py": "e88b4a37d10815a147056f781841aeeb3085493b4a98e704f06d69dc8fe800ef",
     "services/brain-api/app/context_cache.py": "9a6b212a33109de3e804c80d2729f43dc26333615be6cd9686afa258826a53a8",
     "services/brain-api/app/context.py": "ceaaa96de8c546944ffaf7462fc39a5f8fd4b53c355902c1c44455aee5d78ee3",
     "services/brain-api/app/graph.py": "39db52d8e6b5d07e953a711b9f1d770e3fedeb590859d77e18cbfed362e84f31",
