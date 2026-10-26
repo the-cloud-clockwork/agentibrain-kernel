@@ -1,0 +1,28 @@
+{
+  "package": "SV2-CTX-05",
+  "tested_commit": "3553aa14cde1b63e4e955f02ed763ac21c98cc92",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40257690538",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40257690538/job/121362980839",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source, fixture signing keys and a fake clock; receipts, context, scope and graph are the production modules.",
+  "case": "T-SV2-CTX-05-C",
+  "outcome": "passed",
+  "tests": [
+    "test_c_a_receipt_survives_restart_until_expiry_while_its_key_version_stays[first]",
+    "test_c_a_receipt_survives_restart_until_expiry_while_its_key_version_stays[second]"
+  ],
+  "assertions": [
+    "An exact replay before restart returns the same receipt with replayed true, so no second receipt is issued.",
+    "After a restart that reloads every brain-api module and rotates the signing key to v3 while keeping v2, the v2 receipt still verifies with its payload; new receipts are signed with v3.",
+    "At the expiry instant after restart the receipt fails expired.",
+    "After a restart that drops v2, the v2 receipt fails unknown_key_version while the v3 receipt verifies."
+  ],
+  "durability": {
+    "survived": [
+      "receipt validity, because it is signed and its key version and graph store are durable configuration and storage"
+    ],
+    "did_not_survive": [
+      "delivery acknowledgements, which are kept per process",
+      "the accepted operation table, so a post restart request issues a new receipt"
+    ]
+  }
+}

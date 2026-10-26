@@ -1,0 +1,65 @@
+{
+  "package": "SV2-CTX-05",
+  "tested_commit": "3553aa14cde1b63e4e955f02ed763ac21c98cc92",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40257690538",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40257690538/job/121362980839",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source, fixture signing keys and a fake clock; receipts, context, scope and graph are the production modules.",
+  "input_hashes": {
+    "first": "54b7c6c50b411ae6e0d3b185666b4e97402296a34bb0df8341b165038e472f71",
+    "second": "d0a32ef5f5bf050ca1b92ddb8df4f25556e4a457a68c2b015c97ed5ce688e21d"
+  },
+  "input_hash_method": "sha256 of sort_keys JSON of each fixture set",
+  "file_hashes": {
+    "services/brain-api/tests/fixtures/sv2_ctx05_receipts.json": "535baf73756a29ae2ba9c3e1bf0c568cfe95f3cc6f6eef029a749362dda7fdc6",
+    "services/brain-api/tests/test_context_receipts.py": "80559e7628e8222fba00fbebd8957d46953c2bfa726ce7396565b338fdbf01a4",
+    "services/brain-api/app/receipts.py": "e356630dc194df24f4b71684b0777940af5f07802024ad95e9e3eb433d1d0d49",
+    "services/brain-api/app/context.py": "fbbd0099d8f49388ca42f0250eb48a06affb605f445f0149870f2c04403bddd9",
+    "services/brain-api/app/main.py": "a9cf4eca289c6bcc36bc3ed23ddc607a9320dbdc8bdab91d3f4ae6655e9f3e8a",
+    "agentibrain/bootstrap.py": "85150b83a7d2329c2b45149c49435b8c1808c10a7e552c80a7b84fccf2ae0fd3"
+  },
+  "fixture_dimensions": {
+    "first": {
+      "projects": [
+        "org-a/receipts",
+        "org-b/receipts"
+      ],
+      "key_versions": [
+        "v1",
+        "v2",
+        "v3"
+      ],
+      "ttl_seconds": 600,
+      "task_revision": 3,
+      "revised_entity": {
+        "id": "decision:first-ack",
+        "revision": 2
+      },
+      "brains": [
+        "hive-a",
+        "hive-b"
+      ]
+    },
+    "second": {
+      "projects": [
+        "org-c/receipts",
+        "org-d/receipts"
+      ],
+      "key_versions": [
+        "v1",
+        "v2",
+        "v3"
+      ],
+      "ttl_seconds": 600,
+      "task_revision": 3,
+      "revised_entity": {
+        "id": "decision:second-ack",
+        "revision": 2
+      },
+      "brains": [
+        "hive-a",
+        "hive-b"
+      ]
+    }
+  },
+  "source_material": "Fixture entities and fixture signing keys only; no live brain, vault content or credentials."
+}

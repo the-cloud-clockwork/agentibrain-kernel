@@ -1,0 +1,67 @@
+{
+  "package": "SV2-CTX-05",
+  "tested_commit": "3553aa14cde1b63e4e955f02ed763ac21c98cc92",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40257690538",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40257690538/job/121362980839",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source, fixture signing keys and a fake clock; receipts, context, scope and graph are the production modules.",
+  "case": "T-SV2-CTX-05-B",
+  "outcome": "passed",
+  "tests": [
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[altered_payload-first]",
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[altered_payload-second]",
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[expired-first]",
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[expired-second]",
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[lost_signing_key_version-first]",
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[lost_signing_key_version-second]",
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[modified_receipt-first]",
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[modified_receipt-second]",
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[outside_grant-first]",
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[outside_grant-second]",
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[wrong_generation-first]",
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[wrong_generation-second]",
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[wrong_task_revision-first]",
+    "test_b_a_bad_receipt_never_satisfies_verification_or_delivery[wrong_task_revision-second]",
+    "test_b_a_rejected_delivery_records_no_acknowledgement[first]",
+    "test_b_a_rejected_delivery_records_no_acknowledgement[second]",
+    "test_b_a_receipt_replayed_at_another_brain_fails_audience[first]",
+    "test_b_a_receipt_replayed_at_another_brain_fails_audience[second]",
+    "test_b_a_corrected_task_revision_needs_a_new_receipt[first]",
+    "test_b_a_corrected_task_revision_needs_a_new_receipt[second]",
+    "test_unconfigured_signing_keys_keep_context_and_refuse_verification",
+    "test_an_oversized_verification_body_is_refused",
+    "test_malformed_verification_requests_are_rejected_before_any_lookup (four malformed bodies)"
+  ],
+  "assertions": [
+    "Altered payload: payload_mismatch, 409. Modified claims: signature_mismatch, 409. Expired at the expiry instant: expired, 409. Signing key version removed: unknown_key_version, 409. Wrong task revision: wrong_task_revision, 409. Wrong execution: wrong_generation, 409. Project outside the caller grant: forbidden_scope, 403.",
+    "A receipt issued by brain hive-b and replayed at hive-a fails brain_audience, 403, and is recorded as a denial.",
+    "Each rejection counts once in context_receipt_validation_failures under its own reason; the error reveals no signing key, entity title or signature; the graph store snapshot is unchanged.",
+    "A delivery with an altered payload or a path naming another receipt records no acknowledgement.",
+    "A corrected task revision is satisfied only by the new receipt issued for it; the old receipt still fails.",
+    "Without signing keys context is still served with receipt null and verification answers receipts_not_configured, 503; malformed and oversized bodies are refused before any lookup."
+  ],
+  "measurement": {
+    "context_receipt_validation_failures": {
+      "altered_payload": {
+        "reason_count": 1
+      },
+      "expired": {
+        "reason_count": 1
+      },
+      "lost_signing_key_version": {
+        "reason_count": 1
+      },
+      "modified_receipt": {
+        "reason_count": 1
+      },
+      "outside_grant": {
+        "reason_count": 1
+      },
+      "wrong_generation": {
+        "reason_count": 1
+      },
+      "wrong_task_revision": {
+        "reason_count": 1
+      }
+    }
+  }
+}
