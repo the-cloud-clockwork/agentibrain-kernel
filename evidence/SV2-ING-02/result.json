@@ -1,0 +1,64 @@
+{
+  "package": "SV2-ING-02",
+  "tested_commit": "074d217bc0edfc62bac709ff3c1c66468c405bb8",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244918406",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244918406/job/121324351000",
+  "verification": "Mocked: fixture-local sessions and in-memory session feed in CI; no live swarm transcripts.",
+  "red_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244081837",
+  "red_result": "9 failed, 287 passed on the tests only head b6ee852",
+  "dependency": [
+    "SV2-ING-01"
+  ],
+  "integration_gate": "G6",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/174",
+  "interfaces": [
+    "cluster.link_lineage",
+    "cluster.arc_task_lineage_conflicts",
+    "cluster.recorded_provenance",
+    "cluster.stub_path",
+    "cluster.write_stub (keeps earlier references, confidence field, quarantined merges unlinked)",
+    "cluster.grouping_key (project sessions without a task key by worktree)",
+    "cluster.GROUPING_GENERATION 3",
+    "extract.admitted",
+    "extract.AUTONOMOUS_TOOL_CALLS",
+    "session_source.check_lineage",
+    "session_source.summary lineage fields",
+    "feed record lineage field"
+  ],
+  "changed_files_outside_owned_candidates": [
+    "services/brain-ops/extract.py",
+    "services/brain-ops/session_source.py"
+  ],
+  "supported_versions": {
+    "session_feed_schema": 1,
+    "grouping_generation": [
+      1,
+      2,
+      3
+    ],
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ]
+  },
+  "compatibility": "Task arcs keep generation two cluster ids and files. Project sessions without a task now group per worktree instead of per project, so concurrent agents in one project no longer share a time-window arc; sessions in one worktree group as before, and test_unambiguous_attributed_sessions_group_as_generation_one_did still matches the legacy path. Provenance entries gain phase, attempt and replaces.",
+  "state": {
+    "observed": "All pull request checks pass on the tested commit, including macos smoke.",
+    "accepted": "The brain-ops suite passes with 301 tests on Python 3.12, including the SV2-ING-02 cases.",
+    "committed": "074d217bc0edfc62bac709ff3c1c66468c405bb8",
+    "externally_verified": "None: no live session feed producer supplies lineage yet; G6 rollout unverified."
+  },
+  "commands": [
+    {
+      "invocation": "python -m pytest -q services/brain-ops/tests",
+      "output": "301 passed in 24.41s"
+    }
+  ],
+  "limitations": [
+    "Quarantined arcs are labelled and unlinked; synthesis exclusion belongs to SV2-ING-03.",
+    "arc_task_lineage_conflicts is reported on cluster.py stderr like arc_grouping_ambiguities, with counts only.",
+    "Mocked evidence only; live evidence is due at the G6 rollout gate."
+  ],
+  "rollback_rehearsal": "BRAIN_ARC_GROUPING=legacy restores generation one grouping (test_legacy_generation_stays_readable_beside_lineage_grouping); generation two stubs stay readable and keep their references (test_generation_two_stub_stays_readable_and_keeps_its_references). No live rehearsal."
+}

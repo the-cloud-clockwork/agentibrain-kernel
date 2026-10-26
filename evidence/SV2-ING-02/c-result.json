@@ -1,0 +1,23 @@
+{
+  "package": "SV2-ING-02",
+  "tested_commit": "074d217bc0edfc62bac709ff3c1c66468c405bb8",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244918406",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244918406/job/121324351000",
+  "verification": "Mocked: fixture-local sessions and in-memory session feed in CI; no live swarm transcripts.",
+  "case": "T-SV2-ING-02-C",
+  "outcome": "passed",
+  "tests": [
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_another_attempt_keeps_earlier_source_references",
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_generation_two_stub_stays_readable_and_keeps_its_references",
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_lineage_survives_an_interrupted_batch_and_commits_once",
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_legacy_generation_stays_readable_beside_lineage_grouping"
+  ],
+  "assertions": [
+    "Reprocessing task t-03 with only its resumed attempt keeps the earlier attempt session ids, provenance entries and source links in the same stub file.",
+    "Rewriting the same attempt again is a no-op; an older batch cannot shrink the arc.",
+    "A generation two stub is read and its provenance entry kept verbatim when another attempt is processed.",
+    "An interrupted, uncommitted extraction batch rebuilds the same lineage from the committed cursor and commits it once.",
+    "BRAIN_ARC_GROUPING=legacy still emits grouping generation one."
+  ],
+  "durability": "Earlier attempt references survive; stub signals and timeline counts describe only the sessions in the current batch."
+}

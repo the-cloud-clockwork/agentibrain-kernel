@@ -1,0 +1,9 @@
+{
+  "package": "SV2-ING-02",
+  "tested_commit": "074d217bc0edfc62bac709ff3c1c66468c405bb8",
+  "inputs": {
+    "services/brain-ops/tests/fixtures/sv2_ing02_sessions.json": "sha256:7e28c8bf973a1c8d071d6454409fb68ea8a7b2239e5db6b64836e0d4018e4a62",
+    "services/brain-ops/tests/test_task_lineage_grouping.py": "sha256:165d4d3b22285a194f22237d9a82b12499392243fee3d30e6f934f00d3237c79"
+  },
+  "fixture": "Ten concurrent tasks with two agents each, one resumed attempt, one handoff without a task id, one cross task replacement, one planner thread of two sessions, one tool heavy single prompt session and one unrelated session, all in github.com/acme/agentihooks."
+}

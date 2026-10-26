@@ -34,6 +34,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import glob
 import hashlib
 import json
 import os
@@ -47,7 +48,7 @@ TIME_WINDOW_MIN = 120  # sessions within 2h on same project → same candidate
 ERROR_NUCLEAR_THRESHOLD = 10  # error markers above this → amygdala candidate
 JOY_PINEAL_THRESHOLD = 5  # joy markers above this with low errors → pineal
 HEAT_MAX = 10
-GROUPING_GENERATION = 2
+GROUPING_GENERATION = 3
 UNATTRIBUTED = "unattributed"
 
 SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -85,7 +86,7 @@ def group_sessions(sessions: list[dict]) -> list[list[dict]]:
     if _legacy():
         return group_sessions_legacy(sessions)
     buckets: dict[tuple[str, str, str], list[dict]] = {}
-    for sess in sorted(sessions, key=lambda s: (parse_ts(s["start"]), s["session_id"])):
+    for sess in link_lineage(sessions):
         buckets.setdefault(grouping_key(sess), []).append(sess)
     groups: list[list[dict]] = []
     for key in sorted(buckets):
@@ -154,9 +155,10 @@ def grouping_key(sess: dict) -> tuple[str, str, str]:
     project = attribution(sess)
     if project and (thread := thread_of(sess)):
         return ("task", project, thread)
+    place = sess.get("worktree") or sess.get("cwd") or sess["session_id"]
     if project:
-        return ("project", project, "")
-    return (UNATTRIBUTED, "", sess.get("worktree") or sess.get("cwd") or sess["session_id"])
+        return ("project", project, place)
+    return (UNATTRIBUTED, "", place)
 
 
 def grouping_basis(group: list[dict]) -> str:
@@ -170,6 +172,52 @@ def arc_grouping_ambiguities(groups: list[list[dict]]) -> dict[str, int]:
     merges = sum(len(g) - 1 for g in groups if grouping_basis(g) == "time-window")
     unattributed = sum(1 for g in groups for s in g if not attribution(s))
     return {"total": merges + unattributed, "merges": merges, "unattributed": unattributed}
+
+
+def link_lineage(sessions: list[dict]) -> list[dict]:
+    """Sessions in start order, a replacement without its own thread taking the thread of its
+    replacement chain within one canonical project. Inputs are never mutated."""
+    by_id = {s["session_id"]: s for s in sessions}
+    linked: list[dict] = []
+    for sess in sorted(sessions, key=lambda s: (parse_ts(s["start"]), s["session_id"])):
+        thread = _inherited_thread(sess, by_id, set())
+        if thread != thread_of(sess):
+            sess = {**sess, "work_thread_id": thread}
+        linked.append(sess)
+    return linked
+
+
+def _inherited_thread(sess: dict, by_id: dict[str, dict], seen: set[str]) -> str:
+    prior = by_id.get(sess.get("replaces") or "")
+    if thread_of(sess) or not prior or prior["session_id"] in seen:
+        return thread_of(sess)
+    if not _same_project(prior, sess):
+        return ""
+    return _inherited_thread(prior, by_id, seen | {sess["session_id"]})
+
+
+def _same_project(prior: dict, sess: dict) -> bool:
+    return bool(attribution(sess)) and attribution(prior) == attribution(sess)
+
+
+def arc_task_lineage_conflicts(sessions: list[dict]) -> dict[str, int]:
+    """Replacements whose predecessor sits in another project or another task thread."""
+    linked = link_lineage(sessions)
+    by_id = {s["session_id"]: s for s in linked}
+    cross_thread = cross_project = 0
+    for sess in linked:
+        prior = by_id.get(sess.get("replaces") or "")
+        if not prior:
+            continue
+        if not _same_project(prior, sess):
+            cross_project += 1
+        elif thread_of(sess) != thread_of(prior):
+            cross_thread += 1
+    return {
+        "total": cross_thread + cross_project,
+        "cross_thread": cross_thread,
+        "cross_project": cross_project,
+    }
 
 
 def classify_region(group: list[dict]) -> str:
@@ -296,12 +344,44 @@ def recorded_sessions(path: Path) -> set[str]:
     return recorded
 
 
+def recorded_provenance(path: Path) -> dict[str, str]:
+    """Provenance entries already recorded in an existing stub, keyed by session id."""
+    if not path.exists():
+        return {}
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    if "provenance:" not in lines:
+        return {}
+    recorded: dict[str, str] = {}
+    for line in lines[lines.index("provenance:") + 1 :]:
+        if not line.startswith("  - "):
+            break
+        recorded[json.loads(line[4:])["session"]] = line[4:]
+    return recorded
+
+
+def stub_path(cluster: dict, out_dir: Path) -> Path:
+    path = out_dir / f"{cluster['cluster_id']}.md"
+    if path.exists() or cluster.get("grouping_basis") != "task":
+        return path
+    suffix = glob.escape(cluster["cluster_id"][-12:])
+    return next(iter(sorted(out_dir.glob(f"*-{suffix}.md"))), path)
+
+
 def write_stub(cluster: dict, out_dir: Path, clusters_root: Path | None = None) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True, mode=0o777)
-    path = out_dir / f"{cluster['cluster_id']}.md"
-    if {s["session_id"] for s in cluster["sessions"]} < recorded_sessions(path):
+    path = stub_path(cluster, out_dir)
+    cluster = {**cluster, "cluster_id": path.stem}
+    current = {s["session_id"] for s in cluster["sessions"]}
+    recorded = recorded_sessions(path)
+    if current < recorded:
         return path
-    siblings = find_sibling_arcs(cluster["sessions"], clusters_root, cluster["cluster_id"])
+    kept = {sid: line for sid, line in recorded_provenance(path).items() if sid not in current}
+    earlier = [*kept, *sorted(recorded - current - set(kept))]
+    siblings = (
+        []
+        if cluster["confidence"] == "quarantined"
+        else find_sibling_arcs(cluster["sessions"], clusters_root, cluster["cluster_id"])
+    )
 
     group = cluster["sessions"]
     total_user = sum(s.get("num_user_turns", 0) for s in group)
@@ -319,6 +399,7 @@ def write_stub(cluster: dict, out_dir: Path, clusters_root: Path | None = None) 
         f"status: {cluster['status']}",
         f"heat: {cluster['heat']}",
         "source_sessions:",
+        *(f"  - {sid}" for sid in earlier),
     ]
     for s in group:
         frontmatter.append(f"  - {s['session_id']}")
@@ -327,7 +408,9 @@ def write_stub(cluster: dict, out_dir: Path, clusters_root: Path | None = None) 
         f"task_id: {cluster['task_id']}",
         f"grouping_generation: {cluster['grouping_generation']}",
         f"grouping_basis: {cluster['grouping_basis']}",
+        f"confidence: {cluster['confidence']}",
         "provenance:",
+        *(f"  - {line}" for line in kept.values()),
         *(f"  - {_provenance(s)}" for s in group),
         f"created: {datetime.now(timezone.utc).isoformat()}",
         f"signals: {{errors: {total_errors}, joy: {total_joy}, tools: {total_tools}}}",
@@ -367,6 +450,7 @@ def write_stub(cluster: dict, out_dir: Path, clusters_root: Path | None = None) 
         "",
         "## Source sessions",
         "",
+        *(f"- home-bridge://sessions/{sid} (earlier attempt)" for sid in earlier),
     ]
     for s in group:
         frontmatter.append(
@@ -472,12 +556,15 @@ def _attribution_fields(group: list[dict]) -> dict:
             "task_id": "",
             "grouping_generation": 1,
             "grouping_basis": "legacy",
+            "confidence": "legacy",
         }
+    basis = grouping_basis(group)
     return {
         "project": attribution(group[0]) or UNATTRIBUTED,
         "task_id": thread_of(group[0]),
         "grouping_generation": GROUPING_GENERATION,
-        "grouping_basis": grouping_basis(group),
+        "grouping_basis": basis,
+        "confidence": "quarantined" if basis == "time-window" else "high",
     }
 
 
@@ -489,6 +576,9 @@ def _provenance(sess: dict) -> str:
             "worktree": sess.get("worktree") or sess.get("cwd") or "",
             "harness": sess.get("harness") or "unknown",
             "installation": sess.get("installation") or "unknown",
+            "phase": sess.get("phase_id") or "",
+            "attempt": sess.get("attempt") or 1,
+            "replaces": sess.get("replaces") or "",
         }
     )
 
@@ -552,6 +642,12 @@ def main() -> int:
     print(
         f"arc_grouping_ambiguities={ambiguities['total']} merges={ambiguities['merges']} "
         f"unattributed={ambiguities['unattributed']}",
+        file=sys.stderr,
+    )
+    conflicts = arc_task_lineage_conflicts(sessions)
+    print(
+        f"arc_task_lineage_conflicts={conflicts['total']} "
+        f"cross_thread={conflicts['cross_thread']} cross_project={conflicts['cross_project']}",
         file=sys.stderr,
     )
 

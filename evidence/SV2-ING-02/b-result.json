@@ -1,0 +1,32 @@
+{
+  "package": "SV2-ING-02",
+  "tested_commit": "074d217bc0edfc62bac709ff3c1c66468c405bb8",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244918406",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40244918406/job/121324351000",
+  "verification": "Mocked: fixture-local sessions and in-memory session feed in CI; no live swarm transcripts.",
+  "case": "T-SV2-ING-02-B",
+  "outcome": "passed",
+  "tests": [
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_tool_volume_cannot_force_a_high_confidence_merge",
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_cross_task_replacement_stays_in_its_own_task",
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_replacement_into_another_project_is_a_conflict_not_a_link",
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_replacement_cycle_never_invents_a_thread",
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_quarantined_merge_writes_no_sibling_edges",
+    "services/brain-ops/tests/test_task_lineage_grouping.py::test_malformed_lineage_refuses_the_batch_without_mutation"
+  ],
+  "assertions": [
+    "Tool call volume of 4000 or one million never merges sessions in different worktrees; a time-window merge in one worktree is labelled quarantined whatever its tool count.",
+    "A quarantined merge writes no sibling edges.",
+    "A replacement naming a session of another task stays in its own task and counts as a cross_thread conflict.",
+    "A replacement naming a session in another project is not linked and counts as a cross_project conflict.",
+    "Malformed lineage refuses the whole feed batch and leaves committed state absent.",
+    "group_sessions does not mutate its input."
+  ],
+  "measurement": {
+    "arc_task_lineage_conflicts": {
+      "total": 1,
+      "cross_thread": 0,
+      "cross_project": 1
+    }
+  }
+}

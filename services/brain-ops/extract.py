@@ -44,6 +44,7 @@ REMOTE_RE = re.compile(
     r"([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/?"
 )
 GIT_TIMEOUT = 5
+AUTONOMOUS_TOOL_CALLS = 20
 CODEX_TOOL_ITEMS = frozenset({"function_call", "custom_tool_call", "local_shell_call"})
 # Codex records its own injected context as user messages.
 CODEX_INJECTED_PREFIXES = ("<", "# AGENTS.md")
@@ -377,8 +378,17 @@ def granted_sessions(parsed: list, min_turns: int, projects: str) -> list[dict]:
     return [
         s
         for s in parsed
-        if s and s["num_user_turns"] >= min_turns and (not granted or s["project_id"] in granted)
+        if s and admitted(s, min_turns) and (not granted or s["project_id"] in granted)
     ]
+
+
+def admitted(sess: dict, min_turns: int) -> bool:
+    """Enough prompts, or autonomous work: a task thread or a run of tool calls."""
+    return (
+        sess["num_user_turns"] >= min_turns
+        or bool(sess.get("task_id") or sess.get("work_thread_id"))
+        or sess.get("num_tool_calls", 0) >= AUTONOMOUS_TOOL_CALLS
+    )
 
 
 def feed_main(args: argparse.Namespace) -> int:

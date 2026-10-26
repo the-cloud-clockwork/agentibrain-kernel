@@ -83,7 +83,8 @@ def test_task_arc_carries_canonical_project_and_provenance(tmp_path):
     assert (
         '  - {"session": "s-alpha-2", "branch": "alpha", '
         '"worktree": "/srv/worktrees/agentihooks/alpha-2", '
-        '"harness": "claude", "installation": "swarm-hive-3"}\n'
+        '"harness": "claude", "installation": "swarm-hive-3", '
+        '"phase": "", "attempt": 1, "replaces": ""}\n'
     ) in text
 
 
