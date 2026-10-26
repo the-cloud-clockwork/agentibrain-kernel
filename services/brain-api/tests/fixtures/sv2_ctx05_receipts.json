@@ -1,0 +1,192 @@
+{
+  "first": {
+    "projects": [
+      "org-a/receipts",
+      "org-b/receipts"
+    ],
+    "keys": {
+      "v1": "fixture-receipt-signing-one-first",
+      "v2": "fixture-receipt-signing-two-first",
+      "v3": "fixture-receipt-signing-three-first"
+    },
+    "now_ms": 1792000000000,
+    "ttl_seconds": 600,
+    "request": {
+      "task_id": "implement-receipts-first",
+      "task_revision": 3,
+      "execution_id": "exe-receipt-first-0001",
+      "intent": "Implement incremental transcript ingestion with durable acknowledgements.",
+      "query": "transcript ingestion acknowledgement",
+      "subsystems": [
+        "session-catalog"
+      ]
+    },
+    "entities": [
+      {
+        "id": "lesson:first-ack",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "org-a/receipts"
+        ],
+        "vault_ref": null,
+        "title": "Acknowledge transcript ingestion only after the commit lands",
+        "provenance": {
+          "source": "fixture:lesson:first-ack",
+          "revision": "p1"
+        }
+      },
+      {
+        "id": "decision:first-ack",
+        "type": "decision",
+        "revision": 1,
+        "projects": [
+          "org-a/receipts"
+        ],
+        "vault_ref": null,
+        "title": "Transcript ingestion acknowledgement is sent once per batch",
+        "provenance": {
+          "source": "fixture:decision:first-ack",
+          "revision": "p1"
+        }
+      },
+      {
+        "id": "arc:first-ingest",
+        "type": "arc",
+        "revision": 1,
+        "projects": [
+          "org-a/receipts"
+        ],
+        "vault_ref": null,
+        "title": "Transcript ingestion acknowledgement rollout",
+        "provenance": {
+          "source": "fixture:arc:first-ingest",
+          "revision": "p1"
+        }
+      },
+      {
+        "id": "lesson:first-other",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "org-b/receipts"
+        ],
+        "vault_ref": null,
+        "title": "Acknowledge transcript ingestion in the other project",
+        "provenance": {
+          "source": "fixture:lesson:first-other",
+          "revision": "p1"
+        }
+      }
+    ],
+    "update": {
+      "id": "decision:first-ack",
+      "type": "decision",
+      "revision": 2,
+      "projects": [
+        "org-a/receipts"
+      ],
+      "vault_ref": null,
+      "title": "Transcript ingestion acknowledgement is sent once per event",
+      "provenance": {
+        "source": "fixture:decision:first-ack",
+        "revision": "p2"
+      }
+    }
+  },
+  "second": {
+    "projects": [
+      "org-c/receipts",
+      "org-d/receipts"
+    ],
+    "keys": {
+      "v1": "fixture-receipt-signing-one-second",
+      "v2": "fixture-receipt-signing-two-second",
+      "v3": "fixture-receipt-signing-three-second"
+    },
+    "now_ms": 1793000000000,
+    "ttl_seconds": 600,
+    "request": {
+      "task_id": "implement-receipts-second",
+      "task_revision": 3,
+      "execution_id": "exe-receipt-second-0001",
+      "intent": "Implement incremental transcript ingestion with durable acknowledgements.",
+      "query": "transcript ingestion acknowledgement",
+      "subsystems": [
+        "session-catalog"
+      ]
+    },
+    "entities": [
+      {
+        "id": "lesson:second-ack",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "org-c/receipts"
+        ],
+        "vault_ref": null,
+        "title": "Acknowledge transcript ingestion only after the commit lands",
+        "provenance": {
+          "source": "fixture:lesson:second-ack",
+          "revision": "p1"
+        }
+      },
+      {
+        "id": "decision:second-ack",
+        "type": "decision",
+        "revision": 1,
+        "projects": [
+          "org-c/receipts"
+        ],
+        "vault_ref": null,
+        "title": "Transcript ingestion acknowledgement is sent once per batch",
+        "provenance": {
+          "source": "fixture:decision:second-ack",
+          "revision": "p1"
+        }
+      },
+      {
+        "id": "arc:second-ingest",
+        "type": "arc",
+        "revision": 1,
+        "projects": [
+          "org-c/receipts"
+        ],
+        "vault_ref": null,
+        "title": "Transcript ingestion acknowledgement rollout",
+        "provenance": {
+          "source": "fixture:arc:second-ingest",
+          "revision": "p1"
+        }
+      },
+      {
+        "id": "lesson:second-other",
+        "type": "lesson",
+        "revision": 1,
+        "projects": [
+          "org-d/receipts"
+        ],
+        "vault_ref": null,
+        "title": "Acknowledge transcript ingestion in the other project",
+        "provenance": {
+          "source": "fixture:lesson:second-other",
+          "revision": "p1"
+        }
+      }
+    ],
+    "update": {
+      "id": "decision:second-ack",
+      "type": "decision",
+      "revision": 2,
+      "projects": [
+        "org-c/receipts"
+      ],
+      "vault_ref": null,
+      "title": "Transcript ingestion acknowledgement is sent once per event",
+      "provenance": {
+        "source": "fixture:decision:second-ack",
+        "revision": "p2"
+      }
+    }
+  }
+}
