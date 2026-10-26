@@ -357,7 +357,9 @@ def test_b_a_corrected_task_revision_needs_a_new_receipt(monkeypatch, vault, tmp
         task_revision=4,
     )
 
-    assert _verify(client, old["receipt"], _expect(fixture, task_revision=4)).status_code == 409
+    stale = _verify(client, old["receipt"], _expect(fixture, task_revision=4))
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["reason"] == "wrong_task_revision"
     current = _verify(client, new["receipt"], _expect(fixture, task_revision=4))
     assert current.status_code == 200, current.text
     assert current.json()["valid"] is True
@@ -421,21 +423,39 @@ def test_unconfigured_signing_keys_keep_context_and_refuse_verification(
 
 
 @pytest.mark.parametrize(
-    "body",
+    ("body", "status", "reason"),
     [
-        b"not json",
-        b"[]",
-        json.dumps({"receipt": {"claims": [], "signature": "x"}, "expect": {}}).encode(),
-        json.dumps(
-            {
-                "receipt": {"claims": {"key_version": ["v2"]}, "signature": "x"},
-                "expect": {"execution_id": "e", "task_id": "t", "task_revision": 1},
-            }
-        ).encode(),
+        (b"not json", 422, "invalid_request"),
+        (b"[]", 422, "invalid_request"),
+        (
+            json.dumps({"receipt": {"claims": [], "signature": "x"}, "expect": {}}).encode(),
+            422,
+            "invalid_request",
+        ),
+        (
+            json.dumps(
+                {
+                    "receipt": {"claims": [], "signature": "x"},
+                    "expect": {"execution_id": "e", "task_id": "t", "task_revision": 1},
+                }
+            ).encode(),
+            422,
+            "invalid_request",
+        ),
+        (
+            json.dumps(
+                {
+                    "receipt": {"claims": {"key_version": ["v2"]}, "signature": "x"},
+                    "expect": {"execution_id": "e", "task_id": "t", "task_revision": 1},
+                }
+            ).encode(),
+            409,
+            "unknown_key_version",
+        ),
     ],
 )
 def test_malformed_verification_requests_are_rejected_before_any_lookup(
-    monkeypatch, vault, tmp_path, body
+    monkeypatch, vault, tmp_path, body, status, reason
 ):
     client, _, _, _ = _setup(monkeypatch, vault, tmp_path, "first")
 
@@ -445,9 +465,22 @@ def test_malformed_verification_requests_are_rejected_before_any_lookup(
         headers={**_auth("worker"), "Content-Type": "application/json"},
     )
 
-    assert response.status_code in (409, 422), response.text
+    assert response.status_code == status, response.text
     assert response.json()["detail"]["valid"] is False
-    assert sum(_failures(client).values()) == 1
+    assert response.json()["detail"]["reason"] == reason
+    assert _failures(client) == {reason: 1}
+
+
+def test_a_non_ascii_signature_is_a_signature_mismatch(monkeypatch, vault, tmp_path):
+    client, _, fixture, _ = _setup(monkeypatch, vault, tmp_path, "first")
+    receipt = copy.deepcopy(_issue(client, fixture)["receipt"])
+    receipt["signature"] = "é" * 64
+
+    response = _verify(client, receipt, _expect(fixture))
+
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["reason"] == "signature_mismatch"
+    assert _failures(client) == {"signature_mismatch": 1}
 
 
 def test_an_oversized_verification_body_is_refused(monkeypatch, vault, tmp_path):

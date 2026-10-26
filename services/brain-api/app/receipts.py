@@ -24,7 +24,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from . import scope
 
 RECEIPT_VERSION = "1"
-ACKS_KEPT = int(os.getenv("BRAIN_RECEIPT_ACKS_KEPT", "10000"))
 PROVES = "retrieval_and_delivery_not_comprehension"
 
 log = logging.getLogger("brain-api.receipts")
@@ -170,27 +169,35 @@ def _parse(body: bytes, model: type[VerifyRequest]) -> VerifyRequest:
         raise _reject(422, "invalid_request", "request fields are invalid") from exc
 
 
-def _check(request: VerifyRequest, grant: frozenset[str], deny: Callable[[], None]) -> dict:
-    if not keyring():
+def _authenticate(receipt: dict) -> dict:
+    keys = keyring()
+    if not keys:
         raise HTTPException(
             status_code=503,
             detail={"valid": False, "reason": "receipts_not_configured", "error": "no keys"},
         )
-    claims, signature = request.receipt.get("claims"), request.receipt.get("signature")
+    claims, signature = receipt.get("claims"), receipt.get("signature")
     if not isinstance(claims, dict) or not isinstance(signature, str):
         raise _reject(422, "invalid_request", "receipt needs claims and a signature")
     version = claims.get("key_version")
-    key = keyring().get(version) if isinstance(version, str) else None
+    key = keys.get(version) if isinstance(version, str) else None
     if key is None:
         raise _reject(409, "unknown_key_version", "receipt key version is not configured")
-    if not hmac.compare_digest(_sign(key, claims), signature):
+    if not hmac.compare_digest(_sign(key, claims).encode(), signature.encode("utf-8")):
         raise _reject(409, "signature_mismatch", "receipt was not issued as presented")
+    return claims
+
+
+def _authorize(claims: dict, grant: frozenset[str], deny: Callable[[], None]) -> None:
     if claims["brain_id"] != scope.BRAIN_ID:
         deny()
         raise _reject(403, "brain_audience", "receipt was issued by another brain")
     if not scope.admits(grant, set(claims["project_ids"]), unattributed=False):
         deny()
         raise _reject(403, "forbidden_scope", "receipt project is outside this token's grant")
+
+
+def _bind(claims: dict, request: VerifyRequest) -> None:
     if int(clock() * 1000) >= claims["expires_at_ms"]:
         raise _reject(409, "expired", "receipt has expired")
     expect = request.expect
@@ -200,6 +207,12 @@ def _check(request: VerifyRequest, grant: frozenset[str], deny: Callable[[], Non
         raise _reject(409, "wrong_task_revision", "receipt belongs to another task revision")
     if request.payload is not None and payload_digest(request.payload) != claims["payload_digest"]:
         raise _reject(409, "payload_mismatch", "payload differs from the issued context")
+
+
+def _check(request: VerifyRequest, grant: frozenset[str], deny: Callable[[], None]) -> dict:
+    claims = _authenticate(request.receipt)
+    _authorize(claims, grant, deny)
+    _bind(claims, request)
     return claims
 
 
@@ -275,6 +288,6 @@ def deliver(receipt_id: str, body: bytes, grant: frozenset[str], deny: Callable[
             "acknowledged_at_ms": int(clock() * 1000),
         }
         _acks[key] = row
-        while len(_acks) > ACKS_KEPT:
+        while len(_acks) > int(os.getenv("BRAIN_RECEIPT_ACKS_KEPT", "10000")):
             _acks.popitem(last=False)
     return {**row, "replayed": False}

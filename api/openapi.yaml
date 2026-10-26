@@ -772,7 +772,7 @@ paths:
       security: [{bearerAuth: []}]
       requestBody:
         required: true
-        description: "{receipt, expect: {execution_id, task_id, task_revision}, payload?}; payload is the delivered context and must match the receipt payload_digest. At most BRAIN_RECEIPT_MAX_BODY_BYTES (262144)."
+        description: "{receipt, expect: {execution_id, task_id, task_revision}, payload?}; payload is the delivered context exactly as received and must match the receipt payload_digest, the SHA-256 of the JSON with sorted keys, no whitespace and UTF-8 text, computed by the brain. At most BRAIN_RECEIPT_MAX_BODY_BYTES (262144)."
         content:
           application/json:
             schema: {type: object}
