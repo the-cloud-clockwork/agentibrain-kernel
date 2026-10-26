@@ -80,10 +80,16 @@ _lock = threading.Lock()
 
 
 def ceiling() -> Ceiling:
-    return Ceiling(
-        int(os.getenv("BRAIN_INFERENCE_CEILING_CONCURRENCY") or 0),
-        int(os.getenv("BRAIN_INFERENCE_CEILING_TOKENS_PER_MINUTE") or 0),
-    )
+    values = []
+    for name in (
+        "BRAIN_INFERENCE_CEILING_CONCURRENCY",
+        "BRAIN_INFERENCE_CEILING_TOKENS_PER_MINUTE",
+    ):
+        raw = (os.getenv(name) or "0").strip()
+        if not raw.isdigit():
+            raise PolicyRefused("invalid_ceiling", f"{name} is not a non-negative integer")
+        values.append(int(raw))
+    return Ceiling(*values)
 
 
 def _active(revision: str, source: Literal["file", "environment"], policy: Revision) -> Active:
@@ -109,19 +115,18 @@ def _environment(revision: str, limit: Ceiling) -> Active:
     return _active(revision, "environment", policy)
 
 
-def _refuse(reason: str, error: str) -> PolicyRefused:
+def record_refusal(reason: str) -> None:
     with _lock:
         _refusals[reason] += 1
-    return PolicyRefused(reason, error)
 
 
 def _document(path: str) -> Document:
     try:
         return Document.model_validate_json(Path(path).read_bytes())
     except OSError as exc:
-        raise _refuse("policy_unreadable", "the policy document cannot be read") from exc
+        raise PolicyRefused("policy_unreadable", "the policy document cannot be read") from exc
     except ValidationError as exc:
-        raise _refuse("invalid_policy", "the policy document is invalid") from exc
+        raise PolicyRefused("invalid_policy", "the policy document is invalid") from exc
 
 
 def active() -> Active:
@@ -133,19 +138,21 @@ def active() -> Active:
         return _environment(revision, limit)
     document = _document(path)
     if document.brain_id != (scope.BRAIN_ID or DEFAULT_BRAIN):
-        raise _refuse("brain_audience", "the policy names a brain other than this instance")
+        raise PolicyRefused("brain_audience", "the policy names a brain other than this instance")
     chosen = document.revisions.get(revision)
     if chosen is None:
-        raise _refuse("unknown_revision", "BRAIN_POLICY_REVISION names no revision in the policy")
+        raise PolicyRefused(
+            "unknown_revision", "BRAIN_POLICY_REVISION names no revision in the policy"
+        )
     if chosen.ranking not in rank.POLICIES:
-        raise _refuse("unknown_ranking", "the revision names no known ranking policy")
+        raise PolicyRefused("unknown_ranking", "the revision names no known ranking policy")
     if limit.concurrency < 1 or limit.tokens_per_minute < 1:
-        raise _refuse("ceiling_unset", "the deployment sets no inference ceiling")
+        raise PolicyRefused("ceiling_unset", "the deployment sets no inference ceiling")
     if (
         chosen.inference_concurrency > limit.concurrency
         or chosen.inference_tokens_per_minute > limit.tokens_per_minute
     ):
-        raise _refuse(
+        raise PolicyRefused(
             "budget_exceeds_ceiling", "the revision's inference budget exceeds the ceiling"
         )
     return _active(revision, "file", chosen)
@@ -161,7 +168,6 @@ def digest_or_refusal() -> str:
 @dataclass(frozen=True)
 class Lease:
     brain_id: str
-    tokens: int
 
 
 class InferenceBudget:
@@ -197,7 +203,7 @@ class InferenceBudget:
             self._in_flight[brain] += 1
             spent.append((self.clock(), tokens))
             self._counts[(brain, "granted")] += 1
-            return Lease(brain, tokens)
+            return Lease(brain)
 
     def release(self, lease: Lease) -> None:
         with self._lock:
@@ -237,14 +243,19 @@ def diagnostics() -> dict:
         current, refusal = active().describe(), None
     except PolicyRefused as exc:
         current, refusal = None, {"reason": exc.reason, "error": str(exc)}
+    try:
+        limit = asdict(ceiling())
+    except PolicyRefused:
+        limit = None
     with _lock:
         refusals = dict(_refusals)
-    return {
-        "active": current,
-        "refusal": refusal,
-        "ceiling": asdict(ceiling()),
-        "refusals": refusals,
-    }
+    return {"active": current, "refusal": refusal, "ceiling": limit, "refusals": refusals}
+
+
+def public() -> dict | None:
+    """The active policy without its digest, for callers that send no credential."""
+    current = diagnostics()["active"]
+    return current and {k: current[k] for k in ("brain_id", "revision", "source")}
 
 
 def usage() -> dict | None:

@@ -20,12 +20,11 @@
       "type": ["object", "null"],
       "description": "The policy revision brain-api serves (SV2-MUL-05); null while the selected revision is refused.",
       "additionalProperties": false,
-      "required": ["brain_id", "revision", "source", "digest"],
+      "required": ["brain_id", "revision", "source"],
       "properties": {
         "brain_id": { "type": "string" },
         "revision": { "type": "string" },
-        "source": { "enum": ["file", "environment"] },
-        "digest": { "type": "string" }
+        "source": { "enum": ["file", "environment"] }
       }
     }
   }

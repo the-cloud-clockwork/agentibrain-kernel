@@ -188,7 +188,7 @@ def instance() -> dict:
         "schema": "brain-instance-v2",
         "brain_id": scope.BRAIN_ID or "default",
         "policy_revision": scope.POLICY_REVISION,
-        "brain_policy": brain_policy.diagnostics()["active"],
+        "brain_policy": brain_policy.public(),
     }
 
 

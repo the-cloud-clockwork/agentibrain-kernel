@@ -74,10 +74,6 @@ def enabled() -> bool:
     return os.getenv("BRAIN_TASK_CONTEXT", "true").lower() != "false"
 
 
-def packing_enabled() -> bool:
-    return os.getenv("BRAIN_CONTEXT_PACKING", "true").lower() != "false"
-
-
 def ranking_policy(revision: str | None = None) -> rank.Policy | None:
     if os.getenv("BRAIN_CONTEXT_RANKING", "true").lower() == "false":
         return None
@@ -253,6 +249,7 @@ def accept(
     try:
         current = brain_policy.active()
     except brain_policy.PolicyRefused as exc:
+        brain_policy.record_refusal(exc.reason)
         detail = {"reason": "policy_refused", "refusal": exc.reason, "error": str(exc)}
         raise HTTPException(status_code=503, detail=detail) from exc
     policy = current.policy

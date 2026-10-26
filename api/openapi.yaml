@@ -158,7 +158,7 @@ paths:
                   brain_id: { type: string, pattern: "^[a-z][a-z0-9-]{0,62}$" }
                   policy_revision: { type: integer, minimum: 1 }
                   brain_policy:
-                    description: Active policy (SV2-MUL-05) as {brain_id, revision, source, digest}; null while refused.
+                    description: Active policy (SV2-MUL-05) as {brain_id, revision, source}; null while refused. The digest is served only to authenticated callers.
                     type: object
                     nullable: true
 
@@ -767,13 +767,13 @@ paths:
         "409": {description: A newer task revision was already accepted for this task.}
         "413": {description: Request body exceeds the size limit.}
         "422": {description: Unsupported schema_version (checked before validation) or invalid fields.}
-        "503": {description: "BRAIN_TASK_CONTEXT=false, BRAIN_ID unset, BRAIN_RANKING_POLICY names no known revision, or reason policy_refused with refusal policy_unreadable, invalid_policy, brain_audience, unknown_revision, unknown_ranking, ceiling_unset or budget_exceeds_ceiling; the feed stays available."}
+        "503": {description: "BRAIN_TASK_CONTEXT=false, BRAIN_ID unset, BRAIN_RANKING_POLICY names no known revision, or reason policy_refused with refusal policy_unreadable, invalid_policy, brain_audience, unknown_revision, unknown_ranking, invalid_ceiling, ceiling_unset or budget_exceeds_ceiling; the feed stays available."}
   /v2/context/stats:
     get:
       summary: context_request_validation_failures by reason and context_cache counters (router tokens only).
       security: [{bearerAuth: []}]
       responses:
-        "200": {description: "context_request_validation_failures: reason to count. context_cache: context_cache_requests, context_cache_hits, context_cache_misses, context_coalesced_requests, context_cache_hit_ratio ((hits + coalesced) / requests), context_cache_invalidations and context_cache_entries. context_receipt_validation_failures: reason to count. brain_policy: active (or null), refusal {reason, error} (or null), ceiling {concurrency, tokens_per_minute} and refusals by reason. brain_inference_budget_usage (null while refused): brain_id, policy_revision, in_flight, concurrency_limit, tokens_reserved_window, tokens_per_minute_limit, granted, refused_concurrency, refused_tokens."}
+        "200": {description: "context_request_validation_failures: reason to count. context_cache: context_cache_requests, context_cache_hits, context_cache_misses, context_coalesced_requests, context_cache_hit_ratio ((hits + coalesced) / requests), context_cache_invalidations and context_cache_entries. context_receipt_validation_failures: reason to count. brain_policy: active (or null), refusal {reason, error} (or null), ceiling {concurrency, tokens_per_minute} (null when unparsable) and refusals: refused context requests by reason. brain_inference_budget_usage (null while refused): brain_id, policy_revision, in_flight, concurrency_limit, tokens_reserved_window, tokens_per_minute_limit, granted, refused_concurrency, refused_tokens."}
         "403": {description: Not a router token.}
   /v2/context/receipts/verify:
     post:

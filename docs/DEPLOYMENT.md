@@ -153,14 +153,16 @@ or that is served with no ceiling is refused: `POST /v2/context` answers 503
 inference calls fall back to regex classification. No revision raises the ceiling.
 
 - Every context response carries `brain_policy {brain_id, revision, source, digest}`;
-  `GET /instance` and `GET /v2/context/stats` report it, the stats also the
-  refusal and `brain_inference_budget_usage`.
+  `GET /v2/context/stats` reports it with the refusal, refused requests by reason
+  and `brain_inference_budget_usage`. Unauthenticated `GET /instance` omits the digest.
 - The document is read on each request; a change of the active digest clears
   only that brain-api's context cache.
 - Rollback: select the previous revision (or restore the previous document). No
   evidence or vault content is migrated.
-- Without `BRAIN_POLICY_FILE` the brain keeps `BRAIN_RANKING_POLICY`,
-  `BRAIN_CONTEXT_PACKING` and unbounded inference, reported as `source: environment`.
+- Without `BRAIN_POLICY_FILE` the brain keeps `BRAIN_RANKING_POLICY` and
+  `BRAIN_CONTEXT_PACKING`, reported as `source: environment`; inference is bounded
+  by the ceiling when one is set and unbounded otherwise.
+- A ceiling value that is not a non-negative integer refuses with `invalid_ceiling`.
 - Rollback: unset `BRAIN_ID` and the brain answers `default` again. Clients that
   expect another name then refuse it rather than send credentials.
 

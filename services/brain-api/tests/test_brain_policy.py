@@ -124,8 +124,8 @@ def test_a_swarm_policy_change_affects_only_swarm_packs(monkeypatch, vault, tmp_
     assert tuned["context"]["pack"]["degraded"] is None
     assert len(tuned["context"]["items"]) > len(steady["context"]["items"])
     assert len(steady["context"]["items"]) <= fixture["swarm"]["revisions"]["1"]["max_items"]
-    instance = swarm.get("/instance").json()
-    assert instance["brain_policy"] == tuned["brain_policy"]
+    public = {k: tuned["brain_policy"][k] for k in ("brain_id", "revision", "source")}
+    assert swarm.get("/instance").json()["brain_policy"] == public
     assert _stats(swarm)["brain_policy"]["active"] == tuned["brain_policy"]
 
 
@@ -232,6 +232,7 @@ def test_b_a_budget_above_the_ceiling_is_refused_without_raising_it(
     assert stats["brain_policy"]["active"] is None
     assert stats["brain_policy"]["refusal"]["reason"] == "budget_exceeds_ceiling"
     assert stats["brain_policy"]["ceiling"] == fixture["ceiling"]
+    assert stats["brain_policy"]["refusals"] == {"budget_exceeds_ceiling": 1}
     assert stats["brain_inference_budget_usage"] is None
     assert swarm.get("/instance").json()["brain_policy"] is None
     assert swarm_file.read_bytes() == protected
@@ -296,6 +297,29 @@ def test_without_a_policy_file_the_environment_behavior_is_kept(monkeypatch, vau
     assert policy.policy.synthesis_max_tokens == 2048
     leases = [_policy().budget.reserve(policy) for _ in range(64)]
     assert all(leases)
+
+    monkeypatch.setenv("BRAIN_INFERENCE_CEILING_CONCURRENCY", "1")
+    monkeypatch.setenv("BRAIN_INFERENCE_CEILING_TOKENS_PER_MINUTE", "100000")
+    bounded = _policy().active()
+    budget = _policy().InferenceBudget()
+    assert budget.reserve(bounded) is not None
+    assert budget.reserve(bounded) is None
+
+
+@pytest.mark.parametrize("value", ["four", "-1"])
+def test_an_unparsable_ceiling_refuses_rather_than_failing(monkeypatch, vault, tmp_path, value):
+    fixture = copy.deepcopy(FIXTURE["first"])
+    swarm, _ = _instance(monkeypatch, tmp_path, fixture, "swarm", "1")
+    monkeypatch.setenv("BRAIN_INFERENCE_CEILING_CONCURRENCY", value)
+
+    response = _ask(swarm, fixture, "swarm")
+    stats = _stats(swarm)
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["refusal"] == "invalid_ceiling"
+    assert swarm.get("/instance").json()["brain_policy"] is None
+    assert stats["brain_policy"]["ceiling"] is None
+    assert stats["brain_policy"]["refusals"] == {"invalid_ceiling": 1}
 
 
 @pytest.mark.parametrize("name", SETS)
