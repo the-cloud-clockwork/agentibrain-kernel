@@ -18,7 +18,7 @@ from typing import Annotated, Literal
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import context_cache, graph, scope
+from . import context_cache, graph, receipts, scope
 from .retrieval import packing, rank
 
 SCHEMA_VERSION = "2.0"
@@ -211,6 +211,7 @@ def _admit(
         "replayed": False,
     }
     response.update(ranked())
+    response["receipt"] = receipts.issue(response)
     with _lock:
         _accepted[operation] = response
         while len(_accepted) > ACCEPTED_KEPT:
