@@ -238,7 +238,7 @@ def test_b_a_budget_above_the_ceiling_is_refused_without_raising_it(
     assert stats["brain_policy"]["active"] is None
     assert stats["brain_policy"]["refusal"]["reason"] == "budget_exceeds_ceiling"
     assert stats["brain_policy"]["ceiling"] == fixture["ceiling"]
-    assert stats["brain_policy"]["refusals"] == {"budget_exceeds_ceiling": 1}
+    assert stats["brain_policy"]["refusals"] == {"budget_exceeds_ceiling": 2}
     assert stats["brain_inference_budget_usage"] is None
     assert swarm.get("/instance").json()["brain_policy"] is None
     assert swarm_file.read_bytes() == protected
@@ -312,7 +312,7 @@ def test_without_a_policy_file_the_environment_behavior_is_kept(monkeypatch, vau
     assert budget.reserve(bounded) is None
 
 
-@pytest.mark.parametrize("value", ["four", "-1"])
+@pytest.mark.parametrize("value", ["four", "-1", "²"])
 def test_an_unparsable_ceiling_refuses_rather_than_failing(monkeypatch, vault, tmp_path, value):
     fixture = copy.deepcopy(FIXTURE["first"])
     swarm, _ = _instance(monkeypatch, tmp_path, fixture, "swarm", "1")

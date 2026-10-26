@@ -160,7 +160,7 @@ refused by the budget falls back to regex classification and is counted in
 `refused_concurrency` or `refused_tokens`.
 
 - Every context response carries `brain_policy {brain_id, revision, source, digest}`;
-  `GET /v2/context/stats` reports it with the refusal, refused requests by reason
+  `GET /v2/context/stats` reports it with the refusal, refused requests and reservations by reason
   and `brain_inference_budget_usage`. Unauthenticated `GET /instance` omits the digest.
 - The document is read on each request; a change of the active digest clears
   only that brain-api's context cache.

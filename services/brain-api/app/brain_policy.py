@@ -86,7 +86,7 @@ def ceiling() -> Ceiling:
         "BRAIN_INFERENCE_CEILING_TOKENS_PER_MINUTE",
     ):
         raw = (os.getenv(name) or "0").strip()
-        if not raw.isdigit():
+        if not raw.isdecimal():
             raise PolicyRefused("invalid_ceiling", f"{name} is not a non-negative integer")
         values.append(int(raw))
     return Ceiling(*values)
@@ -232,7 +232,8 @@ budget = InferenceBudget()
 def reserve() -> tuple[Active, Lease] | None:
     try:
         current = active()
-    except PolicyRefused:
+    except PolicyRefused as exc:
+        record_refusal(exc.reason)
         return None
     lease = budget.reserve(current)
     return None if lease is None else (current, lease)
