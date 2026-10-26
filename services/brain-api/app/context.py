@@ -18,7 +18,7 @@ from typing import Annotated, Literal
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import context_cache, graph, scope
+from . import context_cache, graph, receipts, scope
 from .retrieval import packing, rank
 
 SCHEMA_VERSION = "2.0"
@@ -90,6 +90,11 @@ def ranking_policy() -> rank.Policy | None:
 def failures() -> dict[str, int]:
     with _lock:
         return dict(_failures)
+
+
+def latest_revision(project_id: str, task_id: str) -> int:
+    with _lock:
+        return _latest.get((scope.BRAIN_ID, project_id, task_id), 0)
 
 
 def _reject(status: int, reason: str, error: str, **extra) -> HTTPException:
@@ -211,6 +216,7 @@ def _admit(
         "replayed": False,
     }
     response.update(ranked())
+    response["receipt"] = receipts.issue(response)
     with _lock:
         _accepted[operation] = response
         while len(_accepted) > ACCEPTED_KEPT:

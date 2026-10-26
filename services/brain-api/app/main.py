@@ -18,6 +18,8 @@ Endpoints:
   GET  /graph/stats                    — graph_invalid_relations_total and quarantine size
   POST /v2/context                     — authenticated task-context request
   GET  /v2/context/stats               — context_request_validation_failures (router tokens only)
+  POST /v2/context/receipts/verify     — verify a context receipt for the caller's task
+  POST /v2/context/{receipt}/delivery  — record a target adapter's delivery acknowledgement
   POST /tick                           — request a manual agentibrain tick
   GET  /tick/{job_id}                  — look up tick status
   GET  /vault/list                     — list vault files
@@ -57,7 +59,17 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from . import arcs, context, graph, instance_claim, pipeline, provenance, scope, vault_reader
+from . import (
+    arcs,
+    context,
+    graph,
+    instance_claim,
+    pipeline,
+    provenance,
+    receipts,
+    scope,
+    vault_reader,
+)
 from .feed import VAULT_ROOT, feed_payload, project_feed_payload
 from .markers import (
     MarkerError,
@@ -897,7 +909,54 @@ def get_context_stats(_: None = Depends(require_router_token)) -> dict:
     return {
         "context_request_validation_failures": context.failures(),
         "context_cache": context.cache.stats(),
+        "context_receipt_validation_failures": receipts.failures(),
     }
+
+
+def _receipt_denial(authorization: str | None, route: str, title: str | None):
+    return lambda: scope.record_denial(
+        scope.worker_brain(_bearer(authorization)) or "", route, title or ""
+    )
+
+
+@app.post("/v2/context/receipts/verify")
+async def post_receipt_verify(
+    request: Request,
+    authorization: str | None = Header(None),
+    x_session_title: str | None = Header(None, alias="X-Session-Title"),
+    _: None = Depends(require_token),
+) -> dict:
+    """Verify a context receipt for the caller's task and resolve its visible references."""
+    body = await receipts.read_bounded(request.stream())
+    return await run_in_threadpool(
+        receipts.verify,
+        body,
+        _caller_grant(authorization),
+        graph.active_store(),
+        _graph_visible(authorization),
+        _receipt_denial(authorization, "POST /v2/context/receipts/verify", x_session_title),
+        context.latest_revision,
+    )
+
+
+@app.post("/v2/context/{receipt_id}/delivery")
+async def post_receipt_delivery(
+    request: Request,
+    receipt_id: str = PathParam(..., min_length=1, max_length=64),
+    authorization: str | None = Header(None),
+    x_session_title: str | None = Header(None, alias="X-Session-Title"),
+    _: None = Depends(require_token),
+) -> dict:
+    """Record that a target adapter delivered exactly the context a valid receipt names."""
+    body = await receipts.read_bounded(request.stream())
+    return await run_in_threadpool(
+        receipts.deliver,
+        receipt_id,
+        body,
+        _caller_grant(authorization),
+        _receipt_denial(authorization, "POST /v2/context/{receipt}/delivery", x_session_title),
+        context.latest_revision,
+    )
 
 
 @app.get("/graph/stats")

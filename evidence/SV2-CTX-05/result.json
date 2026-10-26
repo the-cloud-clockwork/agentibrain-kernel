@@ -1,0 +1,62 @@
+{
+  "package": "SV2-CTX-05",
+  "tested_commit": "bb5b0ba93df47cd60010522940e53d3ac962ab3d",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40259666523",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40259666523/job/121369084033",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source, fixture signing keys and a fake clock; receipts, context, scope and graph are the production modules.",
+  "dependency": [
+    "SV2-CTX-04"
+  ],
+  "integration_gate": "G6",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/180",
+  "issue": "https://github.com/the-cloud-clockwork/agentibrain-kernel/issues/179",
+  "interfaces": [
+    "POST /v2/context response receipt {claims, signature}",
+    "POST /v2/context/receipts/verify",
+    "POST /v2/context/{receipt_id}/delivery",
+    "GET /v2/context/stats context_receipt_validation_failures",
+    "app.receipts: issue, verify, deliver, payload_digest, keyring, failures, ERROR_CLASSES; app.context.latest_revision",
+    "BRAIN_RECEIPT_KEYS, BRAIN_RECEIPT_KEY_VERSION, BRAIN_RECEIPT_TTL_SECONDS, BRAIN_RECEIPT_MAX_BODY_BYTES, BRAIN_RECEIPT_ACKS_KEPT"
+  ],
+  "supported_versions": {
+    "context_request": [
+      "2.0"
+    ],
+    "receipt": [
+      "1"
+    ],
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ]
+  },
+  "state": {
+    "observed": "Every pull request check passes on the tested commit (run https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40259666523).",
+    "accepted": "The 34 SV2-CTX-05 tests pass in the full brain-api suite on three Python versions (404 passed); the SV2-CTX-01 to 04 context tests pass unchanged.",
+    "committed": "bb5b0ba93df47cd60010522940e53d3ac962ab3d",
+    "externally_verified": "None; mocked fixture evidence only. G6 rollout must validate deployed behavior."
+  },
+  "red": {
+    "commit": "f0bb14abbff23e9146b77bc0314595a4cdeb09c4",
+    "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40257333239",
+    "outcome": "failure on 3.10, 3.11 and 3.12: 32 failed, 370 passed; ModuleNotFoundError app.receipts"
+  },
+  "compatibility": "Against the SV2-CTX-04 response every field is unchanged; the response gains a top level receipt, null when no signing key is configured. Stats gain context_receipt_validation_failures. Exact replays return the same receipt.",
+  "cases": [
+    "a-result.json",
+    "b-result.json",
+    "c-result.json"
+  ],
+  "rollback_rehearsal": "mocked, in process: unsetting BRAIN_RECEIPT_KEYS keeps context served with receipt null and verification answering receipts_not_configured, error_class dependency_unavailable (test_unconfigured_signing_keys_keep_context_and_refuse_verification). No rehearsal on a running service yet; G6 rollout must repeat it there. Receipt-required gates in agentihooks return to observe mode first. Receipts write no authoritative object; graph entities are untouched.",
+  "limitations": [
+    "Delivery acknowledgements and the latest accepted task revision are per process and are lost on restart; acknowledgement ids are derived from receipt and adapter so a retried delivery keeps its id.",
+    "Receipts are HMAC signed with shared keys, so any holder of a key version can verify and mint receipts for that brain; key distribution is a deployment concern. A secret cannot contain a comma.",
+    "Shared task packs for another agent are not issued; a receipt verifies only for its own execution.",
+    "The verify route is not in the section 13.3 table; it is the server verifiable lookup section 11.2 requires.",
+    "A receipt proves retrieval and delivery, never comprehension by the model."
+  ],
+  "measurement": {
+    "context_receipt_validation_failures": "see b-result.json; empty in a-result.json"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "package": "SV2-CTX-05",
+  "tested_commit": "bb5b0ba93df47cd60010522940e53d3ac962ab3d",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40259666523",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40259666523/job/121369084033",
+  "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source, fixture signing keys and a fake clock; receipts, context, scope and graph are the production modules.",
+  "case": "T-SV2-CTX-05-A",
+  "outcome": "passed",
+  "tests": [
+    "test_a_a_receipt_binds_the_task_and_verifies_with_every_visible_supporting_item[first]",
+    "test_a_a_receipt_binds_the_task_and_verifies_with_every_visible_supporting_item[second]",
+    "test_a_a_revised_supporting_item_is_named_stale_without_failing_the_receipt[first]",
+    "test_a_a_revised_supporting_item_is_named_stale_without_failing_the_receipt[second]"
+  ],
+  "assertions": [
+    "The context response carries a receipt whose claims bind brain, project scope, execution id, task id and revision, lane, purpose, operation id, scope and ranking policy, knowledge revision, every packed reference, omitted and excluded material, a payload digest, issue time, expiry ten minutes later and key version v2.",
+    "One second before expiry the receipt verifies with the delivered payload; every reference resolves available with its current revision read from the graph store; the explanation names no omitted, stale or unavailable item.",
+    "A verification with the payload reports payload_verified true; a claims only verification reports payload_verified false and must not satisfy a gate.",
+    "The response proves retrieval and delivery, not comprehension, and carries authority recalled_evidence; the graph store snapshot is unchanged by verification.",
+    "Two adapters acknowledge delivery separately; a repeated acknowledgement from the same adapter is a replay with the same ack id.",
+    "A supporting item revised after issue is reported stale with its new revision, without its new title, and the receipt stays valid.",
+    "context_receipt_validation_failures stays empty; the second fixture repeats every assertion independently."
+  ],
+  "measurement": {
+    "context_receipt_validation_failures": {
+      "first": {},
+      "second": {}
+    }
+  }
+}
