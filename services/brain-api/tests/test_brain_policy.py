@@ -4,9 +4,15 @@ import asyncio
 import copy
 import importlib
 import json
+import os
+import socket
+import subprocess
+import sys
 import threading
+import time
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -389,3 +395,123 @@ def test_c_a_load_begun_under_an_older_revision_is_not_stored(monkeypatch, vault
     assert _stats(swarm)["context_cache"]["context_cache_entries"] == 1
     again = _pack(_ask(swarm, fixture, "swarm", 3))
     assert again["context"] == current["context"]
+
+
+def _port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _serve(tmp_path, fixture, brain, revision, policy_file) -> tuple[subprocess.Popen, str]:
+    from agentibrain.scaffold import scaffold
+
+    root = tmp_path / brain
+    vault = root / "vault"
+    scaffold(vault)
+    db = root / "graph.db"
+    store = importlib.import_module("app.graph").GraphStore(db)
+    for entity in fixture["entities"]:
+        store.put_entity(entity)
+    port = _port()
+    env = {
+        **os.environ,
+        "VAULT_ROOT": str(vault),
+        "FEED_CACHE_TTL_SECONDS": "0",
+        "AMYGDALA_SIGNAL_PATH": "brain-feed/amygdala-active.md",
+        "BRAIN_ID": brain,
+        "BRAIN_GRAPH_DB": str(db),
+        "KB_ROUTER_TOKENS": ROUTER,
+        "KB_WORKER_TOKENS": f"{brain}@{fixture['project']}#eng=agent",
+        "BRAIN_POLICY_FILE": str(policy_file),
+        "BRAIN_POLICY_REVISION": revision,
+        "BRAIN_INFERENCE_CEILING_CONCURRENCY": str(fixture["ceiling"]["concurrency"]),
+        "BRAIN_INFERENCE_CEILING_TOKENS_PER_MINUTE": str(fixture["ceiling"]["tokens_per_minute"]),
+    }
+    command = [sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(port)]
+    process = subprocess.Popen(
+        [*command, "--log-level", "warning"], cwd=Path(__file__).parents[1], env=env
+    )
+    url = f"http://127.0.0.1:{port}"
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        try:
+            if httpx.get(f"{url}/health", timeout=1).status_code == 200:
+                return process, url
+        except httpx.HTTPError:
+            time.sleep(0.2)
+    process.terminate()
+    raise AssertionError(f"{brain} brain-api did not start")
+
+
+def _remote(url, fixture, brain, n) -> dict:
+    body = _request(
+        **{
+            **fixture["request"],
+            "brain_id": brain,
+            "project_id": fixture["project"],
+            "request_id": f"mul05-live-{n:04d}",
+            "execution_id": f"exe-mul05-live-{n:04d}",
+        }
+    )
+    response = httpx.post(f"{url}/v2/context", json=body, headers=_auth("agent"), timeout=10)
+    return _pack(response)
+
+
+def _remote_stats(url) -> dict:
+    return httpx.get(f"{url}/v2/context/stats", headers=_auth(ROUTER), timeout=10).json()
+
+
+@pytest.mark.parametrize("name", SETS)
+def test_a_c_two_running_brains_keep_independent_packs_caches_and_budgets(tmp_path, name):
+    fixture = copy.deepcopy(FIXTURE[name])
+    personal_revision = next(iter(fixture["personal"]["revisions"]))
+    personal_file = _write(tmp_path / "personal-policy.json", fixture["personal"])
+    swarm_file = _write(tmp_path / "swarm-policy.json", fixture["swarm"])
+    tuned_document = copy.deepcopy(fixture["swarm"])
+    tuned_document["revisions"]["1"] = tuned_document["revisions"]["2"]
+    started = []
+    try:
+        started.append(_serve(tmp_path, fixture, "personal", personal_revision, personal_file))
+        started.append(_serve(tmp_path, fixture, "swarm", "1", swarm_file))
+        (_, personal), (_, swarm) = started
+
+        before = _remote(personal, fixture, "personal", 1)
+        personal_stats = _remote_stats(personal)
+        steady = _remote(swarm, fixture, "swarm", 1)
+
+        _write(swarm_file, tuned_document)
+        tuned = _remote(swarm, fixture, "swarm", 2)
+        swarm_stats = _remote_stats(swarm)
+        after = _remote(personal, fixture, "personal", 2)
+        personal_after = _remote_stats(personal)
+
+        _write(swarm_file, fixture["swarm"])
+        reverted = _remote(swarm, fixture, "swarm", 3)
+        swarm_reverted = _remote_stats(swarm)
+        personal_reverted = _remote_stats(personal)
+    finally:
+        for process, _ in started:
+            process.terminate()
+            process.wait(10)
+
+    assert tuned["brain_policy"]["digest"] != steady["brain_policy"]["digest"]
+    assert len(tuned["context"]["items"]) > len(steady["context"]["items"])
+    assert tuned["context"]["policy_revision"] == fixture["swarm"]["revisions"]["2"]["ranking"]
+    assert swarm_stats["context_cache"]["context_cache_invalidations"] == 1
+    assert (
+        swarm_stats["brain_inference_budget_usage"]["concurrency_limit"]
+        == (fixture["swarm"]["revisions"]["2"]["inference_concurrency"])
+    )
+
+    assert after == before
+    assert personal_after["context_cache"]["context_cache_invalidations"] == 0
+    assert personal_after["context_cache"]["context_cache_hits"] == 1
+    assert (
+        personal_after["brain_inference_budget_usage"]
+        == (personal_stats["brain_inference_budget_usage"])
+    )
+
+    assert reverted == steady
+    assert swarm_reverted["context_cache"]["context_cache_invalidations"] == 2
+    assert personal_reverted["context_cache"] == personal_after["context_cache"]

@@ -152,6 +152,13 @@ or that is served with no ceiling is refused: `POST /v2/context` answers 503
 `policy_refused` with the refusal reason until a valid revision is selected, and
 inference calls fall back to regex classification. No revision raises the ceiling.
 
+Each brain reaches the shared backend with its own `INFERENCE_API_KEY`, scoped
+at the gateway with limits equal to that brain's ceiling. brain-api enforces its
+own brain's budget only; keeping the sum of the brains' ceilings within the
+backend's capacity is the gateway's job, through those key limits. A call
+refused by the budget falls back to regex classification and is counted in
+`refused_concurrency` or `refused_tokens`.
+
 - Every context response carries `brain_policy {brain_id, revision, source, digest}`;
   `GET /v2/context/stats` reports it with the refusal, refused requests by reason
   and `brain_inference_budget_usage`. Unauthenticated `GET /instance` omits the digest.
