@@ -61,6 +61,7 @@ from starlette.concurrency import run_in_threadpool
 
 from . import (
     arcs,
+    brain_policy,
     context,
     graph,
     instance_claim,
@@ -187,6 +188,7 @@ def instance() -> dict:
         "schema": "brain-instance-v2",
         "brain_id": scope.BRAIN_ID or "default",
         "policy_revision": scope.POLICY_REVISION,
+        "brain_policy": brain_policy.diagnostics()["active"],
     }
 
 
@@ -910,6 +912,8 @@ def get_context_stats(_: None = Depends(require_router_token)) -> dict:
         "context_request_validation_failures": context.failures(),
         "context_cache": context.cache.stats(),
         "context_receipt_validation_failures": receipts.failures(),
+        "brain_policy": brain_policy.diagnostics(),
+        "brain_inference_budget_usage": brain_policy.usage(),
     }
 
 

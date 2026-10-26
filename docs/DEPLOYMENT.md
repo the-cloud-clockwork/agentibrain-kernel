@@ -121,7 +121,7 @@ id. An installation without `BRAIN_ID` is the brain named `default`, so existing
 installs keep their vault and credentials with no migration step.
 `BRAIN_POLICY_REVISION` (default `1`) is served beside it.
 
-- brain-api answers `GET /instance` without auth: `{schema, brain_id, policy_revision}`.
+- brain-api answers `GET /instance` without auth: `{schema, brain_id, policy_revision, brain_policy}`.
   It refuses to start when `BRAIN_ID` is set outside the schema pattern.
 - `BrainClient(expected_brain_id=...)` calls `/instance` before any request that
   carries the bearer and raises `BrainBindingError` on a different or absent id,
@@ -133,6 +133,34 @@ installs keep their vault and credentials with no migration step.
   keys when the file lacks them and never rewrites an existing key; changing a
   brain's id or policy revision afterwards is an operator edit of that file,
   followed by a stack restart.
+
+### Policy and inference budgets per brain
+
+`BRAIN_POLICY_FILE` names a JSON policy document for one brain:
+`{"brain_id": "swarm", "revisions": {"1": {...}, "2": {...}}}`, and
+`BRAIN_POLICY_REVISION` selects the revision brain-api serves. Each revision sets
+`ranking` (a ranking policy revision), `max_items`, `edge_budget`, `packing`
+(`full` or `conservative`), `max_tokens` (the injection cap),
+`synthesis_max_tokens` (per inference call), `inference_concurrency` and
+`inference_tokens_per_minute`. Request budgets are clamped to the revision's caps.
+
+`BRAIN_INFERENCE_CEILING_CONCURRENCY` and
+`BRAIN_INFERENCE_CEILING_TOKENS_PER_MINUTE` are deployment settings: this brain's
+allotment of the shared inference backend, matching the limits of the inference
+key it holds. A revision whose budget exceeds either, that names another brain,
+or that is served with no ceiling is refused: `POST /v2/context` answers 503
+`policy_refused` with the refusal reason until a valid revision is selected, and
+inference calls fall back to regex classification. No revision raises the ceiling.
+
+- Every context response carries `brain_policy {brain_id, revision, source, digest}`;
+  `GET /instance` and `GET /v2/context/stats` report it, the stats also the
+  refusal and `brain_inference_budget_usage`.
+- The document is read on each request; a change of the active digest clears
+  only that brain-api's context cache.
+- Rollback: select the previous revision (or restore the previous document). No
+  evidence or vault content is migrated.
+- Without `BRAIN_POLICY_FILE` the brain keeps `BRAIN_RANKING_POLICY`,
+  `BRAIN_CONTEXT_PACKING` and unbounded inference, reported as `source: environment`.
 - Rollback: unset `BRAIN_ID` and the brain answers `default` again. Clients that
   expect another name then refuse it rather than send credentials.
 

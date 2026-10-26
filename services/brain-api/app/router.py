@@ -25,7 +25,7 @@ from uuid import uuid4
 
 import httpx
 
-from . import vault_reader
+from . import brain_policy, vault_reader
 
 log = logging.getLogger("brain_api")
 
@@ -140,14 +140,25 @@ async def _call_router_llm(message: str, model: str) -> dict:
     if not INFERENCE_URL:
         log.warning("inference gateway not configured; falling back to regex")
         return _fallback_classify(message)
+    granted = brain_policy.reserve()
+    if granted is None:
+        log.warning("brain inference budget refused the call; falling back to regex")
+        return _fallback_classify(message)
+    current, lease = granted
+    try:
+        return await _classify(message, model, current.policy.synthesis_max_tokens)
+    finally:
+        brain_policy.budget.release(lease)
 
+
+async def _classify(message: str, model: str, max_tokens: int) -> dict:
     body = {
         "model": model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": message},
         ],
-        "max_tokens": 2048,
+        "max_tokens": max_tokens,
         "temperature": 0.1,
         "response_format": {"type": "json_object"},
     }
