@@ -14,7 +14,7 @@
   ],
   "assertions": [
     "Moving the swarm brain from revision 1 to its experimental revision changes its ranking revision, packing and item count and its policy digest; the personal pack (context and brain_policy) is equal before and after.",
-    "In two running processes the swarm tune invalidates the swarm context cache once while the personal cache records 0 invalidations and serves a hit, and the personal budget usage is unchanged.",
+    "In two running processes the swarm tune invalidates the swarm context cache once while the personal cache records 0 invalidations and serves a hit. Budget isolation across brains holds by process construction; no inference call is driven in this fixture, so the unchanged personal budget usage is not offered as proof of it.",
     "Concurrency and the per-minute token window are enforced separately: one reservation over the concurrency limit and one over the token window are refused, and the window reopens after sixty seconds on a fake clock.",
     "A classification call sends the revision's synthesis_max_tokens and is counted as granted; with the brain's concurrency held it falls back to regex without reaching the gateway and is counted as refused_concurrency.",
     "Policy revision and digest are exposed in every context response and in /v2/context/stats; /instance serves brain_id, revision and source."
