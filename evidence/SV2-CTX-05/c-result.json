@@ -1,8 +1,8 @@
 {
   "package": "SV2-CTX-05",
-  "tested_commit": "3553aa14cde1b63e4e955f02ed763ac21c98cc92",
-  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40257690538",
-  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40257690538/job/121362980839",
+  "tested_commit": "c6b1435e02b4620579e451de14815e4fb66cf0e0",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40258804047",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40258804047/job/121366415233",
   "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source, fixture signing keys and a fake clock; receipts, context, scope and graph are the production modules.",
   "case": "T-SV2-CTX-05-C",
   "outcome": "passed",
@@ -13,6 +13,7 @@
   "assertions": [
     "An exact replay before restart returns the same receipt with replayed true, so no second receipt is issued.",
     "After a restart that reloads every brain-api module and rotates the signing key to v3 while keeping v2, the v2 receipt still verifies with its payload; new receipts are signed with v3.",
+    "A delivery retried after restart gets the same ack id as the delivery acknowledged before it, so the retry adds no second acknowledgement identity.",
     "At the expiry instant after restart the receipt fails expired.",
     "After a restart that drops v2, the v2 receipt fails unknown_key_version while the v3 receipt verifies."
   ],
@@ -22,7 +23,8 @@
     ],
     "did_not_survive": [
       "delivery acknowledgements, which are kept per process",
-      "the accepted operation table, so a post restart request issues a new receipt"
+      "the accepted operation table, so a post restart request issues a new receipt",
+      "the latest accepted task revision table, so after restart stale_task_revision relies on the caller's expected revision"
     ]
   }
 }

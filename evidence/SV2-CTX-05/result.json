@@ -1,8 +1,8 @@
 {
   "package": "SV2-CTX-05",
-  "tested_commit": "3553aa14cde1b63e4e955f02ed763ac21c98cc92",
-  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40257690538",
-  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40257690538/job/121362980839",
+  "tested_commit": "c6b1435e02b4620579e451de14815e4fb66cf0e0",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40258804047",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40258804047/job/121366415233",
   "verification": "mocked: CI fixture HTTP through the FastAPI test client against fixture SQLite graphs with a fixture semantic source, fixture signing keys and a fake clock; receipts, context, scope and graph are the production modules.",
   "dependency": [
     "SV2-CTX-04"
@@ -15,7 +15,7 @@
     "POST /v2/context/receipts/verify",
     "POST /v2/context/{receipt_id}/delivery",
     "GET /v2/context/stats context_receipt_validation_failures",
-    "app.receipts: issue, verify, deliver, payload_digest, keyring, failures",
+    "app.receipts: issue, verify, deliver, payload_digest, keyring, failures, ERROR_CLASSES; app.context.latest_revision",
     "BRAIN_RECEIPT_KEYS, BRAIN_RECEIPT_KEY_VERSION, BRAIN_RECEIPT_TTL_SECONDS, BRAIN_RECEIPT_MAX_BODY_BYTES, BRAIN_RECEIPT_ACKS_KEPT"
   ],
   "supported_versions": {
@@ -32,9 +32,9 @@
     ]
   },
   "state": {
-    "observed": "Every pull request check passes on the tested commit.",
-    "accepted": "The 32 SV2-CTX-05 tests pass in the full brain-api suite on three Python versions (402 passed); the SV2-CTX-01 to 04 context tests pass unchanged.",
-    "committed": "3553aa14cde1b63e4e955f02ed763ac21c98cc92",
+    "observed": "Every pull request check passes on the tested commit (run https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/40258804047).",
+    "accepted": "The 34 SV2-CTX-05 tests pass in the full brain-api suite on three Python versions (404 passed); the SV2-CTX-01 to 04 context tests pass unchanged.",
+    "committed": "c6b1435e02b4620579e451de14815e4fb66cf0e0",
     "externally_verified": "None; mocked fixture evidence only. G6 rollout must validate deployed behavior."
   },
   "red": {
@@ -48,11 +48,12 @@
     "b-result.json",
     "c-result.json"
   ],
-  "rollback_rehearsal": "Unsetting BRAIN_RECEIPT_KEYS keeps context served with receipt null and verification answering receipts_not_configured (test_unconfigured_signing_keys_keep_context_and_refuse_verification). Receipt-required gates in agentihooks must be returned to observe mode before that, or before any incompatible signing change. Receipts write no authoritative object; graph entities are untouched.",
+  "rollback_rehearsal": "mocked, in process: unsetting BRAIN_RECEIPT_KEYS keeps context served with receipt null and verification answering receipts_not_configured, error_class dependency_unavailable (test_unconfigured_signing_keys_keep_context_and_refuse_verification). No rehearsal on a running service yet; G6 rollout must repeat it there. Receipt-required gates in agentihooks return to observe mode first. Receipts write no authoritative object; graph entities are untouched.",
   "limitations": [
-    "Delivery acknowledgements are per process and are lost on restart.",
-    "Receipts are HMAC signed with shared keys, so any holder of a key version can verify and mint receipts for that brain; key distribution is a deployment concern.",
+    "Delivery acknowledgements and the latest accepted task revision are per process and are lost on restart; acknowledgement ids are derived from receipt and adapter so a retried delivery keeps its id.",
+    "Receipts are HMAC signed with shared keys, so any holder of a key version can verify and mint receipts for that brain; key distribution is a deployment concern. A secret cannot contain a comma.",
     "Shared task packs for another agent are not issued; a receipt verifies only for its own execution.",
+    "The verify route is not in the section 13.3 table; it is the server verifiable lookup section 11.2 requires.",
     "A receipt proves retrieval and delivery, never comprehension by the model."
   ],
   "measurement": {
