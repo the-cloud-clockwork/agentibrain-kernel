@@ -81,11 +81,13 @@ def _counting(monkeypatch, hold=None):
 
 def _ask(client, fixture, project, n, token="burst", **changes):
     body = _request(
-        **fixture["request"],
-        project_id=project,
-        request_id=f"ctx04-request-{n:04d}",
-        execution_id=f"exe-burst-{n:04d}",
-        **changes,
+        **{
+            **fixture["request"],
+            "project_id": project,
+            "request_id": f"ctx04-request-{n:04d}",
+            "execution_id": f"exe-burst-{n:04d}",
+            **changes,
+        }
     )
     return _post(client, body, token)
 
@@ -430,6 +432,27 @@ def test_c_a_reduced_result_is_negative_even_with_items(monkeypatch, vault, tmp_
         "negative": True,
         "ttl_seconds": cache_module.NEGATIVE_TTL_SECONDS,
     }
+
+
+@pytest.mark.parametrize("name", SETS)
+def test_c_a_budget_that_omits_every_item_is_negative(monkeypatch, vault, tmp_path, name):
+    client, _, fixture, ctx = _context(monkeypatch, vault, tmp_path, name)
+    cache_module = _cache_module()
+    now = [1000.0]
+    monkeypatch.setattr(ctx.cache, "clock", lambda: now[0])
+    first = fixture["projects"][0]
+    budget = {**fixture["request"]["budget"], "max_tokens": 1}
+    omitted = _ask(client, fixture, first, 1, budget=budget).json()
+    assert omitted["context"]["items"] == []
+    assert omitted["context"]["pack"]["omitted"]
+    assert omitted["cache"] == {
+        "state": "miss",
+        "negative": True,
+        "ttl_seconds": cache_module.NEGATIVE_TTL_SECONDS,
+    }
+    assert _ask(client, fixture, first, 2, budget=budget).json()["cache"]["state"] == "hit"
+    now[0] += cache_module.NEGATIVE_TTL_SECONDS + 0.5
+    assert _ask(client, fixture, first, 3, budget=budget).json()["cache"]["state"] == "miss"
 
 
 def test_c_followers_load_alone_when_the_leader_fails_and_nothing_is_stored():
