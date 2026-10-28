@@ -172,7 +172,7 @@
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-{% raw %}        set -u
+{% raw %}        set -e
         INTERVAL="$${TICK_INTERVAL_SECONDS:-7200}"
         echo "[tick-cron] starting; interval=$${INTERVAL}s"
         while true; do
@@ -226,7 +226,7 @@
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-{% raw %}        set -u
+{% raw %}        set -eu
         INTERVAL="$${TICK_DRAIN_INTERVAL_SECONDS:-30}"
         echo "[tick-drain] starting; interval=$${INTERVAL}s"
         while true; do
@@ -246,6 +246,7 @@
       BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}
 {% endif %}
       EMBEDDINGS_URL: http://embeddings:8080
+      # Empty fails every tick: an unindexed tick is not a completed one.
       EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
       TICK_DRAIN_INTERVAL_SECONDS: ${TICK_DRAIN_INTERVAL_SECONDS:-30}
       BRAIN_LLM_TIMEOUT_SECONDS: ${BRAIN_LLM_TIMEOUT_SECONDS:-600}
