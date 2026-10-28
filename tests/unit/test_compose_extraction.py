@@ -77,16 +77,13 @@ def test_tick_cron_drains_outbox_each_pass():
     assert "KB_ROUTER_TOKEN" in svc["environment"]
 
 
-def test_raw_index_refreshes_in_both_tick_paths():
+def test_both_tick_paths_run_the_shared_tick_cycle():
     services = _services()
+    assert "tick_cycle.py scheduled --vault /vault" in services["tick-cron"]["command"][0]
+    assert services["tick-cron"]["environment"]["TICK_CYCLE_MODE"] == "vault"
+    assert "tick_cycle.py drain --vault /vault" in services["tick-drain"]["command"][0]
     for name in ("tick-cron", "tick-drain"):
-        assert "embed_raw.py --vault /vault --prune" in services[name]["command"][0], name
-
-
-def test_tick_drain_annotates_failed_requests():
-    cmd = _services()["tick-drain"]["command"][0]
-    assert "annotate_fail.py" in cmd
-    assert '> "$${TLOG}" 2>&1' in cmd or '> "$$TLOG" 2>&1' in cmd
+        assert "embed_" not in services[name]["command"][0], name
 
 
 def test_redis_refuses_flush_commands_to_every_client():
