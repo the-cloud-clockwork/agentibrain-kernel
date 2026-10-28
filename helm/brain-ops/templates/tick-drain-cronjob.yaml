@@ -26,6 +26,11 @@ spec:
       backoffLimit: 0
       activeDeadlineSeconds: {{ .Values.tickDrain.activeDeadlineSeconds | default 300 }}
       template:
+        {{- with .Values.podLabels }}
+        metadata:
+          labels:
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
         spec:
           restartPolicy: Never
           containers:
