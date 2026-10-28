@@ -24,6 +24,7 @@ import time
 import urllib.request
 from pathlib import Path
 
+import net_wait
 from embed_arcs import (
     REQ_TIMEOUT,
     load_state,
@@ -95,6 +96,12 @@ def main() -> int:
     if not args.api_key and not args.dry_run:
         print("ERROR: EMBED_API_KEY not set (use --dry-run for a preview)", file=sys.stderr)
         return 1
+    if not args.dry_run:
+        try:
+            net_wait.wait_for(args.api_url)
+        except net_wait.NetworkNotReady as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
 
     stats = {"scanned": 0, "embedded": 0, "skipped_unchanged": 0, "skipped_noop": 0, "errors": 0}
     seen_keys: set[str] = set()

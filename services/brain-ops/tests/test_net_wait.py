@@ -70,3 +70,25 @@ def test_default_port_follows_scheme():
     net_wait.wait_for("http://brain-api", connect=connect)
 
     assert seen == [("embeddings", 443), ("brain-api", 80)]
+
+
+@pytest.mark.parametrize("script", ["embed_arcs", "embed_raw"])
+def test_embed_job_fails_loudly_before_its_first_call(script, tmp_path, monkeypatch, capsys):
+    module = __import__(script)
+    calls = []
+
+    def unreachable(url, **_k):
+        calls.append(url)
+        raise net_wait.NetworkNotReady(f"{url} unreachable after 6 attempts: refused")
+
+    monkeypatch.setattr(net_wait, "wait_for", unreachable)
+    monkeypatch.setattr(module.urllib.request, "urlopen", lambda *_a, **_k: calls.append("call"))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [script, "--vault", str(tmp_path), "--api-url", "http://embeddings:8080", "--api-key", "k"],
+    )
+
+    assert module.main() == 1
+    assert calls == ["http://embeddings:8080"]
+    assert "ERROR: http://embeddings:8080 unreachable after 6 attempts" in capsys.readouterr().err
