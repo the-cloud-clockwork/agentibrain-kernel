@@ -29,6 +29,7 @@ from pathlib import Path
 
 import knowledge_index
 import markers
+import net_wait
 
 STATE_FILENAME = ".brain-arc-embed.state.json"
 STATE_GENERATION_ENV = "EMBEDDING_STATE_GENERATION"
@@ -328,6 +329,7 @@ def main() -> int:
     if not args.dry_run and not args.api_key:
         print("ERROR: EMBED_API_KEY not set (use --dry-run for a preview)", file=sys.stderr)
         return 1
+    net_wait.require(args.api_url, skip=args.dry_run)
 
     stats = {
         "scanned": 0,
