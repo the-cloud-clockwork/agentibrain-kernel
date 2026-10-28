@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import socket
 import sys
 from pathlib import Path
@@ -74,7 +75,7 @@ def test_default_port_follows_scheme():
 
 @pytest.mark.parametrize("script", ["embed_arcs", "embed_raw"])
 def test_embed_job_fails_loudly_before_its_first_call(script, tmp_path, monkeypatch, capsys):
-    module = __import__(script)
+    module = importlib.import_module(script)
     calls = []
 
     def unreachable(url, **_k):
@@ -95,3 +96,50 @@ def test_embed_job_fails_loudly_before_its_first_call(script, tmp_path, monkeypa
     assert exit_info.value.code == 1
     assert calls == ["http://embeddings:8080"]
     assert "ERROR: http://embeddings:8080 unreachable after 6 attempts" in capsys.readouterr().err
+
+
+def _tick_argv(tmp_path, *extra):
+    return ["brain_tick", "--vault", str(tmp_path), "--brain-feed", str(tmp_path / "feed"), *extra]
+
+
+def test_tick_fails_loudly_before_its_first_inference_call(tmp_path, monkeypatch, capsys):
+    import brain_tick
+
+    calls = []
+
+    def unreachable(url, **_k):
+        calls.append(url)
+        raise net_wait.NetworkNotReady(f"{url} unreachable after 6 attempts: refused")
+
+    monkeypatch.setattr(net_wait, "wait_for", unreachable)
+    monkeypatch.setattr(brain_tick, "run_tick", lambda *_a, **_k: calls.append("tick"))
+    monkeypatch.setattr(
+        sys, "argv", _tick_argv(tmp_path, "--inference-url", "http://inference:4000")
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        brain_tick.main()
+
+    assert exit_info.value.code == 1
+    assert calls == ["http://inference:4000"]
+    assert "ERROR: http://inference:4000 unreachable after 6 attempts" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ("--inference-url", ""),
+        ("--inference-url", "http://inference:4000", "--no-ai"),
+        ("--inference-url", "http://inference:4000", "--dry-run"),
+    ],
+)
+def test_tick_without_ai_skips_the_wait(extra, tmp_path, monkeypatch):
+    import brain_tick
+
+    calls = []
+    monkeypatch.setattr(net_wait, "wait_for", lambda url, **_k: calls.append(url))
+    monkeypatch.setattr(brain_tick, "run_tick", lambda *_a, **_k: {"phases": {}})
+    monkeypatch.setattr(sys, "argv", _tick_argv(tmp_path, *extra))
+
+    assert brain_tick.main() == 0
+    assert calls == []

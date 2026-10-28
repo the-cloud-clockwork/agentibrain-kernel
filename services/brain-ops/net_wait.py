@@ -6,6 +6,7 @@ import socket
 import sys
 import time
 import urllib.parse
+from collections.abc import Callable
 
 ATTEMPTS = 6
 FIRST_DELAY = 1.0
@@ -20,8 +21,8 @@ class NetworkNotReady(RuntimeError):
 def wait_for(
     url: str,
     attempts: int = ATTEMPTS,
-    sleep=time.sleep,
-    connect=socket.create_connection,
+    sleep: Callable[[float], object] = time.sleep,
+    connect: Callable[..., socket.socket] = socket.create_connection,
 ) -> int:
     parts = urllib.parse.urlsplit(url)
     address = (parts.hostname, parts.port or (443 if parts.scheme == "https" else 80))

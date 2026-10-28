@@ -12,7 +12,7 @@ import net_wait  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _reachable_network(request, monkeypatch):
-    # Tests that fake urlopen never open a socket, so the real probe would only add its backoff.
+    # Tests that fake urlopen have no listener, so the real probe would sleep through its backoff.
     if request.module.__name__.endswith("test_net_wait"):
         return
     monkeypatch.setattr(net_wait, "wait_for", lambda *_a, **_k: 1)

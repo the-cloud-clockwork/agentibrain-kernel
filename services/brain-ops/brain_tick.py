@@ -44,6 +44,7 @@ import brain_apply
 import brain_keeper
 import brain_tick_prompt
 import instance_scope
+import net_wait
 import redact
 
 # INFERENCE_URL is optional — when empty, the AI reasoning phase is skipped and
@@ -506,6 +507,7 @@ def main() -> int:
         "--source", default="brain-cron", help="Event-bus source label (drain passes 'brain-drain')"
     )
     args = p.parse_args()
+    net_wait.require(args.inference_url, skip=args.dry_run or args.no_ai or not args.inference_url)
 
     result = run_tick(
         Path(args.vault),
