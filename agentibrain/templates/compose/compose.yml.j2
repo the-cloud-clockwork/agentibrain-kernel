@@ -175,30 +175,16 @@
 {% raw %}        set -e
         INTERVAL="$${TICK_INTERVAL_SECONDS:-7200}"
         echo "[tick-cron] starting; interval=$${INTERVAL}s"
-        FLAGS=""
-        if [ -z "$${INFERENCE_URL}" ]; then
-          FLAGS="--no-ai"
-          echo "[tick-cron] INFERENCE_URL not set — running deterministic only"
-        fi
         while true; do
-          mkdir -p "/vault/clusters/$$(date -u +%Y-%m-%d)" 2>/dev/null || true
-          python3 /app/brain_tick.py \
-            --vault /vault \
-            --brain-feed /vault/brain-feed \
-            $${FLAGS} \
-            || echo "[tick-cron] brain_tick failed (continuing)"
-          if [ -n "$${EMBEDDINGS_API_KEY}" ]; then
-            python3 /app/embed_arcs.py --vault /vault --prune \
-              || echo "[tick-cron] embed_arcs failed (non-fatal)"
-            python3 /app/embed_raw.py --vault /vault --prune \
-              || echo "[tick-cron] embed_raw failed (non-fatal)"
-          fi
+          python3 /app/tick_cycle.py scheduled --vault /vault \
+            || echo "[tick-cron] tick cycle failed; the failed phase is logged above"
           echo "[tick-cron] sleeping $${INTERVAL}s until next tick"
           sleep "$${INTERVAL}"
         done
 {% endraw %}    environment:
 {% for name, default in service_env_defaults.items() %}      {{ name }}: ${ {{- name -}}:-{{ default }}}
 {% endfor %}
+      TICK_CYCLE_MODE: vault
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/11}
 {% if ollama %}      INFERENCE_URL: http://ollama:11434/v1
       INFERENCE_API_KEY: ollama
@@ -242,77 +228,10 @@
       - |
 {% raw %}        set -eu
         INTERVAL="$${TICK_DRAIN_INTERVAL_SECONDS:-30}"
-        REQ=/vault/brain-feed/ticks/requested
-        DONE=/vault/brain-feed/ticks/completed
-        FAIL=/vault/brain-feed/ticks/failed
-        mkdir -p "$$REQ" "$$DONE" "$$FAIL"
-        AI_FLAGS=""
-        if [ -z "$${INFERENCE_URL:-}" ]; then
-          AI_FLAGS="--no-ai"
-          echo "[tick-drain] INFERENCE_URL not set — running deterministic only"
-        fi
         echo "[tick-drain] starting; interval=$${INTERVAL}s"
         while true; do
-          # Requests of the same kind are interchangeable, so N of them
-          # collapse into ONE tick — an agent calling brain_tick repeatedly
-          # must not queue N full ticks.
-          b00=""; b01=""; b10=""; b11=""; total=0
-          for f in "$$REQ"/*.json; do
-            [ -e "$$f" ] || break
-            dry=$$(python3 -c "import json;print('1' if json.load(open('$$f')).get('dry_run') else '0')" 2>/dev/null || echo 0)
-            noai=$$(python3 -c "import json;print('1' if json.load(open('$$f')).get('no_ai') else '0')" 2>/dev/null || echo 0)
-            total=$$((total+1))
-            case "$${dry}$${noai}" in
-              00) b00="$$b00 $$f" ;;
-              01) b01="$$b01 $$f" ;;
-              10) b10="$$b10 $$f" ;;
-              11) b11="$$b11 $$f" ;;
-            esac
-          done
-          if [ "$$total" -gt 0 ]; then
-            ok=0; ko=0; ticks=0; stuck=0
-            run_kind() {
-              kind_flags="$$1"; kind_files="$$2"
-              [ -n "$$kind_files" ] || return 0
-              n=$$(echo $$kind_files | wc -w)
-              ticks=$$((ticks+1))
-              echo "[tick-drain] coalescing $$n request(s) into one tick [flags='$$kind_flags']"
-              TLOG=/tmp/tick-last.log
-              if python3 /app/brain_tick.py \
-                  --vault /vault --brain-feed /vault/brain-feed \
-                  --inference-url "$${INFERENCE_URL:-}" $$AI_FLAGS \
-                  --source brain-drain $$kind_flags > "$$TLOG" 2>&1; then
-                dest="$$DONE"; ok=$$((ok+n))
-              else
-                dest="$$FAIL"; ko=$$((ko+n))
-              fi
-              cat "$$TLOG"
-              # A failed mv must NOT abort the batch: the tick already mutated
-              # the vault and other buckets are still queued.
-              for f in $$kind_files; do
-                if ! mv "$$f" "$$dest/$$(basename "$$f")"; then
-                  stuck=$$((stuck+1))
-                  echo "[tick-drain] WARN: could not move $$(basename "$$f") to $$dest — retrying next pass"
-                elif [ "$$dest" = "$$FAIL" ]; then
-                  python3 /app/annotate_fail.py "$$dest/$$(basename "$$f")" "$$TLOG" || true
-                fi
-              done
-              return 0
-            }
-            run_kind "" "$$b00"
-            run_kind "--no-ai" "$$b01"
-            run_kind "--dry-run" "$$b10"
-            run_kind "--dry-run --no-ai" "$$b11"
-            echo "[tick-drain] drain-summary: total=$$total ticks=$$ticks ok=$$ok failed=$$ko stuck=$$stuck"
-            # Without this the tick rewrites the vault but pgvector stays
-            # stale, so kb_search cannot see the new content.
-            if [ "$$ok" -gt 0 ] && [ -n "$${EMBEDDINGS_API_KEY:-}" ]; then
-              python3 /app/embed_arcs.py --vault /vault --prune \
-                || echo "[tick-drain] embed_arcs failed (non-fatal)"
-              python3 /app/embed_raw.py --vault /vault --prune \
-                || echo "[tick-drain] embed_raw failed (non-fatal)"
-            fi
-          fi
+          python3 /app/tick_cycle.py drain --vault /vault \
+            || echo "[tick-drain] tick cycle failed; unfinished requests stay queued for retry"
           sleep "$$INTERVAL"
         done
 {% endraw %}    environment:
@@ -327,6 +246,7 @@
       BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}
 {% endif %}
       EMBEDDINGS_URL: http://embeddings:8080
+      # Empty fails every tick: an unindexed tick is not a completed one.
       EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}
       TICK_DRAIN_INTERVAL_SECONDS: ${TICK_DRAIN_INTERVAL_SECONDS:-30}
       BRAIN_LLM_TIMEOUT_SECONDS: ${BRAIN_LLM_TIMEOUT_SECONDS:-600}
