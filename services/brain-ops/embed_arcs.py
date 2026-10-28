@@ -329,12 +329,7 @@ def main() -> int:
     if not args.dry_run and not args.api_key:
         print("ERROR: EMBED_API_KEY not set (use --dry-run for a preview)", file=sys.stderr)
         return 1
-    if not args.dry_run:
-        try:
-            net_wait.wait_for(args.api_url)
-        except net_wait.NetworkNotReady as exc:
-            print(f"ERROR: {exc}", file=sys.stderr)
-            return 1
+    net_wait.require(args.api_url, skip=args.dry_run)
 
     stats = {
         "scanned": 0,

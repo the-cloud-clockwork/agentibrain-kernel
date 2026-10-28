@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socket
+import sys
 import time
 import urllib.parse
 
@@ -33,3 +34,13 @@ def wait_for(
         if attempt < attempts:
             sleep(min(FIRST_DELAY * 2 ** (attempt - 1), MAX_DELAY))
     raise NetworkNotReady(f"{url} unreachable after {attempts} attempts: {error}")
+
+
+def require(url: str, skip: bool = False) -> None:
+    if skip:
+        return
+    try:
+        wait_for(url)
+    except NetworkNotReady as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc

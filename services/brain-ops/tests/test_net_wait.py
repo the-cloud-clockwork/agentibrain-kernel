@@ -89,6 +89,9 @@ def test_embed_job_fails_loudly_before_its_first_call(script, tmp_path, monkeypa
         [script, "--vault", str(tmp_path), "--api-url", "http://embeddings:8080", "--api-key", "k"],
     )
 
-    assert module.main() == 1
+    with pytest.raises(SystemExit) as exit_info:
+        module.main()
+
+    assert exit_info.value.code == 1
     assert calls == ["http://embeddings:8080"]
     assert "ERROR: http://embeddings:8080 unreachable after 6 attempts" in capsys.readouterr().err
