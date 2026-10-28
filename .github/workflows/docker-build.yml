@@ -63,6 +63,21 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,scope=${{ matrix.service }},mode=max
 
+      - name: Amygdala check of the built image against a live signal store
+        if: matrix.service == 'brain-ops'
+        run: |
+          docker network create amygdala-check
+          docker run -d --rm --name redis --network amygdala-check redis:7-alpine
+          until docker exec redis redis-cli ping | grep -q PONG; do sleep 1; done
+          docker exec redis redis-cli -n 11 XADD events:health '*' severity warning title image-check event brain.test
+          docker run --rm --network amygdala-check \
+            ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:${{ steps.tag.outputs.tag }} \
+            /app/amygdala.py --redis-url redis://redis:6379/11 --vault /tmp/vault \
+            --brain-feed /tmp/vault/brain-feed --dry-run | tee amygdala.json
+          python3 -c "import json; r = json.load(open('amygdala.json')); assert 'error' not in r and r['events_read'] >= 1 and r['signals_detected'] >= 1, r"
+          docker rm -f redis
+          docker network rm amygdala-check
+
       - name: Set up Python
         if: matrix.service == 'mcp'
         uses: actions/setup-python@v5

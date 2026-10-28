@@ -483,6 +483,10 @@ def main() -> int:
     # consume against it reports no signals.
     args.redis_url = normalize_redis_db(args.redis_url, args.db)
 
+    if redis is None:
+        print("ERROR: amygdala cannot check signals: redis package not installed", file=sys.stderr)
+        return 1
+
     if args.replay:
         count = max(1, min(args.last, 1000))
         result = replay(args.redis_url, count=count, severity_filter=args.severity)
