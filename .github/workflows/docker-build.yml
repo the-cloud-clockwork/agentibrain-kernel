@@ -65,18 +65,28 @@ jobs:
 
       - name: Amygdala check of the built image against a live signal store
         if: matrix.service == 'brain-ops'
+        env:
+          NET: amygdala-check-${{ github.run_id }}-${{ github.run_attempt }}
+          STORE: amygdala-redis-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          docker network create amygdala-check
-          docker run -d --rm --name redis --network amygdala-check redis:7-alpine
-          until docker exec redis redis-cli ping | grep -q PONG; do sleep 1; done
-          docker exec redis redis-cli -n 11 XADD events:health '*' severity warning title image-check event brain.test
-          docker run --rm --network amygdala-check \
+          docker network create "$NET"
+          docker run -d --rm --name "$STORE" --network "$NET" redis:7-alpine
+          for _ in $(seq 30); do docker exec "$STORE" redis-cli ping | grep -q PONG && break; sleep 1; done
+          docker exec "$STORE" redis-cli -n 11 XADD events:health '*' severity warning title image-check event brain.test
+          docker run --rm --network "$NET" \
             ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:${{ steps.tag.outputs.tag }} \
-            /app/amygdala.py --redis-url redis://redis:6379/11 --vault /tmp/vault \
+            /app/amygdala.py --redis-url "redis://$STORE:6379/11" --vault /tmp/vault \
             --brain-feed /tmp/vault/brain-feed --dry-run | tee amygdala.json
           python3 -c "import json; r = json.load(open('amygdala.json')); assert 'error' not in r and r['events_read'] >= 1 and r['signals_detected'] >= 1, r"
-          docker rm -f redis
-          docker network rm amygdala-check
+
+      - name: Remove the amygdala check signal store
+        if: always() && matrix.service == 'brain-ops'
+        env:
+          NET: amygdala-check-${{ github.run_id }}-${{ github.run_attempt }}
+          STORE: amygdala-redis-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          docker rm -f "$STORE" || true
+          docker network rm "$NET" || true
 
       - name: Set up Python
         if: matrix.service == 'mcp'
