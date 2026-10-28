@@ -458,3 +458,109 @@ def test_unknown_cycle_mode_refuses_to_render() -> None:
     )
     assert rendered.returncode != 0
     assert "cycleMode" in rendered.stderr
+
+
+def _compose_service(source: str, service: str) -> dict:
+    if source == "repository":
+        data = yaml.safe_load((ROOT / "compose.yml").read_text())
+    else:
+        from agentibrain.bootstrap import render_compose
+        from agentibrain.config import BrainSettings
+
+        data = yaml.safe_load(render_compose(BrainSettings(vault_path=ROOT, _env_file=None)))
+    return data["services"][service]
+
+
+def _run_compose(source: str, service: str, vault: Path, env: dict, tmp_path: Path):
+    spec = _compose_service(source, service)
+    script = spec["command"][-1].replace("$$", "$")
+    script = script.replace("/app/", f"{BRAIN_OPS}/").replace("/vault", str(vault))
+    script = re.sub(r"\bpython3\b", sys.executable, script)
+    fake = tmp_path / "bin"
+    fake.mkdir(exist_ok=True)
+    (fake / "sleep").write_text('#!/bin/sh\nkill -TERM "$PPID"\n')
+    (fake / "sleep").chmod(0o755)
+    literal = {k: str(v) for k, v in spec.get("environment", {}).items() if "${" not in str(v)}
+    literal.pop("EMBEDDINGS_URL", None)
+    base = {k: v for k, v in os.environ.items() if not k.startswith(("EMBED", "INFERENCE"))}
+    return subprocess.run(
+        ["sh", "-c", script],
+        env={
+            **base,
+            **literal,
+            "PATH": f"{fake}:{os.environ['PATH']}",
+            "REDIS_URL": "",
+            "CLICKHOUSE_URL": "",
+            "KB_ROUTER_TOKEN": "",
+            "EMBEDDINGS_API_KEY": EMBED_BEARER,
+            **env,
+        },
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+
+
+COMPOSE_SOURCES = ["repository", "packaged"]
+
+
+@pytest.mark.parametrize("source", COMPOSE_SOURCES)
+def test_compose_drain_index_failure_is_never_completed(
+    brain: dict, tmp_path: Path, source: str
+) -> None:
+    token = _token()
+    _ingest(brain, token)
+    job = _request_tick(brain)
+
+    result = _run_compose(
+        source,
+        "tick-drain",
+        brain["vault"],
+        {"EMBEDDINGS_URL": f"http://127.0.0.1:{_free_port()}"},
+        tmp_path,
+    )
+
+    status = _status(brain, job)
+    assert status["status"] == "pending", result.stdout + result.stderr
+    assert status["last_error"]
+    assert "tick cycle failed" in result.stdout, result.stdout
+
+
+@pytest.mark.parametrize("source", COMPOSE_SOURCES)
+def test_compose_drain_completes_with_searchable_content(
+    brain: dict, tmp_path: Path, source: str
+) -> None:
+    token = _token()
+    _ingest(brain, token)
+    job = _request_tick(brain)
+
+    result = _run_compose(
+        source,
+        "tick-drain",
+        brain["vault"],
+        {"EMBEDDINGS_URL": brain["embeddings"]["url"]},
+        tmp_path,
+    )
+
+    assert _status(brain, job)["status"] == "completed", result.stdout + result.stderr
+    assert "tick cycle failed" not in result.stdout
+    producers = {hit["producer"] for hit in _semantic_hits(brain, token)}
+    assert {"brain-arc", "brain-lesson"} <= producers, producers
+
+
+@pytest.mark.parametrize("source", COMPOSE_SOURCES)
+def test_compose_scheduled_index_failure_reports_failure(
+    brain: dict, tmp_path: Path, source: str
+) -> None:
+    _ingest(brain, _token())
+
+    result = _run_compose(
+        source,
+        "tick-cron",
+        brain["vault"],
+        {"EMBEDDINGS_URL": f"http://127.0.0.1:{_free_port()}"},
+        tmp_path,
+    )
+
+    assert "FAILED: index phase" in result.stdout, result.stdout + result.stderr
+    assert "tick cycle failed" in result.stdout
