@@ -168,7 +168,8 @@ class LessonClaims:
             {
                 "hash": lesson_reconcile.entry_hash(body),
                 "origin_kind": "assistant",
-                "echo": not verified and _squash(body) in self.injected,
+                "echo": not verified
+                and _squash(body).lstrip(INJECTED_LINE_BULLETS) in self.injected,
                 "evidence": verified,
             }
         )
