@@ -298,6 +298,8 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
     # substance per arc that a one-sentence summary is actually derivable.
     def _needs_summary(a) -> bool:
         fm = a.frontmatter
+        if str(fm.get("confidence", "")).strip() == "quarantined":
+            return False
         if str(fm.get("summary", "")).strip():
             return False  # already synthesized, never re-spend on it
         if fm.get("synthesized") == "false":

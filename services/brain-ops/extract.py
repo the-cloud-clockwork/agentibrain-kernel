@@ -25,6 +25,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import lesson_reconcile
+import markers
+
 RELATIVE_RE = re.compile(r"^(\d+)([smhd])$")
 
 # Heuristic markers for emotional gating
@@ -48,6 +51,8 @@ AUTONOMOUS_TOOL_CALLS = 20
 CODEX_TOOL_ITEMS = frozenset({"function_call", "custom_tool_call", "local_shell_call"})
 # Codex records its own injected context as user messages.
 CODEX_INJECTED_PREFIXES = ("<", "# AGENTS.md")
+CLAUDE_INJECTED_PREFIXES = ("<system-reminder>", "<command-", "<local-command-", "Caveat:")
+ORIGIN_KINDS = ("user", "assistant", "tool", "injected")
 
 
 def parse_since(s: str) -> datetime:
@@ -85,6 +90,77 @@ def iter_content_texts(msg) -> list[str]:
                 elif c.get("type") == "tool_use" and isinstance(c.get("name"), str):
                     out.append(f"<tool_use:{c['name']}>")
     return out
+
+
+def _squash(text: str) -> str:
+    """Text with every whitespace run collapsed to one space."""
+    return " ".join(text.split())
+
+
+def origin_kind(record: dict) -> str:
+    """Who authored a Claude record: user, assistant, tool evidence or injected context."""
+    kind = record.get("type")
+    if kind == "assistant":
+        return "assistant"
+    if kind != "user":
+        return ""
+    msg = record.get("message") or {}
+    content = msg.get("content") if isinstance(msg, dict) else None
+    if isinstance(content, list) and any(
+        isinstance(c, dict) and c.get("type") == "tool_result" for c in content
+    ):
+        return "tool"
+    if record.get("isMeta") or record.get("isCompactSummary"):
+        return "injected"
+    text = " ".join(iter_content_texts(msg)).lstrip()
+    return "injected" if text.startswith(CLAUDE_INJECTED_PREFIXES) else "user"
+
+
+def succeeded_tool_ids(record: dict) -> set[str]:
+    """Tool call ids whose results in this record did not report an error."""
+    msg = record.get("message") or {}
+    content = msg.get("content") if isinstance(msg, dict) else None
+    if not isinstance(content, list):
+        return set()
+    return {
+        str(c["tool_use_id"])
+        for c in content
+        if isinstance(c, dict)
+        and c.get("type") == "tool_result"
+        and c.get("tool_use_id")
+        and not c.get("is_error")
+    }
+
+
+@dataclass
+class LessonClaims:
+    """Lesson markers an assistant wrote, each judged echo or verified against the transcript."""
+
+    injected: str = ""
+    succeeded: set[str] = field(default_factory=set)
+    claims: list[dict] = field(default_factory=list)
+
+    def observe(self, record: dict, origin: str, texts: list[str]) -> None:
+        """Take one record: remember injected text and succeeded tools, claim assistant lessons."""
+        if origin == "injected":
+            self.injected += " " + _squash(" ".join(texts))
+        elif origin == "tool":
+            self.succeeded |= succeeded_tool_ids(record)
+        elif origin == "assistant":
+            for marker in markers.find_markers("\n".join(texts), "lesson"):
+                self.claim(marker.content, marker.attr("evidence"))
+
+    def claim(self, body: str, evidence: str) -> None:
+        """Record one lesson claim; evidence counts only when it names a succeeded tool call."""
+        verified = evidence if evidence and evidence in self.succeeded else ""
+        self.claims.append(
+            {
+                "hash": lesson_reconcile.entry_hash(body),
+                "origin_kind": "assistant",
+                "echo": not verified and _squash(body) in self.injected,
+                "evidence": verified,
+            }
+        )
 
 
 def parse_ts(s: str | None) -> datetime | None:
@@ -170,6 +246,8 @@ def process_session(jsonl_path: Path, since: datetime, until: datetime) -> dict 
     cwd = ""
     git_branch = ""
     session_id = jsonl_path.stem
+    origin_counts = dict.fromkeys(ORIGIN_KINDS, 0)
+    lessons = LessonClaims()
 
     try:
         with open(jsonl_path, encoding="utf-8", errors="replace") as fh:
@@ -200,12 +278,16 @@ def process_session(jsonl_path: Path, since: datetime, until: datetime) -> dict 
                 msg = d.get("message") or {}
                 texts = iter_content_texts(msg)
                 joined = " ".join(texts)
+                origin = origin_kind(d)
+                if origin:
+                    origin_counts[origin] += 1
+                lessons.observe(d, origin, texts)
 
                 if t == "user":
                     num_user += 1
-                    if first_user_text is None and texts:
+                    if origin == "user" and first_user_text is None and texts:
                         first_user_text = joined
-                    if texts:
+                    if origin == "user" and texts:
                         last_user_text = joined
                     if COMPACT_MARKERS.search(joined):
                         compactions += 1
@@ -254,6 +336,8 @@ def process_session(jsonl_path: Path, since: datetime, until: datetime) -> dict 
         "compactions": compactions,
         "joy_markers": joy_hits,
         "error_markers": error_hits,
+        "origin_counts": origin_counts,
+        "lesson_claims": lessons.claims,
     }
 
 
@@ -532,7 +616,10 @@ def main() -> int:
         "sessions_scanned": len(candidates),
         "sessions_returned": len(sessions),
         "sessions": sessions,
+        "lesson_evidence": lesson_reconcile.lesson_evidence(sessions),
     }
+    suppressed = bundle["lesson_evidence"]["memory_echo_suppression_total"]
+    print(f"memory_echo_suppression_total={suppressed}", file=sys.stderr)
 
     json.dump(bundle, sys.stdout, indent=2, default=str)
     sys.stdout.write("\n")
