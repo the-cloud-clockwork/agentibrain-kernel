@@ -1,0 +1,51 @@
+{
+  "package": "SV2-ING-03",
+  "tested_commit": "265b52a45b6a892af9d6f7d69a352148e03d58a7",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41494105324",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41494105324/job/125444419747",
+  "verification": "Mocked: fixture-local transcripts in CI; no live swarm transcripts or vault.",
+  "red_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41487380702",
+  "red_result": "lint-test 3.12: 10 failed, 323 passed; every failure in test_memory_echo for the missing seams (lesson_evidence, origin_counts, lesson_claims, quarantine skip)",
+  "dependency": [
+    "SV2-ING-02"
+  ],
+  "integration_gate": "G6",
+  "pull_request": "https://github.com/the-cloud-clockwork/agentibrain-kernel/pull/194",
+  "issue": "https://github.com/the-cloud-clockwork/agentibrain-kernel/issues/193",
+  "interfaces": [
+    "extract.origin_kind",
+    "extract.succeeded_tool_ids",
+    "extract.LessonClaims",
+    "extract.process_session origin_counts and lesson_claims fields",
+    "extract main bundle lesson_evidence and memory_echo_suppression_total on stderr",
+    "lesson_reconcile.lesson_evidence",
+    "lesson_reconcile.promotable",
+    "brain_tick_prompt skips arcs with confidence quarantined"
+  ],
+  "supported_versions": {
+    "python": [
+      "3.10",
+      "3.11",
+      "3.12"
+    ]
+  },
+  "compatibility": "Session summaries keep every earlier field and gain origin_counts and lesson_claims. first_user_prompt and last_user_prompt now come only from records authored by the user, so injected context and tool results no longer become the session prompt. Lesson log reconcile is unchanged.",
+  "state": {
+    "observed": "All pull request checks pass on the tested commit.",
+    "accepted": "The brain-ops suite passes on Python 3.10, 3.11 and 3.12, including the SV2-ING-03 cases.",
+    "committed": "265b52a45b6a892af9d6f7d69a352148e03d58a7",
+    "externally_verified": "None: no live transcripts or vault exercised; G6 rollout unverified."
+  },
+  "commands": [
+    {
+      "invocation": "python -m pytest -q services/brain-ops/tests (CI lint-test job)",
+      "output": "see ci_job"
+    }
+  ],
+  "limitations": [
+    "Outcome evidence is a lesson marker evidence attribute naming a tool call that succeeded in the same transcript; other outcome proofs are not read.",
+    "Lesson evidence is computed in the extract bundle; brain-api lesson log appends do not consult it yet.",
+    "Mocked evidence only; live evidence is due at the G6 rollout gate."
+  ],
+  "rollback_rehearsal": "BRAIN_LESSON_PROMOTION=off disables promotion and keeps candidates with their evidence classification (test_promotion_off_keeps_candidates_classified). No live rehearsal."
+}

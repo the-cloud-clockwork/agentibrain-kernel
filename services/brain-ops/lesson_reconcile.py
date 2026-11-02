@@ -26,7 +26,9 @@ is copied into `_backups/lesson-reconcile/<stamp>/` first.
 
 from __future__ import annotations
 
+import copy
 import hashlib
+import os
 import re
 import shutil
 from datetime import datetime, timezone
@@ -63,6 +65,66 @@ def entry_hash(body: str) -> str:
     """
     normalized = body.replace("\r\n", "\n").replace("\r", "\n")
     return hashlib.sha256(normalized.strip().encode("utf-8")).hexdigest()[:16]
+
+
+def _new_evidence(lesson_hash: str) -> dict:
+    """An empty evidence record for one lesson hash."""
+    return {"hash": lesson_hash, "origin": "", "sources": [], "outcomes": [], "echo_sources": []}
+
+
+def _add_claim(record: dict, session_id: str, claim: dict) -> bool:
+    """Fold one session's claim into a record; True when the claim was a suppressed echo."""
+    if claim.get("echo"):
+        if session_id not in record["sources"] and session_id not in record["echo_sources"]:
+            record["echo_sources"].append(session_id)
+        return True
+    if session_id not in record["sources"]:
+        record["sources"].append(session_id)
+    record["origin"] = record["origin"] or session_id
+    outcome = {"session_id": session_id, "evidence": claim.get("evidence", "")}
+    if outcome["evidence"] and outcome not in record["outcomes"]:
+        record["outcomes"].append(outcome)
+    return False
+
+
+def _classify(record: dict) -> dict:
+    """Recompute the counts and evidence classification of one record."""
+    record["independent"] = len(record["sources"])
+    record["echoes"] = len(record["echo_sources"])
+    if record["outcomes"]:
+        record["classification"] = "corroborated"
+    elif record["sources"]:
+        record["classification"] = "candidate"
+    else:
+        record["classification"] = "echo-only"
+    record["promotable"] = promotable(record)
+    return record
+
+
+def lesson_evidence(sessions: list[dict], prior: dict | None = None) -> dict:
+    """Merge session lesson claims into per-lesson evidence; recalled echoes never count.
+
+    ``prior`` is never mutated. Each session counts once per lesson, its origin stays the
+    first independent source, and ``memory_echo_suppression_total`` counts every echo claim
+    of injected text that was kept out of the independent evidence.
+    """
+    lessons = copy.deepcopy(prior or {})
+    suppressed = 0
+    for session in sessions:
+        for claim in session.get("lesson_claims", []):
+            record = lessons.setdefault(claim["hash"], _new_evidence(claim["hash"]))
+            suppressed += _add_claim(record, session["session_id"], claim)
+    return {
+        "lessons": {h: _classify(r) for h, r in lessons.items()},
+        "memory_echo_suppression_total": suppressed,
+    }
+
+
+def promotable(record: dict) -> bool:
+    """A lesson promotes only with a verified new outcome, unless promotion is switched off."""
+    if os.environ.get("BRAIN_LESSON_PROMOTION", "").strip().lower() == "off":
+        return False
+    return bool(record.get("outcomes"))
 
 
 def _preamble_and_body(text: str, pattern: re.Pattern) -> tuple[str, str]:

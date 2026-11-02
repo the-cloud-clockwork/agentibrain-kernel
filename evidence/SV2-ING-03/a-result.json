@@ -1,0 +1,23 @@
+{
+  "package": "SV2-ING-03",
+  "tested_commit": "265b52a45b6a892af9d6f7d69a352148e03d58a7",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41494105324",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41494105324/job/125444419747",
+  "verification": "Mocked: fixture-local transcripts in CI; no live swarm transcripts or vault.",
+  "case": "T-SV2-ING-03-A",
+  "outcome": "passed",
+  "tests": [
+    "services/brain-ops/tests/test_memory_echo.py::test_fifty_echoes_give_one_lesson_and_one_independent_outcome[first]",
+    "services/brain-ops/tests/test_memory_echo.py::test_fifty_echoes_give_one_lesson_and_one_independent_outcome[second]",
+    "services/brain-ops/tests/test_memory_echo.py::test_echo_sessions_carry_origin_kinds"
+  ],
+  "assertions": [
+    "One lesson injected into fifty worker transcripts plus one genuine application yields one lesson record, not fifty.",
+    "The record counts one independent source and one verified outcome; the fifty echoes are counted only as suppressed.",
+    "The run repeats on an independent suffixed fixture with the same result.",
+    "Each record carries origin counts for user, assistant, tool and injected context."
+  ],
+  "measurement": {
+    "memory_echo_suppression_total": 50
+  }
+}

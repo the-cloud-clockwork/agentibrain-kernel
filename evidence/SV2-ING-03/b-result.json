@@ -1,0 +1,27 @@
+{
+  "package": "SV2-ING-03",
+  "tested_commit": "265b52a45b6a892af9d6f7d69a352148e03d58a7",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41494105324",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41494105324/job/125444419747",
+  "verification": "Mocked: fixture-local transcripts in CI; no live swarm transcripts or vault.",
+  "case": "T-SV2-ING-03-B",
+  "outcome": "passed",
+  "tests": [
+    "services/brain-ops/tests/test_memory_echo.py::test_echoes_alone_are_never_promoted",
+    "services/brain-ops/tests/test_memory_echo.py::test_quoted_operator_instruction_is_not_a_fresh_directive",
+    "services/brain-ops/tests/test_memory_echo.py::test_rejected_echo_leaves_prior_evidence_untouched",
+    "services/brain-ops/tests/test_memory_echo.py::test_markers_inside_injected_or_tool_text_are_not_claims",
+    "services/brain-ops/tests/test_memory_echo.py::test_evidence_from_before_the_injection_does_not_verify_an_echo",
+    "services/brain-ops/tests/test_memory_echo.py::test_suffixed_injection_still_marks_the_echo",
+    "services/brain-ops/tests/test_memory_echo.py::test_quarantined_arcs_are_not_offered_for_synthesis"
+  ],
+  "assertions": [
+    "Fifty echoes with no verified outcome are classified echo-only and are not promotable.",
+    "A quoted old operator line inside injected context is never taken as the session's first or last user prompt.",
+    "An echo and a failed tool application add no source or outcome and leave the prior evidence unmutated.",
+    "Lesson markers inside injected context or tool results are not lesson claims.",
+    "A tool success recorded before the last injection of the lesson does not verify the echo.",
+    "An injected block carrying the lesson with extra surrounding text still marks the restatement as an echo.",
+    "Quarantined arcs are not offered to the tick for synthesis."
+  ]
+}
