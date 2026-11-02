@@ -1,0 +1,14 @@
+{
+  "day": "2026-11-02",
+  "arcs": [
+    {"id": "ing04-alpha", "body": "Alpha arc body.\n\n## Source sessions\n\n- s-alpha"},
+    {"id": "ing04-beta", "body": "Beta arc body.\n\n## Source sessions\n\n- s-beta"},
+    {"id": "ing04-gamma", "body": "Gamma arc body with enough substance to summarize."}
+  ],
+  "signal_block": "<!-- @signal severity=warning source=ing04-burst -->\nBurst signal raised by the fixture\n<!-- @/signal -->",
+  "marker_burst": 24,
+  "valid_output": "### 1. Missing Edges\n`ing04-alpha --related--> ing04-beta` — both arcs share the vault writer lock\n\n### 2. Merge/Split Candidates\nNone.\n\n### 3. Signal Escalation\nCLEAR: ing04-burst (fixture resolved the burst)\n\n### 4. Operator Intent\nThe operator is testing knowledge mutation bursts.\n\n### 5. Brain Health\n8/10 — fixture vault is consistent\n\n### 6. Arc Summaries\nSUMMARY: ing04-gamma | Gamma records the fixture summary sentence.\n",
+  "malformed_output": "### 1. Missing Edges\n`ing04-alpha --related--> ing04-beta` — both arcs share the vault writer lock\n\n### 2. Merge/Split Candidates\nMERGE: ing04-alpha and ing04-beta should become one\n\n### 3. Signal Escalation\nCLEAR: ing04-burst (fixture resolved the burst)\n\n### 4. Operator Intent\nThe operator is testing knowledge mutation bursts.\n\n### 5. Brain Health\n8/10 — fixture vault is consistent\n\n### 6. Arc Summaries\nSUMMARY: ing04-gamma | Gamma records the fixture summary sentence.\n",
+  "unknown_severity_output": "### 3. Signal Escalation\nESCALATE: ing04-burst → apocalyptic (fixture invented a severity)\n\n### 5. Brain Health\n8/10 — fixture\n",
+  "sectionless_output": "I could not complete the analysis because the vault looked unusual today.\n"
+}
