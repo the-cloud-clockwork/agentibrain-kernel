@@ -26,13 +26,13 @@ import argparse
 import importlib
 import json
 import re
-import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import brain_keeper  # for REGION_DIRS — keep prompt + apply scanners aligned
+import knowledge_txn
 import markers
 import project_feed
 import redact
@@ -56,6 +56,9 @@ def _rank(t: str) -> int:
 # ── Parsers for AI tick output sections ───────────────────────────────
 
 
+_EDGE_LINE_RE = re.compile(r"`?(\S+)\s+--(\w+)-->\s+(\S+)`?\s*[—–-]\s*(.*)")
+
+
 def parse_edges(section: str) -> list[dict]:
     """Parse '### 1. Missing Edges' section.
 
@@ -68,7 +71,7 @@ def parse_edges(section: str) -> list[dict]:
     """
     edges = []
     for line in section.splitlines():
-        m = re.match(r"`?(\S+)\s+--(\w+)-->\s+(\S+)`?\s*[—–-]\s*(.*)", line)
+        m = _EDGE_LINE_RE.match(line)
         if m:
             source = m.group(1).strip("`")
             target = m.group(3).strip("`")
@@ -229,11 +232,11 @@ _SECTION_KEYS = (
 )
 
 
-def parse_ai_output(text: str) -> dict:
-    """Parse the full AI tick output into structured sections."""
-    sections = {}
+def _split_sections(text: str) -> dict[str, str]:
+    """Split the AI tick output into its numbered sections, keyed by section name."""
+    sections: dict[str, str] = {}
     current_key = None
-    current_lines = []
+    current_lines: list[str] = []
 
     for line in text.splitlines():
         key = next((k for prefix, k in _SECTION_KEYS if line.startswith(prefix)), None)
@@ -247,7 +250,12 @@ def parse_ai_output(text: str) -> dict:
 
     if current_key:
         sections[current_key] = "\n".join(current_lines)
+    return sections
 
+
+def parse_ai_output(text: str) -> dict:
+    """Parse the full AI tick output into structured sections."""
+    sections = _split_sections(text)
     return {
         "edges": parse_edges(sections.get("edges", "")),
         "merges": parse_merges(sections.get("merges", "")),
@@ -257,6 +265,44 @@ def parse_ai_output(text: str) -> dict:
         "summaries": parse_summaries(sections.get("summaries", "")),
         "project_intents": parse_project_intents(sections.get("project_intents", "")),
     }
+
+
+SIGNAL_SEVERITIES = frozenset({"nuclear", "critical", "warning", "info", "resolved"})
+
+_OP_LINE_RES = (
+    ("edges", re.compile(r"--\w+-->")),
+    ("merges", re.compile(r"^[\s\-*`0-9.]*(?:MERGE|SPLIT):")),
+    ("signals", re.compile(r"^[\s\-*`0-9.]*(?:ESCALATE|CLEAR):")),
+    ("summaries", re.compile(r"^[\s\-*`]*SUMMARY:")),
+)
+
+
+def _readable(name: str, line: str) -> bool:
+    """Whether the section's own parser reads the operation line."""
+    if name == "edges":
+        return bool(_EDGE_LINE_RE.match(line))
+    if name == "merges":
+        return bool(parse_merges(line))
+    if name == "signals":
+        return bool(parse_signals(line))
+    return bool(_SUMMARY_RE.match(line))
+
+
+def validate_ai_output(text: str) -> list[str]:
+    """Reasons the AI tick output must not be applied; empty when every operation line parses."""
+    sections = _split_sections(text)
+    if not sections:
+        return ["no tick sections in the synthesis output"]
+    rejected = []
+    for name, pattern in _OP_LINE_RES:
+        for line in sections.get(name, "").splitlines():
+            if pattern.search(line) and not _readable(name, line):
+                rejected.append(f"{name}: unreadable line {line.strip()[:120]!r}")
+    for change in parse_signals(sections.get("signals", "")):
+        severity = change.get("new_severity")
+        if severity is not None and severity.lower() not in SIGNAL_SEVERITIES:
+            rejected.append(f"signals: unknown severity {severity!r} for {change['source']}")
+    return rejected
 
 
 # Leading `-`/`*`/backtick and a trailing backtick are all tolerated: the tick
@@ -389,7 +435,7 @@ def apply_edges(vault_root: Path, edges: list[dict], dry_run: bool) -> int:
             print(f"  SKIP edge: source {edge.source} not found", file=sys.stderr)
             continue
 
-        text = src_file.read_text()
+        text = knowledge_txn.read_text(src_file)
         marker = f"<!-- @edge type={edge.type} target={edge.target} -->"
 
         # Insert before ## Source sessions (or at end)
@@ -401,7 +447,7 @@ def apply_edges(vault_root: Path, edges: list[dict], dry_run: bool) -> int:
             text += f"\n{marker}\n"
 
         if not dry_run:
-            src_file.write_text(text)
+            knowledge_txn.write_text(src_file, text)
         applied += 1
         print(f"  +edge: {label}")
 
@@ -455,7 +501,7 @@ def apply_signal_changes(vault_root: Path, changes: list[dict], dry_run: bool) -
         source = change["source"]
         source_slug = source[:30]
         for md_file in _iter_arc_files():
-            text = md_file.read_text()
+            text = knowledge_txn.read_text(md_file)
             has_source_attr = f"source={source}" in text
             fuzzy_hit = not has_source_attr and source_slug in text and "<!-- @signal" in text
             if not has_source_attr and not fuzzy_hit:
@@ -487,7 +533,7 @@ def apply_signal_changes(vault_root: Path, changes: list[dict], dry_run: bool) -
                         text = pattern.sub(replacement, text, count=1)
                         print(f"  CLEAR: {change['source']} in {md_file.name} ({change['reason']})")
                     if not dry_run:
-                        md_file.write_text(text)
+                        knowledge_txn.write_text(md_file, text)
                     applied += 1
 
             elif change["op"] == "escalate":
@@ -505,7 +551,7 @@ def apply_signal_changes(vault_root: Path, changes: list[dict], dry_run: bool) -
                             count=1,
                         )
                         if not dry_run:
-                            md_file.write_text(text)
+                            knowledge_txn.write_text(md_file, text)
                         applied += 1
                         print(
                             f"  ESCALATE (fuzzy): {source} → {change['new_severity']} in {md_file.name}"
@@ -518,7 +564,7 @@ def apply_signal_changes(vault_root: Path, changes: list[dict], dry_run: bool) -
                         count=1,
                     )
                     if not dry_run:
-                        md_file.write_text(text)
+                        knowledge_txn.write_text(md_file, text)
                     applied += 1
                     print(
                         f"  ESCALATE: {change['source']} → {change['new_severity']} in {md_file.name}"
@@ -597,7 +643,7 @@ def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
             print(f"  SKIP merge: {merge['arc_b']} is already a merged tombstone", file=sys.stderr)
             continue
 
-        text_a = file_a.read_text()
+        text_a = knowledge_txn.read_text(file_a)
         # Idempotent across ticks: if B was already folded into A, do nothing.
         if f"## Merged from {merge['arc_b']}" in text_a:
             print(
@@ -608,7 +654,7 @@ def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
 
         if not dry_run:
             # Append B's content to A (minus its @edge markers), update A's title.
-            _fm_b, body_b = markers.parse_frontmatter(file_b.read_text())
+            _fm_b, body_b = markers.parse_frontmatter(knowledge_txn.read_text(file_b))
             merge_note = (
                 f"\n\n## Merged from {merge['arc_b']}\n\n"
                 f"{_drop_duplicate_markers(_strip_edge_markers(body_b), text_a).strip()}\n"
@@ -626,13 +672,13 @@ def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
                     r"^title:.*$", f"title: {safe_title}", merged, count=1, flags=re.MULTILINE
                 )
 
-            file_a.write_text(merged)
+            knowledge_txn.write_text(file_a, merged)
 
             # Tombstone B under a SINGLE canonical .merged.md — never stack
             # suffixes. with_suffix(".merged.md") on an already-.merged file is
             # what produced X.merged.merged…md (up to 21 deep) in the live vault.
             merged_path = file_b.parent / (markers.canonical_arc_id(file_b.name) + ".merged.md")
-            shutil.move(str(file_b), str(merged_path))
+            knowledge_txn.move(file_b, merged_path)
 
         applied += 1
         print(f"  MERGE: {merge['arc_a']} + {merge['arc_b']} → {merge.get('title', 'merged')}")
@@ -659,7 +705,7 @@ severity: info
 """
     if not dry_run:
         brain_feed_dir.mkdir(parents=True, exist_ok=True)
-        (brain_feed_dir / "intent.md").write_text(content)
+        knowledge_txn.write_text(brain_feed_dir / "intent.md", content)
     print(f"  INTENT: {intent[:100]}...")
 
 
@@ -744,7 +790,7 @@ def apply_summaries(vault_root: Path, summaries: list[dict], dry_run: bool = Fal
             continue
 
         try:
-            text = arc_path.read_text(encoding="utf-8")
+            text = knowledge_txn.read_text(arc_path)
         except OSError as e:
             print(f"  SKIP summary: unreadable {arc_id} ({e})", file=sys.stderr)
             continue
@@ -770,7 +816,7 @@ def apply_summaries(vault_root: Path, summaries: list[dict], dry_run: bool = Fal
 
         if not dry_run:
             try:
-                arc_path.write_text(f"---{fm}---{body}", encoding="utf-8")
+                knowledge_txn.write_text(arc_path, f"---{fm}---{body}")
             except OSError as e:
                 print(f"  FAIL summary: {arc_id} ({e})", file=sys.stderr)
                 continue
@@ -780,6 +826,25 @@ def apply_summaries(vault_root: Path, summaries: list[dict], dry_run: bool = Fal
     return applied
 
 
+def _apply_knowledge(vault_root: Path, parsed: dict, dry_run: bool) -> dict:
+    """Apply edges, signal changes, merges and summaries as one staged batch."""
+    actions: dict = {}
+    steps = (
+        ("edges", "edges_applied", "Applying edges", apply_edges),
+        ("signals", "signals_applied", "Applying signal changes", apply_signal_changes),
+        ("merges", "merges_applied", "Applying merges", apply_merges),
+        ("summaries", "summaries_applied", "Applying arc summaries", apply_summaries),
+    )
+    with knowledge_txn.staged(vault_root) as batch:
+        for key, field, title, step in steps:
+            if parsed[key]:
+                print(f"\n--- {title} ---", file=sys.stderr)
+                actions[field] = step(vault_root, parsed[key], dry_run)
+        committed = {"conflicts": 0} if dry_run else knowledge_txn.commit(batch)
+    actions["brain_mutation_conflicts_total"] = committed["conflicts"]
+    return actions
+
+
 def apply(
     vault_root: Path,
     brain_feed_dir: Path,
@@ -787,7 +852,12 @@ def apply(
     dry_run: bool = False,
     now: datetime | None = None,
 ) -> dict:
-    """Parse AI output and apply all recommendations to the vault."""
+    """Validate the AI output, then apply all recommendations to the vault under the writer lock."""
+    rejected = validate_ai_output(ai_output)
+    if rejected:
+        for reason in rejected:
+            print(f"  REJECT synthesis: {reason}", file=sys.stderr)
+        return {"rejected": rejected, "dry_run": dry_run}
     parsed = parse_ai_output(ai_output)
 
     print(
@@ -797,58 +867,38 @@ def apply(
         file=sys.stderr,
     )
 
-    actions = {}
+    with knowledge_txn.mutation_lock(vault_root) as waited:
+        if not dry_run:
+            knowledge_txn.recover(vault_root)
+        actions = _apply_knowledge(vault_root, parsed, dry_run)
+        actions["brain_mutation_conflicts_total"] += waited
 
-    # Apply edges
-    if parsed["edges"]:
-        print("\n--- Applying edges ---", file=sys.stderr)
-        actions["edges_applied"] = apply_edges(vault_root, parsed["edges"], dry_run)
+        if parsed["intent"]:
+            print("\n--- Writing intent ---", file=sys.stderr)
+            write_intent(brain_feed_dir, parsed["intent"], dry_run)
+        actions["project_intents"] = project_feed.write_project_intents(
+            brain_feed_dir, parsed["project_intents"], now or datetime.now(timezone.utc), dry_run
+        )
 
-    # Apply signal changes
-    if parsed["signals"]:
-        print("\n--- Applying signal changes ---", file=sys.stderr)
-        actions["signals_applied"] = apply_signal_changes(vault_root, parsed["signals"], dry_run)
+        print("\n--- Recording health ---", file=sys.stderr)
+        health_file = (
+            brain_feed_dir.parent / "brain-etl" / "health.jsonl"
+            if (brain_feed_dir.parent / "brain-etl").exists()
+            else brain_feed_dir / "health.jsonl"
+        )
+        if parsed["health"]["reason"] == "unparseable":
+            previous_health = last_confirmed_health(health_file)
+            if previous_health:
+                parsed["health"] = {
+                    "score": previous_health["score"],
+                    "reason": f"last confirmed: {previous_health['reason']}",
+                }
+        append_health(health_file, parsed["health"], {}, dry_run)
+        actions["health"] = parsed["health"]
 
-    # Apply merges
-    if parsed["merges"]:
-        print("\n--- Applying merges ---", file=sys.stderr)
-        actions["merges_applied"] = apply_merges(vault_root, parsed["merges"], dry_run)
-
-    # Apply arc summaries
-    if parsed["summaries"]:
-        print("\n--- Applying arc summaries ---", file=sys.stderr)
-        actions["summaries_applied"] = apply_summaries(vault_root, parsed["summaries"], dry_run)
-
-    # Write intent
-    if parsed["intent"]:
-        print("\n--- Writing intent ---", file=sys.stderr)
-        write_intent(brain_feed_dir, parsed["intent"], dry_run)
-    actions["project_intents"] = project_feed.write_project_intents(
-        brain_feed_dir, parsed["project_intents"], now or datetime.now(timezone.utc), dry_run
-    )
-
-    # Append health
-    print("\n--- Recording health ---", file=sys.stderr)
-    health_file = (
-        brain_feed_dir.parent / "brain-etl" / "health.jsonl"
-        if (brain_feed_dir.parent / "brain-etl").exists()
-        else brain_feed_dir / "health.jsonl"
-    )
-    if parsed["health"]["reason"] == "unparseable":
-        previous_health = last_confirmed_health(health_file)
-        if previous_health:
-            parsed["health"] = {
-                "score": previous_health["score"],
-                "reason": f"last confirmed: {previous_health['reason']}",
-            }
-    append_health(health_file, parsed["health"], {}, dry_run)
-    actions["health"] = parsed["health"]
-
-    # Diff report
-    diff = generate_diff_report(vault_root, actions)
-    if not dry_run:
-        diff_file = brain_feed_dir / "last-tick-diff.md"
-        diff_file.write_text(diff)
+        diff = generate_diff_report(vault_root, actions)
+        if not dry_run:
+            knowledge_txn.write_text(brain_feed_dir / "last-tick-diff.md", diff)
 
     actions["dry_run"] = dry_run
     return actions
