@@ -126,6 +126,12 @@ def _fit_budget(prompt: str, edge_map: str, arc_table: str) -> tuple[str, list[s
     return prompt, omitted
 
 
+def _budgeted(prompt: str, edge_map: str, arc_table: str, stats: dict) -> tuple[str, dict]:
+    """Fit the prompt to budget and record the omitted sections as stats prompt_omitted."""
+    prompt, stats["prompt_omitted"] = _fit_budget(prompt, edge_map, arc_table)
+    return prompt, stats
+
+
 def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
     """Run deterministic tick, then build the AI reasoning prompt.
 
@@ -483,10 +489,7 @@ Respond ONLY with the 6 sections above. No preamble. No explanation of what you'
     # under budget; this guarantees the prompt fits the context window on ANY
     # vault state (e.g. before a cleanup has run). Drop the largest variable
     # sections first — edge map, then arc table — before a blunt truncation.
-    prompt, stats["prompt_omitted"] = _fit_budget(
-        with_project_intent(prompt, brain_feed_dir), edge_map, arc_table
-    )
-    return prompt, stats
+    return _budgeted(with_project_intent(prompt, brain_feed_dir), edge_map, arc_table, stats)
 
 
 def main() -> int:

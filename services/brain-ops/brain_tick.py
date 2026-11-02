@@ -28,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -360,6 +361,13 @@ def call_llm(prompt: str, inference_url: str = INFERENCE_URL) -> str:
         return f"ERROR: LLM call failed: {type(e).__name__}: {e}"
 
 
+def _deterministic(vault_root: Path, brain_feed_dir: Path, dry_run: bool) -> dict:
+    """Run the deterministic keeper tick, holding the knowledge writer lock unless dry."""
+    guard = contextlib.nullcontext() if dry_run else knowledge_txn.mutation_lock(vault_root)
+    with guard:
+        return brain_keeper.tick(vault_root, brain_feed_dir, dry_run=dry_run)
+
+
 def run_tick(
     vault_root: Path,
     brain_feed_dir: Path,
@@ -380,11 +388,7 @@ def run_tick(
 
     # ── Phase 1: Deterministic ────────────────────────────────────
     t1 = time.time()
-    if dry_run:
-        det_stats = brain_keeper.tick(vault_root, brain_feed_dir, dry_run=dry_run)
-    else:
-        with knowledge_txn.mutation_lock(vault_root):
-            det_stats = brain_keeper.tick(vault_root, brain_feed_dir, dry_run=dry_run)
+    det_stats = _deterministic(vault_root, brain_feed_dir, dry_run)
     phase1_ms = int((time.time() - t1) * 1000)
     report["phases"]["deterministic"] = {
         "duration_ms": phase1_ms,
