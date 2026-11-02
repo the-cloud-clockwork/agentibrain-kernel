@@ -720,9 +720,11 @@ def append_health(health_file: Path, health: dict, tick_stats: dict, dry_run: bo
         "lessons": tick_stats.get("lessons_collected", 0),
     }
     if not dry_run:
-        health_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(health_file, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+        try:
+            previous = knowledge_txn.read_text(health_file)
+        except FileNotFoundError:
+            previous = ""
+        knowledge_txn.write_text(health_file, previous + json.dumps(entry) + "\n")
     print(f"  HEALTH: {health['score']}/10 — {health['reason'][:80]}")
 
 
@@ -827,7 +829,7 @@ def apply_summaries(vault_root: Path, summaries: list[dict], dry_run: bool = Fal
 
 
 def _apply_knowledge(vault_root: Path, parsed: dict, dry_run: bool) -> dict:
-    """Apply edges, signal changes, merges and summaries as one staged batch."""
+    """Stage edges, signal changes, merges and summaries into the open batch."""
     actions: dict = {}
     steps = (
         ("edges", "edges_applied", "Applying edges", apply_edges),
@@ -835,14 +837,30 @@ def _apply_knowledge(vault_root: Path, parsed: dict, dry_run: bool) -> dict:
         ("merges", "merges_applied", "Applying merges", apply_merges),
         ("summaries", "summaries_applied", "Applying arc summaries", apply_summaries),
     )
-    with knowledge_txn.staged(vault_root) as batch:
-        for key, field, title, step in steps:
-            if parsed[key]:
-                print(f"\n--- {title} ---", file=sys.stderr)
-                actions[field] = step(vault_root, parsed[key], dry_run)
-        committed = {"conflicts": 0} if dry_run else knowledge_txn.commit(batch)
-    actions["brain_mutation_conflicts_total"] = committed["conflicts"]
+    for key, field, title, step in steps:
+        if parsed[key]:
+            print(f"\n--- {title} ---", file=sys.stderr)
+            actions[field] = step(vault_root, parsed[key], dry_run)
     return actions
+
+
+def _record_health(brain_feed_dir: Path, health: dict, dry_run: bool) -> dict:
+    """Stage the health entry, carrying the last confirmed score when the response had none."""
+    print("\n--- Recording health ---", file=sys.stderr)
+    health_file = (
+        brain_feed_dir.parent / "brain-etl" / "health.jsonl"
+        if (brain_feed_dir.parent / "brain-etl").exists()
+        else brain_feed_dir / "health.jsonl"
+    )
+    if health["reason"] == "unparseable":
+        previous_health = last_confirmed_health(health_file)
+        if previous_health:
+            health = {
+                "score": previous_health["score"],
+                "reason": f"last confirmed: {previous_health['reason']}",
+            }
+    append_health(health_file, health, {}, dry_run)
+    return health
 
 
 def apply(
@@ -870,31 +888,20 @@ def apply(
     with knowledge_txn.mutation_lock(vault_root) as waited:
         if not dry_run:
             knowledge_txn.recover(vault_root)
-        actions = _apply_knowledge(vault_root, parsed, dry_run)
-        actions["brain_mutation_conflicts_total"] += waited
-
-        if parsed["intent"]:
-            print("\n--- Writing intent ---", file=sys.stderr)
-            write_intent(brain_feed_dir, parsed["intent"], dry_run)
-        actions["project_intents"] = project_feed.write_project_intents(
-            brain_feed_dir, parsed["project_intents"], now or datetime.now(timezone.utc), dry_run
-        )
-
-        print("\n--- Recording health ---", file=sys.stderr)
-        health_file = (
-            brain_feed_dir.parent / "brain-etl" / "health.jsonl"
-            if (brain_feed_dir.parent / "brain-etl").exists()
-            else brain_feed_dir / "health.jsonl"
-        )
-        if parsed["health"]["reason"] == "unparseable":
-            previous_health = last_confirmed_health(health_file)
-            if previous_health:
-                parsed["health"] = {
-                    "score": previous_health["score"],
-                    "reason": f"last confirmed: {previous_health['reason']}",
-                }
-        append_health(health_file, parsed["health"], {}, dry_run)
-        actions["health"] = parsed["health"]
+        with knowledge_txn.staged(vault_root) as batch:
+            actions = _apply_knowledge(vault_root, parsed, dry_run)
+            if parsed["intent"]:
+                print("\n--- Writing intent ---", file=sys.stderr)
+                write_intent(brain_feed_dir, parsed["intent"], dry_run)
+            actions["project_intents"] = project_feed.write_project_intents(
+                brain_feed_dir,
+                parsed["project_intents"],
+                now or datetime.now(timezone.utc),
+                dry_run,
+            )
+            actions["health"] = _record_health(brain_feed_dir, parsed["health"], dry_run)
+            committed = {"conflicts": 0} if dry_run else knowledge_txn.commit(batch)
+        actions["brain_mutation_conflicts_total"] = committed["conflicts"] + waited
 
         diff = generate_diff_report(vault_root, actions)
         if not dry_run:

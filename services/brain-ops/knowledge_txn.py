@@ -45,14 +45,22 @@ def _digest(path: Path) -> str | None:
 
 
 def _replace(path: Path, data: bytes) -> None:
-    """Write data beside path and rename it over path."""
+    """Write data beside path, flush it to disk and rename it over path durably."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.parent / f".{path.name}.{uuid4().hex}.tmp"
     try:
-        tmp.write_bytes(data)
+        with tmp.open("wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 @contextlib.contextmanager
@@ -74,17 +82,20 @@ def mutation_lock(vault: Path) -> Iterator[int]:
 
 
 def read_text(path: Path) -> str:
-    """The file's text as the open batch would leave it."""
+    """The file's text as the open batch would leave it; a file staged to move away is gone."""
     batch = _BATCH.get()
-    if batch is not None and path in batch.writes:
-        return batch.writes[path]
+    if batch is not None:
+        if any(src == path for src, _ in batch.moves):
+            raise FileNotFoundError(path)
+        if path in batch.writes:
+            return batch.writes[path]
     return path.read_text(encoding="utf-8")
 
 
 def write_text(path: Path, text: str) -> None:
-    """Stage the text in the open batch, or replace the file atomically outside one."""
+    """Stage the text in the open batch, or replace the file atomically outside the batch's vault."""
     batch = _BATCH.get()
-    if batch is None:
+    if batch is None or not path.is_relative_to(batch.vault):
         _replace(path, text.encode("utf-8"))
         return
     batch.writes[path] = text
@@ -154,7 +165,7 @@ def _apply_op(vault: Path, entry: dict) -> str:
         src, dst = vault / entry["src"], vault / entry["dst"]
         if not src.exists() and dst.exists():
             return "done"
-        if _digest(src) != entry["base"] or dst.exists():
+        if _digest(src) != entry["base"]:
             return "conflict"
         shutil.move(str(src), str(dst))
         return "applied"

@@ -12,7 +12,6 @@ Run from repo root:
 
 from __future__ import annotations
 
-import contextlib
 import fcntl
 import importlib
 import json
@@ -208,6 +207,39 @@ def test_manual_ticks_coalesce_and_scheduled_tick_yields_to_the_writer(tmp_path:
     assert len(list(requested.glob("*.json"))) == 5
 
 
+def test_burst_scheduled_tick_manual_tick_and_malformed_output_together(tmp_path: Path) -> None:
+    """T-SV2-ING-04-A: a marker burst, a scheduled deterministic tick, a manual apply and a malformed apply run at once."""
+    vault = _vault(tmp_path)
+    outcomes: dict[str, dict] = {}
+    jobs = {
+        "scheduled": lambda: brain_tick._deterministic(vault, vault / "brain-feed", False),
+        "manual": lambda: _apply(vault, FIXTURE["valid_output"]),
+        "malformed": lambda: _apply(vault, FIXTURE["malformed_output"]),
+    }
+    threads = [
+        threading.Thread(target=lambda k=key, job=job: outcomes.__setitem__(k, job()))
+        for key, job in jobs.items()
+    ]
+    for thread in threads:
+        thread.start()
+    results = _burst(vault, FIXTURE["marker_burst"], "together")
+    for thread in threads:
+        thread.join(60)
+
+    assert set(outcomes) == set(jobs)
+    assert outcomes["malformed"]["rejected"]
+    assert outcomes["manual"]["edges_applied"] == 1
+    assert len(results) == FIXTURE["marker_burst"]
+    log = (vault / LESSON_LOG).read_text(encoding="utf-8")
+    for n in range(FIXTURE["marker_burst"]):
+        assert f"together burst lesson number {n}" in log
+    for arc in FIXTURE["arcs"]:
+        fm, _ = ops_markers.parse_frontmatter(_arc_path(vault, arc["id"]).read_text())
+        assert fm["cluster_id"] == arc["id"]
+    assert not (vault / knowledge_txn.JOURNAL).exists()
+    assert not list(vault.rglob("*.tmp"))
+
+
 def test_prompt_budget_reports_every_omitted_section(monkeypatch: pytest.MonkeyPatch) -> None:
     """T-SV2-ING-04-A: a bounded prompt names what the budget dropped."""
     monkeypatch.setattr(brain_tick_prompt, "MAX_PROMPT_CHARS", 40)
@@ -374,8 +406,7 @@ def test_batch_interrupted_before_its_journal_leaves_the_previous_revision(
         patch.setattr(knowledge_txn, "_write_journal", no_journal)
         with pytest.raises(OSError):
             _apply(vault, FIXTURE["valid_output"])
-    with contextlib.suppress(FileNotFoundError):
-        assert any((vault / knowledge_txn.STAGING).iterdir())
+    assert any((vault / knowledge_txn.STAGING).iterdir())
     replay = knowledge_txn.recover(vault)
     assert replay["replayed"] == 0
     after = _snapshot(vault)

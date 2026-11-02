@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 import knowledge_index
+import knowledge_txn
 import markers
 
 SNAPSHOT_DIR = "projects"
@@ -233,10 +234,8 @@ def _posted_fleet_signals(vault: Path) -> list[dict]:
 
 
 def _write_json(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, path)
+    """Write the JSON document through the knowledge writer: staged in a batch, else atomic."""
+    knowledge_txn.write_text(path, json.dumps(data, indent=1, sort_keys=True))
 
 
 def write_snapshots(brain_feed_dir: Path, snapshots: dict[str, dict], fleet: dict) -> dict:
