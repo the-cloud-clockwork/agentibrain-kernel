@@ -1,5 +1,10 @@
 """SV2-ING-03: recalled lessons echoed across transcripts are not new independent memory.
 
+T-SV2-ING-03-A: fifty echoes give one lesson and one independent outcome; origin kinds.
+T-SV2-ING-03-B: echoes never promote, quoted operator lines, rejected echoes, quoting
+markers, evidence before injection, quarantined arcs.
+T-SV2-ING-03-C: a new outcome keeps provenance; promotion off keeps classification.
+
 Run from repo root:
     pytest -q services/brain-ops/tests
 """
@@ -200,6 +205,23 @@ def test_markers_inside_injected_or_tool_text_are_not_claims(tmp_path: Path) -> 
     session = extract.process_session(_write(tmp_path, "quoting", records), SINCE, UNTIL)
     assert session["lesson_claims"] == []
     assert lesson_reconcile.lesson_evidence([session])["lessons"] == {}
+
+
+def test_evidence_from_before_the_injection_does_not_verify_an_echo(tmp_path: Path) -> None:
+    records = _genuine_records("toolu_early")
+    records[0], records[2], records[3] = records[2], records[3], records[0]
+    session = extract.process_session(_write(tmp_path, "early", records), SINCE, UNTIL)
+    assert session["lesson_claims"] == [
+        {"hash": LESSON_HASH, "origin_kind": "assistant", "echo": True, "evidence": ""}
+    ]
+
+
+def test_suffixed_injection_still_marks_the_echo(tmp_path: Path) -> None:
+    injection = f"<system-reminder>\nRecalled: {FIXTURE['lesson']} (heat 9)\n</system-reminder>"
+    session = extract.process_session(
+        _write(tmp_path, "suffixed", _echo_records(injection)), SINCE, UNTIL
+    )
+    assert session["lesson_claims"][0]["echo"] is True
 
 
 def test_new_outcome_adds_evidence_without_replacing_provenance(tmp_path: Path) -> None:

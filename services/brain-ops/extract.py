@@ -135,41 +135,47 @@ def succeeded_tool_ids(record: dict) -> set[str]:
 
 @dataclass
 class LessonClaims:
-    """Lesson markers an assistant wrote, each judged echo or verified against the transcript."""
+    """Lesson markers an assistant wrote, each judged echo or verified against the transcript.
 
-    injected: set[str] = field(default_factory=set)
-    succeeded: set[str] = field(default_factory=set)
+    ``injected`` maps each squashed injected block to the record position it last appeared
+    at, and ``succeeded`` maps each succeeded tool call id to its result's position, so a
+    claim's evidence counts only when its tool call succeeded after the lesson was injected.
+    """
+
+    injected: dict[str, int] = field(default_factory=dict)
+    succeeded: dict[str, int] = field(default_factory=dict)
     claims: list[dict] = field(default_factory=list)
     origin_counts: dict[str, int] = field(default_factory=lambda: dict.fromkeys(ORIGIN_KINDS, 0))
+    position: int = 0
 
     def observe(self, record: dict, origin: str, texts: list[str]) -> None:
         """Count one record's origin, remember injected text and succeeded tools, claim lessons."""
+        self.position += 1
         if origin:
             self.origin_counts[origin] += 1
         if origin == "injected":
-            self.remember_injected(" ".join(texts))
+            self.injected[_squash(" ".join(texts))] = self.position
         elif origin == "tool":
-            self.succeeded |= succeeded_tool_ids(record)
+            self.succeeded.update(dict.fromkeys(succeeded_tool_ids(record), self.position))
         elif origin == "assistant":
             for marker in markers.find_markers("\n".join(texts), "lesson"):
                 self.claim(marker.content, marker.attr("evidence"))
 
-    def remember_injected(self, text: str) -> None:
-        """Keep the whole squashed block and each squashed line, list bullets stripped."""
-        self.injected.add(_squash(text))
-        self.injected.update(
-            _squash(line).lstrip(INJECTED_LINE_BULLETS) for line in text.splitlines()
-        )
+    def injected_at(self, body: str) -> int:
+        """Last position of an injected block containing the squashed body, else -1."""
+        needle = _squash(body).lstrip(INJECTED_LINE_BULLETS)
+        return max((at for block, at in self.injected.items() if needle in block), default=-1)
 
     def claim(self, body: str, evidence: str) -> None:
-        """Record one lesson claim; evidence counts only when it names a succeeded tool call."""
-        verified = evidence if evidence and evidence in self.succeeded else ""
+        """Record one lesson claim; evidence counts only for a tool call that succeeded after
+        the lesson's last injection, and an unverified claim of injected text is an echo."""
+        injected_at = self.injected_at(body)
+        verified = evidence if self.succeeded.get(evidence, -1) > injected_at else ""
         self.claims.append(
             {
                 "hash": lesson_reconcile.entry_hash(body),
                 "origin_kind": "assistant",
-                "echo": not verified
-                and _squash(body).lstrip(INJECTED_LINE_BULLETS) in self.injected,
+                "echo": not verified and injected_at >= 0,
                 "evidence": verified,
             }
         )
