@@ -51,7 +51,8 @@ AUTONOMOUS_TOOL_CALLS = 20
 CODEX_TOOL_ITEMS = frozenset({"function_call", "custom_tool_call", "local_shell_call"})
 # Codex records its own injected context as user messages.
 CODEX_INJECTED_PREFIXES = ("<", "# AGENTS.md")
-CLAUDE_INJECTED_PREFIXES = ("<system-reminder>", "<command-", "<local-command-", "Caveat:")
+CLAUDE_INJECTED_PREFIXES = ("<system-reminder>", "<command-", "<local-command-")
+INJECTED_LINE_BULLETS = "-*• "
 ORIGIN_KINDS = ("user", "assistant", "tool", "injected")
 
 
@@ -97,8 +98,8 @@ def _squash(text: str) -> str:
     return " ".join(text.split())
 
 
-def origin_kind(record: dict) -> str:
-    """Who authored a Claude record: user, assistant, tool evidence or injected context."""
+def origin_kind(record: dict, texts: list[str]) -> str:
+    """Who authored a Claude record given its texts: user, assistant, tool or injected context."""
     kind = record.get("type")
     if kind == "assistant":
         return "assistant"
@@ -112,7 +113,7 @@ def origin_kind(record: dict) -> str:
         return "tool"
     if record.get("isMeta") or record.get("isCompactSummary"):
         return "injected"
-    text = " ".join(iter_content_texts(msg)).lstrip()
+    text = " ".join(texts).lstrip()
     return "injected" if text.startswith(CLAUDE_INJECTED_PREFIXES) else "user"
 
 
@@ -136,19 +137,29 @@ def succeeded_tool_ids(record: dict) -> set[str]:
 class LessonClaims:
     """Lesson markers an assistant wrote, each judged echo or verified against the transcript."""
 
-    injected: str = ""
+    injected: set[str] = field(default_factory=set)
     succeeded: set[str] = field(default_factory=set)
     claims: list[dict] = field(default_factory=list)
+    origin_counts: dict[str, int] = field(default_factory=lambda: dict.fromkeys(ORIGIN_KINDS, 0))
 
     def observe(self, record: dict, origin: str, texts: list[str]) -> None:
-        """Take one record: remember injected text and succeeded tools, claim assistant lessons."""
+        """Count one record's origin, remember injected text and succeeded tools, claim lessons."""
+        if origin:
+            self.origin_counts[origin] += 1
         if origin == "injected":
-            self.injected += " " + _squash(" ".join(texts))
+            self.remember_injected(" ".join(texts))
         elif origin == "tool":
             self.succeeded |= succeeded_tool_ids(record)
         elif origin == "assistant":
             for marker in markers.find_markers("\n".join(texts), "lesson"):
                 self.claim(marker.content, marker.attr("evidence"))
+
+    def remember_injected(self, text: str) -> None:
+        """Keep the whole squashed block and each squashed line, list bullets stripped."""
+        self.injected.add(_squash(text))
+        self.injected.update(
+            _squash(line).lstrip(INJECTED_LINE_BULLETS) for line in text.splitlines()
+        )
 
     def claim(self, body: str, evidence: str) -> None:
         """Record one lesson claim; evidence counts only when it names a succeeded tool call."""
@@ -246,7 +257,6 @@ def process_session(jsonl_path: Path, since: datetime, until: datetime) -> dict 
     cwd = ""
     git_branch = ""
     session_id = jsonl_path.stem
-    origin_counts = dict.fromkeys(ORIGIN_KINDS, 0)
     lessons = LessonClaims()
 
     try:
@@ -278,9 +288,7 @@ def process_session(jsonl_path: Path, since: datetime, until: datetime) -> dict 
                 msg = d.get("message") or {}
                 texts = iter_content_texts(msg)
                 joined = " ".join(texts)
-                origin = origin_kind(d)
-                if origin:
-                    origin_counts[origin] += 1
+                origin = origin_kind(d, texts)
                 lessons.observe(d, origin, texts)
 
                 if t == "user":
@@ -336,7 +344,7 @@ def process_session(jsonl_path: Path, since: datetime, until: datetime) -> dict 
         "compactions": compactions,
         "joy_markers": joy_hits,
         "error_markers": error_hits,
-        "origin_counts": origin_counts,
+        "origin_counts": lessons.origin_counts,
         "lesson_claims": lessons.claims,
     }
 

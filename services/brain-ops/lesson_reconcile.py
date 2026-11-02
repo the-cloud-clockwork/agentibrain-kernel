@@ -97,20 +97,20 @@ def _classify(record: dict) -> dict:
         record["classification"] = "candidate"
     else:
         record["classification"] = "echo-only"
+    record["promotable"] = promotable(record)
     return record
 
 
-def lesson_evidence(sessions: list[dict | None], prior: dict | None = None) -> dict:
+def lesson_evidence(sessions: list[dict], prior: dict | None = None) -> dict:
     """Merge session lesson claims into per-lesson evidence; recalled echoes never count.
 
     ``prior`` is never mutated. Each session counts once per lesson, its origin stays the
-    first independent source, and echoes of injected text are counted only as suppressed.
+    first independent source, and ``memory_echo_suppression_total`` counts every echo claim
+    of injected text that was kept out of the independent evidence.
     """
     lessons = copy.deepcopy(prior or {})
     suppressed = 0
     for session in sessions:
-        if not session:
-            continue
         for claim in session.get("lesson_claims", []):
             record = lessons.setdefault(claim["hash"], _new_evidence(claim["hash"]))
             suppressed += _add_claim(record, session["session_id"], claim)
