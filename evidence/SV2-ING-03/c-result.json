@@ -1,0 +1,18 @@
+{
+  "package": "SV2-ING-03",
+  "tested_commit": "265b52a45b6a892af9d6f7d69a352148e03d58a7",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41494105324",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41494105324/job/125444419747",
+  "verification": "Mocked: fixture-local transcripts in CI; no live swarm transcripts or vault.",
+  "case": "T-SV2-ING-03-C",
+  "outcome": "passed",
+  "tests": [
+    "services/brain-ops/tests/test_memory_echo.py::test_new_outcome_adds_evidence_without_replacing_provenance",
+    "services/brain-ops/tests/test_memory_echo.py::test_promotion_off_keeps_candidates_classified"
+  ],
+  "assertions": [
+    "A genuinely new verified application adds a source and an outcome to an existing lesson while its origin stays the first author.",
+    "Replaying the same sessions or an older batch leaves the merged evidence unchanged.",
+    "BRAIN_LESSON_PROMOTION=off disables promotion and keeps the evidence classification."
+  ]
+}

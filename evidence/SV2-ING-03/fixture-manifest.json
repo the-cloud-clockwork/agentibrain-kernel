@@ -1,0 +1,9 @@
+{
+  "package": "SV2-ING-03",
+  "tested_commit": "265b52a45b6a892af9d6f7d69a352148e03d58a7",
+  "inputs": {
+    "services/brain-ops/tests/fixtures/sv2_ing03_transcripts.json": "sha256:f26115c2d1c66d7fe6bbd95c4462001bee5c413a354b54d1437365cc88130a56",
+    "services/brain-ops/tests/test_memory_echo.py": "sha256:eb7aaf60d4146a60b960295f55e84f55bab8e270db64cc1bd7581ff82d87de63"
+  },
+  "fixture": "One NFS lesson injected as a recalled brain broadcast into fifty worker transcripts that echo it, plus one transcript that applies it with a succeeded tool call named as the lesson evidence, and a quoted old operator line in injected context."
+}
