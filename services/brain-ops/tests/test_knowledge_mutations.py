@@ -309,9 +309,10 @@ def test_interrupted_commit_rolls_forward_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """T-SV2-ING-04-C: a commit killed midway completes from its journal exactly once."""
-    reference = _vault(tmp_path / "reference")
-    _apply(reference, FIXTURE["valid_output"])
     vault = _vault(tmp_path / "crashed")
+    reference = tmp_path / "reference" / "vault"
+    shutil.copytree(vault, reference)
+    _apply(reference, FIXTURE["valid_output"])
     with monkeypatch.context() as patch:
         _crash_on_op(patch, 2)
         with pytest.raises(OSError):
