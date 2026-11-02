@@ -126,13 +126,21 @@ def _next_adr_number(decisions_dir: Path) -> int:
 
 
 def _replace_text(path: Path, text: str) -> None:
-    """Write text beside path and rename it over path, so readers never see a partial file."""
+    """Write text beside path, flush it to disk and rename it over path durably."""
     tmp = path.parent / f".{path.name}.{uuid4().hex}.tmp"
     try:
-        tmp.write_text(text, encoding="utf-8")
+        with tmp.open("w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 def _append(path: Path, body: str) -> None:

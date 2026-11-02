@@ -81,6 +81,21 @@ def mutation_lock(vault: Path) -> Iterator[int]:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+def exists(path: Path) -> bool:
+    """Whether the file exists as the open batch would leave it."""
+    batch = _BATCH.get()
+    if batch is None:
+        return path.exists()
+    if any(src == path for src, _ in batch.moves):
+        return False
+    return path in batch.writes or path.exists()
+
+
+def _relative(path: Path, root: Path) -> str:
+    """The journal name of path: relative to the vault when under it, else absolute."""
+    return path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+
+
 def read_text(path: Path) -> str:
     """The file's text as the open batch would leave it; a file staged to move away is gone."""
     batch = _BATCH.get()
@@ -93,9 +108,9 @@ def read_text(path: Path) -> str:
 
 
 def write_text(path: Path, text: str) -> None:
-    """Stage the text in the open batch, or replace the file atomically outside the batch's vault."""
+    """Stage the text in the open batch, or replace the file atomically outside one."""
     batch = _BATCH.get()
-    if batch is None or not path.is_relative_to(batch.vault):
+    if batch is None:
         _replace(path, text.encode("utf-8"))
         return
     batch.writes[path] = text
@@ -132,8 +147,8 @@ def _entries(batch: Batch, staging: Path) -> list[dict]:
         entries.append(
             {
                 "op": "write",
-                "target": path.relative_to(root).as_posix(),
-                "staged": staged_file.relative_to(root).as_posix(),
+                "target": _relative(path, root),
+                "staged": _relative(staged_file, root),
                 "base": _digest(path),
                 "new": hashlib.sha256(data).hexdigest(),
             }
@@ -146,8 +161,8 @@ def _entries(batch: Batch, staging: Path) -> list[dict]:
         entries.append(
             {
                 "op": "move",
-                "src": src.relative_to(root).as_posix(),
-                "dst": dst.relative_to(root).as_posix(),
+                "src": _relative(src, root),
+                "dst": _relative(dst, root),
                 "base": base,
             }
         )

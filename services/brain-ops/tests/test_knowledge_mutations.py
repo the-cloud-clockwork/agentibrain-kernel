@@ -299,6 +299,23 @@ def test_failing_apply_step_leaves_every_arc_unchanged(
     assert _snapshot(vault) == before
 
 
+def test_second_merge_of_a_staged_tombstone_is_skipped(tmp_path: Path) -> None:
+    """T-SV2-ING-04-B: two merges naming the same arc in one batch apply once and keep the tick running."""
+    vault = _vault(tmp_path)
+    output = FIXTURE["valid_output"].replace(
+        "### 2. Merge/Split Candidates\nNone.",
+        "### 2. Merge/Split Candidates\n"
+        "MERGE: ing04-alpha + ing04-beta → ing04-alpha\n"
+        "MERGE: ing04-gamma + ing04-beta → ing04-gamma",
+    )
+    outcome = _apply(vault, output)
+    assert outcome["merges_applied"] == 1
+    assert not _arc_path(vault, "ing04-beta").exists()
+    assert (vault / "clusters" / DAY / "ing04-beta.merged.md").is_file()
+    assert "## Merged from ing04-beta" in _arc_path(vault, "ing04-alpha").read_text()
+    assert "## Merged from" not in _arc_path(vault, "ing04-gamma").read_text()
+
+
 def test_tick_rejects_malformed_synthesis_and_exits_non_zero(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

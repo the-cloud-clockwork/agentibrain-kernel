@@ -629,7 +629,9 @@ def apply_merges(vault_root: Path, merges: list[dict], dry_run: bool) -> int:
             continue  # splits are more complex, skip for now
         file_a = find_arc_file(vault_root, merge["arc_a"])
         file_b = find_arc_file(vault_root, merge["arc_b"])
-        if not file_a or not file_b:
+        if not (
+            file_a and file_b and knowledge_txn.exists(file_a) and knowledge_txn.exists(file_b)
+        ):
             print(f"  SKIP merge: {merge['arc_a']} or {merge['arc_b']} not found", file=sys.stderr)
             continue
         if file_a == file_b:

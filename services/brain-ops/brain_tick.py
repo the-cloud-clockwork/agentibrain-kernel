@@ -361,7 +361,7 @@ def call_llm(prompt: str, inference_url: str = INFERENCE_URL) -> str:
 
 
 def _deterministic(vault_root: Path, brain_feed_dir: Path, dry_run: bool) -> dict:
-    """Run the deterministic keeper tick under the knowledge writer lock, after any pending replay, unless dry."""
+    """Run the keeper tick under the writer lock after any pending replay, unless dry."""
     if dry_run:
         return brain_keeper.tick(vault_root, brain_feed_dir, dry_run=dry_run)
     with knowledge_txn.mutation_lock(vault_root):
