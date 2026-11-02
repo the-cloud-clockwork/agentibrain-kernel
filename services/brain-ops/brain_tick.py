@@ -44,6 +44,7 @@ import brain_apply
 import brain_keeper
 import brain_tick_prompt
 import instance_scope
+import knowledge_txn
 import net_wait
 import redact
 
@@ -359,6 +360,15 @@ def call_llm(prompt: str, inference_url: str = INFERENCE_URL) -> str:
         return f"ERROR: LLM call failed: {type(e).__name__}: {e}"
 
 
+def _deterministic(vault_root: Path, brain_feed_dir: Path, dry_run: bool) -> dict:
+    """Run the keeper tick under the writer lock after any pending replay, unless dry."""
+    if dry_run:
+        return brain_keeper.tick(vault_root, brain_feed_dir, dry_run=dry_run)
+    with knowledge_txn.mutation_lock(vault_root):
+        knowledge_txn.recover(vault_root)
+        return brain_keeper.tick(vault_root, brain_feed_dir, dry_run=dry_run)
+
+
 def run_tick(
     vault_root: Path,
     brain_feed_dir: Path,
@@ -379,7 +389,7 @@ def run_tick(
 
     # ── Phase 1: Deterministic ────────────────────────────────────
     t1 = time.time()
-    det_stats = brain_keeper.tick(vault_root, brain_feed_dir, dry_run=dry_run)
+    det_stats = _deterministic(vault_root, brain_feed_dir, dry_run)
     phase1_ms = int((time.time() - t1) * 1000)
     report["phases"]["deterministic"] = {
         "duration_ms": phase1_ms,
@@ -406,9 +416,13 @@ def run_tick(
 
     # ── Phase 2: Generate AI prompt ───────────────────────────────
     t2 = time.time()
-    prompt, _ = brain_tick_prompt.build_prompt(vault_root, brain_feed_dir)
+    prompt, prompt_stats = brain_tick_prompt.build_prompt(vault_root, brain_feed_dir)
     phase2_ms = int((time.time() - t2) * 1000)
-    report["phases"]["prompt_gen"] = {"duration_ms": phase2_ms, "prompt_length": len(prompt)}
+    report["phases"]["prompt_gen"] = {
+        "duration_ms": phase2_ms,
+        "prompt_length": len(prompt),
+        "omitted": prompt_stats.get("prompt_omitted", []),
+    }
     print(f"Phase 2 (prompt gen): {phase2_ms}ms — {len(prompt)} chars", file=sys.stderr)
 
     # ── Phase 3: AI reasoning ─────────────────────────────────────
@@ -442,7 +456,11 @@ def run_tick(
         t4 = time.time()
         apply_result = brain_apply.apply(vault_root, brain_feed_dir, ai_output, dry_run=dry_run)
         phase4_ms = int((time.time() - t4) * 1000)
-        report["phases"]["apply"] = {"duration_ms": phase4_ms, "result": apply_result}
+        report["phases"]["apply"] = {
+            "duration_ms": phase4_ms,
+            "result": apply_result,
+            "rejected": apply_result.get("rejected", []),
+        }
         print(f"Phase 4 (apply): {phase4_ms}ms", file=sys.stderr)
 
         # Save AI output for audit
@@ -525,6 +543,9 @@ def main() -> int:
     ai_phase = result.get("phases", {}).get("ai", {})
     if ai_phase.get("error"):
         print("EXIT 1: AI phase failed", file=sys.stderr)
+        return 1
+    if result.get("phases", {}).get("apply", {}).get("rejected"):
+        print("EXIT 1: synthesis output rejected", file=sys.stderr)
         return 1
     return 0
 

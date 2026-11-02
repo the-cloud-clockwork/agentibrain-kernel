@@ -1,0 +1,21 @@
+{
+  "package": "SV2-ING-04",
+  "tested_commit": "f9020f761b64ac60bc939a7c307f4386396839c3",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41520833416",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41520833416/job/125536099262",
+  "verification": "Mocked: fixture-local vaults in CI; no live swarm, brain-api pod or vault.",
+  "case": "T-SV2-ING-04-C",
+  "outcome": "passed",
+  "tests": [
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_interrupted_commit_rolls_forward_once",
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_next_apply_recovers_an_interrupted_commit_first",
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_replay_never_overwrites_a_newer_accepted_write",
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_batch_interrupted_before_its_journal_leaves_the_previous_revision"
+  ],
+  "assertions": [
+    "A commit killed midway completes from its journal exactly once and matches an uninterrupted apply of the same vault.",
+    "The next tick apply finishes a pending journal before its own batch.",
+    "A target changed after staging keeps its newer content and the replay counts it as a conflict.",
+    "Staged files without a journal are discarded and the previous revision stays."
+  ]
+}

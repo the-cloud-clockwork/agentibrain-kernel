@@ -1,0 +1,27 @@
+{
+  "package": "SV2-ING-04",
+  "tested_commit": "f9020f761b64ac60bc939a7c307f4386396839c3",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41520833416",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41520833416/job/125536099262",
+  "verification": "Mocked: fixture-local vaults in CI; no live swarm, brain-api pod or vault.",
+  "case": "T-SV2-ING-04-A",
+  "outcome": "passed",
+  "tests": [
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_marker_burst_during_tick_apply_keeps_every_write[first]",
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_marker_burst_during_tick_apply_keeps_every_write[second]",
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_apply_waits_for_the_marker_writer_and_counts_the_conflict",
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_marker_append_replaces_the_log_instead_of_truncating_it",
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_manual_ticks_coalesce_and_scheduled_tick_yields_to_the_writer",
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_burst_scheduled_tick_manual_tick_and_malformed_output_together",
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_prompt_budget_reports_every_omitted_section",
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_tick_report_records_prompt_omissions"
+  ],
+  "assertions": [
+    "A burst of concurrent lesson marker writes during a tick apply keeps every marker and the tick's edits; no file is torn.",
+    "The tick apply and brain-api marker appends share one writer lock; a wait is counted in brain_mutation_conflicts_total.",
+    "A marker append that fails midway leaves the previous lesson log intact, because the log is replaced atomically.",
+    "Equivalent manual tick requests share one cycle, and a scheduled tick yields while the writer is busy.",
+    "A marker burst, a scheduled deterministic tick, a manual apply and a malformed apply run together: every marker lands, the malformed apply is rejected, arcs stay parseable and no journal or temp file is left.",
+    "A prompt cut to its budget names every omitted section, and the tick report records them."
+  ]
+}

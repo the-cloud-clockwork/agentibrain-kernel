@@ -1,0 +1,19 @@
+{
+  "package": "SV2-ING-04",
+  "tested_commit": "f9020f761b64ac60bc939a7c307f4386396839c3",
+  "ci_run": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41520833416",
+  "ci_job": "https://github.com/the-cloud-clockwork/agentibrain-kernel/actions/runs/41520833416/job/125536099262",
+  "verification": "Mocked: fixture-local vaults in CI; no live swarm, brain-api pod or vault.",
+  "case": "T-SV2-ING-04-B",
+  "outcome": "passed",
+  "tests": [
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_invalid_synthesis_output_mutates_nothing",
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_failing_apply_step_leaves_every_arc_unchanged",
+    "services/brain-ops/tests/test_knowledge_mutations.py::test_tick_rejects_malformed_synthesis_and_exits_non_zero"
+  ],
+  "assertions": [
+    "Malformed synthesis output (unreadable op line, unknown escalation severity, no section headers) is rejected before any arc, feed or health file changes.",
+    "An apply step failing after edges and signals were staged writes nothing.",
+    "The tick reports the rejection, keeps the arcs and exits 1."
+  ]
+}

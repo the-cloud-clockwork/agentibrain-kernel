@@ -1,0 +1,9 @@
+{
+  "package": "SV2-ING-04",
+  "tested_commit": "f9020f761b64ac60bc939a7c307f4386396839c3",
+  "inputs": {
+    "services/brain-ops/tests/fixtures/sv2_ing04_burst.json": "sha256:51146778c3eadae9508f698ce040b9114de9958c26ef259a0a1cce373088ec9f",
+    "services/brain-ops/tests/test_knowledge_mutations.py": "sha256:9153b450fcc23f894829c148fd73438780be945903901733dd36a2b69e9cb884"
+  },
+  "fixture": "Three arcs, a lesson log and one open burst signal in a fixture vault; twenty four simultaneous lesson marker writes during a tick apply, a scheduled tick and manual tick requests against a busy writer, valid synthesis output, and malformed synthesis outputs."
+}

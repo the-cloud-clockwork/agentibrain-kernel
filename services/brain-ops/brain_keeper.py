@@ -25,6 +25,7 @@ from pathlib import Path
 # Import sibling module
 sys.path.insert(0, str(Path(__file__).parent))
 import brain_verifier
+import knowledge_txn
 import lesson_reconcile
 import markers
 import project_feed
@@ -299,7 +300,7 @@ def write_hot_arcs_md(path: Path, arcs: list[markers.DocumentMeta]) -> None:
             "",
         ]
     )
-    path.write_text("\n".join(lines), encoding="utf-8")
+    knowledge_txn.write_text(path, "\n".join(lines))
 
 
 def write_signals_feed(
@@ -326,8 +327,9 @@ def write_signals_feed(
     }
 
     if not signals_list:
-        path.write_text(
-            "---\nid: signals\ntitle: Active Signals\npriority: 8\nttl: 3600\nseverity: warning\n---\n\nNo active signals.\n"
+        knowledge_txn.write_text(
+            path,
+            "---\nid: signals\ntitle: Active Signals\npriority: 8\nttl: 3600\nseverity: warning\n---\n\nNo active signals.\n",
         )
         return stats
 
@@ -422,7 +424,7 @@ def write_signals_feed(
         stats["written"] += 1
 
     lines.append("")
-    path.write_text("\n".join(lines), encoding="utf-8")
+    knowledge_txn.write_text(path, "\n".join(lines))
     return stats
 
 
@@ -531,7 +533,7 @@ def write_lessons_feed(path: Path, vault_root: Path, now: datetime | None = None
         fresh.append((entry_dt, entry_header, body))
 
     if not fresh:
-        path.write_text(header + "\nNo recent lessons.\n", encoding="utf-8")
+        knowledge_txn.write_text(path, header + "\nNo recent lessons.\n")
         return stats
 
     fresh.sort(key=lambda e: e[0], reverse=True)
@@ -540,7 +542,7 @@ def write_lessons_feed(path: Path, vault_root: Path, now: datetime | None = None
     lines = [header]
     for entry_dt, _entry_header, body in top:
         lines.append(f"\n- **[{entry_dt.date().isoformat()}]** {body.strip()}\n")
-    path.write_text("".join(lines), encoding="utf-8")
+    knowledge_txn.write_text(path, "".join(lines))
     stats["written"] = len(top)
     return stats
 
@@ -563,8 +565,9 @@ def write_inject_feed(path: Path, injects: list[markers.Marker]) -> None:
     now = datetime.now(timezone.utc)
     injects = [i for i in injects if _inject_is_live(i, now)]
     if not injects:
-        path.write_text(
-            "---\nid: inject\ntitle: Brain Inject\npriority: 9\nttl: 3600\nseverity: info\n---\n\nNo inject blocks.\n"
+        knowledge_txn.write_text(
+            path,
+            "---\nid: inject\ntitle: Brain Inject\npriority: 9\nttl: 3600\nseverity: info\n---\n\nNo inject blocks.\n",
         )
         return
     lines = [
@@ -586,7 +589,7 @@ def write_inject_feed(path: Path, injects: list[markers.Marker]) -> None:
         target = inj.attr("target", "all")
         lines.append(f"**[{target}]** {inj.content.strip()}")
         lines.append("")
-    path.write_text("\n".join(lines), encoding="utf-8")
+    knowledge_txn.write_text(path, "\n".join(lines))
 
 
 def update_dashboard(date_dir: Path, arcs: list[markers.DocumentMeta]) -> None:
@@ -607,7 +610,7 @@ def update_dashboard(date_dir: Path, arcs: list[markers.DocumentMeta]) -> None:
             f"| {fm.get('status', '?')} | {fm.get('title', cid)} |"
         )
     lines.append("")
-    (date_dir / "_dashboard.md").write_text("\n".join(lines), encoding="utf-8")
+    knowledge_txn.write_text(date_dir / "_dashboard.md", "\n".join(lines))
 
 
 # ── Main tick ─────────────────────────────────────────────────────────
@@ -1106,7 +1109,7 @@ def tick(
                 if not dry_run:
                     body = arc.path.read_text(encoding="utf-8")
                     template_section = f"\n## Workflow Template\n\n{format_markdown(steps)}\n"
-                    arc.path.write_text(body.rstrip() + "\n" + template_section, encoding="utf-8")
+                    knowledge_txn.write_text(arc.path, body.rstrip() + "\n" + template_section)
                     arc.frontmatter["workflow_template"] = "true"
                     _update_frontmatter_field(arc.path, "workflow_template", "true")
                 templates_written += 1
@@ -1345,7 +1348,7 @@ def _update_frontmatter_heat(filepath: Path, new_heat: int) -> None:
         flags=_re.MULTILINE,
     )
     if updated != text:
-        filepath.write_text(updated, encoding="utf-8")
+        knowledge_txn.write_text(filepath, updated)
 
 
 def _update_frontmatter_field(filepath: Path, key: str, value: str) -> None:
@@ -1364,7 +1367,7 @@ def _update_frontmatter_field(filepath: Path, key: str, value: str) -> None:
         new_fm = f"---\n{fm_body}\n{key}: {value}\n---\n"
         updated = new_fm + text[m.end() :]
     if updated != text:
-        filepath.write_text(updated, encoding="utf-8")
+        knowledge_txn.write_text(filepath, updated)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────

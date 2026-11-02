@@ -125,6 +125,24 @@ def _next_adr_number(decisions_dir: Path) -> int:
     return max_n + 1
 
 
+def _replace_text(path: Path, text: str) -> None:
+    """Write text beside path, flush it to disk and rename it over path durably."""
+    tmp = path.parent / f".{path.name}.{uuid4().hex}.tmp"
+    try:
+        with tmp.open("w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
 def _append(path: Path, body: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     existing = ""
@@ -138,9 +156,7 @@ def _append(path: Path, body: str) -> None:
         if not existing or existing.endswith("\n\n")
         else ("\n" if existing.endswith("\n") else "\n\n")
     )
-    path.write_text(
-        existing + sep + body + ("\n" if not body.endswith("\n") else ""), encoding="utf-8"
-    )
+    _replace_text(path, existing + sep + body + ("\n" if not body.endswith("\n") else ""))
 
 
 def _write_new(path: Path, body: str) -> None:
@@ -277,14 +293,23 @@ def _first_marker_id(text: str) -> str:
 
 
 @contextlib.contextmanager
-def _registry_lock(root: Path) -> Iterator[Path]:
-    """Exclusive across threads and processes; across hosts only where the mount honours flock."""
+def _registry_lock(root: Path) -> Iterator[tuple[Path, int]]:
+    """Exclusive across threads and processes; across hosts only where the mount honours flock.
+
+    Brain-ops takes the same lock for every knowledge mutation. Yields the registry and 1
+    when another writer held the lock first, else 0.
+    """
     registry = root / MARKER_REGISTRY_DIR
     registry.mkdir(parents=True, exist_ok=True)
     with open(registry / ".lock", "a+") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        conflicts = 0
         try:
-            yield registry
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            conflicts = 1
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield registry, conflicts
         finally:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
@@ -387,10 +412,7 @@ def _append_lesson(path: Path, entry: str, content: str, date_part: str) -> tupl
         existing = _lesson_frontmatter(date_part)
 
     sep = "" if existing.endswith("\n\n") else ("\n" if existing.endswith("\n") else "\n\n")
-    path.write_text(
-        existing + sep + entry + ("\n" if not entry.endswith("\n") else ""),
-        encoding="utf-8",
-    )
+    _replace_text(path, existing + sep + entry + ("\n" if not entry.endswith("\n") else ""))
     return "appended", ""
 
 
@@ -697,7 +719,7 @@ def write_marker(
     stamps = _format_timestamp_utc(attrs.get("ts"))
     provenance, lost = marker_provenance(attrs, marker_id, brain)
 
-    with _registry_lock(root) as registry:
+    with _registry_lock(root) as (registry, waited):
         recorded = _committed_entry(registry, root, marker_type, marker_id, attrs, stamps, grant)
         if recorded is not None:
             return {
@@ -707,6 +729,7 @@ def write_marker(
                 "written_bytes": 0,
                 "marker_id": marker_id,
                 "marker_provenance_loss_total": 0,
+                "brain_mutation_conflicts_total": waited,
             }
         pending = {"marker_id": marker_id, "marker_type": marker_type, "state": "pending"}
         if marker_type in ("lesson", "milestone"):
@@ -743,4 +766,5 @@ def write_marker(
         "written_bytes": written_bytes,
         "marker_id": marker_id,
         "marker_provenance_loss_total": lost,
+        "brain_mutation_conflicts_total": waited,
     }
