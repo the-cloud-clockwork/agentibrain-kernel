@@ -115,6 +115,7 @@
     image: {{ brain_api_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-api:dev") }}
 {% if not compose_project %}    container_name: agentibrain_brain_api
 {% endif %}    restart: unless-stopped
+    user: "${BRAIN_UID:-0}:${BRAIN_GID:-0}"
     labels:
       agentibrain.vault: "{{ vault_path }}"
     depends_on:
@@ -166,6 +167,7 @@
     image: {{ brain_ops_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev") }}
 {% if not compose_project %}    container_name: agentibrain_tick_cron
 {% endif %}    restart: unless-stopped
+    user: "${BRAIN_UID:-0}:${BRAIN_GID:-0}"
     depends_on:
       redis: { condition: service_healthy }
       brain-api: { condition: service_healthy }
@@ -221,6 +223,7 @@
     image: {{ brain_ops_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev") }}
 {% if not compose_project %}    container_name: agentibrain_tick_drain
 {% endif %}    restart: unless-stopped
+    user: "${BRAIN_UID:-0}:${BRAIN_GID:-0}"
     depends_on:
       brain-api: { condition: service_healthy }
     entrypoint: ["/bin/sh", "-c"]
@@ -273,6 +276,7 @@
     image: {{ brain_ops_image | default("ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:dev") }}
 {% if not compose_project %}    container_name: agentibrain_amygdala
 {% endif %}    restart: unless-stopped
+    user: "${BRAIN_UID:-0}:${BRAIN_GID:-0}"
     depends_on:
       redis: { condition: service_healthy }
     # The DB override lives in amygdala.py (--db / AMYGDALA_DB), not in a shell

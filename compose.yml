@@ -107,6 +107,7 @@ services:
     image: ghcr.io/the-cloud-clockwork/agentibrain-brain-api:local
     container_name: agentibrain_brain_api
     restart: unless-stopped
+    user: "${BRAIN_UID:-0}:${BRAIN_GID:-0}"
     depends_on:
       embeddings:
         condition: service_healthy
@@ -154,6 +155,7 @@ services:
     image: ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:local
     container_name: agentibrain_tick_cron
     restart: unless-stopped
+    user: "${BRAIN_UID:-0}:${BRAIN_GID:-0}"
     depends_on:
       redis:
         condition: service_healthy
@@ -294,6 +296,7 @@ services:
     image: ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:local
     container_name: agentibrain_tick_drain
     restart: unless-stopped
+    user: "${BRAIN_UID:-0}:${BRAIN_GID:-0}"
     depends_on:
       brain-api:
         condition: service_healthy
@@ -364,6 +367,7 @@ services:
     image: ghcr.io/the-cloud-clockwork/agentibrain-brain-ops:local
     container_name: agentibrain_amygdala
     restart: unless-stopped
+    user: "${BRAIN_UID:-0}:${BRAIN_GID:-0}"
     depends_on:
       redis:
         condition: service_healthy
