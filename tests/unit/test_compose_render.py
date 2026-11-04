@@ -150,3 +150,32 @@ def test_tick_workers_receive_external_telemetry_configuration(tmp_path):
     expected = {"CLICKHOUSE_URL", "CLICKHOUSE_DATABASE", "CLICKHOUSE_TICK_TABLE"}
     for name in ("tick-cron", "tick-drain"):
         assert expected <= set(data["services"][name]["environment"])
+
+
+# A service that writes the bind-mounted vault as root leaves files the host
+# user cannot delete; BRAIN_UID/BRAIN_GID name the host user, root by default.
+_VAULT_WRITERS = {"brain-api", "tick-cron", "tick-drain", "amygdala"}
+_HOST_USER = "${BRAIN_UID:-0}:${BRAIN_GID:-0}"
+
+
+def _vault_writers(services):
+    return {
+        name
+        for name, service in services.items()
+        if any(":/vault" in str(volume) for volume in service.get("volumes", []))
+    }
+
+
+def test_every_rendered_vault_writer_runs_as_the_configured_host_user(tmp_path):
+    services = yaml.safe_load(render_compose(_settings(tmp_path / "v")))["services"]
+    assert _vault_writers(services) == _VAULT_WRITERS
+    users = {name: service["user"] for name, service in services.items() if "user" in service}
+    assert users == dict.fromkeys(_VAULT_WRITERS, _HOST_USER)
+
+
+def test_every_root_compose_vault_writer_runs_as_the_configured_host_user():
+    root = Path(__file__).resolve().parents[2] / "compose.yml"
+    services = yaml.safe_load(root.read_text())["services"]
+    assert _vault_writers(services) == _VAULT_WRITERS
+    users = {name: service["user"] for name, service in services.items() if "user" in service}
+    assert users == dict.fromkeys(_VAULT_WRITERS, _HOST_USER)
