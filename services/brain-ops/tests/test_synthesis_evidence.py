@@ -26,9 +26,7 @@ def _occurrence(arc: str, body: str, evidence: str = "", sessions: tuple[str, ..
     return {"arc": arc, "body": body, "evidence": evidence, "sessions": list(sessions)}
 
 
-def _arc(
-    root: Path, cluster_id: str, created: str, sessions: list[str], body: str
-) -> Path:
+def _arc(root: Path, cluster_id: str, created: str, sessions: list[str], body: str) -> Path:
     path = root / "clusters" / created[:10] / f"{cluster_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = ["---", f"cluster_id: {cluster_id}", f"title: {cluster_id}", "heat: 5"]
