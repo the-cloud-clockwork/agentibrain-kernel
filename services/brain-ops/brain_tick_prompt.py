@@ -88,7 +88,7 @@ def _lesson_occurrences(arcs: list[markers.DocumentMeta]) -> list[dict]:
     sessions, oldest dated arc first and undated arcs last, so the first author of a lesson
     is its origin."""
     occurrences: list[dict] = []
-    for arc in sorted(arcs, key=_created_order):
+    for index, arc in sorted(enumerate(arcs), key=lambda pair: _created_order(pair[1])):
         cid = arc.frontmatter.get("cluster_id", arc.path.stem if arc.path else "?")
         sessions = markers.source_sessions(arc.frontmatter)
         for position, lesson in enumerate(arc.lessons):
@@ -97,6 +97,7 @@ def _lesson_occurrences(arcs: list[markers.DocumentMeta]) -> list[dict]:
                 occurrences.append(
                     {
                         "arc": cid,
+                        "file": index,
                         "marker": position,
                         "body": body,
                         "evidence": lesson.attr("evidence"),
@@ -294,7 +295,8 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
     signals_text = "\n".join(signal_lines) if signal_lines else "  (none)"
 
     folded = lesson_reconcile.fold_lessons(_lesson_occurrences(arcs))
-    echo_lessons = {(echo["arc"], echo["marker"]) for item in folded for echo in item["echoes"]}
+    echo_lessons = {(echo["file"], echo["marker"]) for item in folded for echo in item["echoes"]}
+    arc_files = {id(arc): index for index, arc in enumerate(arcs)}
     all_lessons = [
         f"{item['body'].splitlines()[0].strip()} (evidence {len(item['evidence'])}, "
         f"sessions {len(item['sessions'])}, echoes {len(item['echoes'])})"
@@ -351,7 +353,9 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
         # milestone states the outcome directly, which is exactly what a summary
         # should say.
         lessons = [
-            mk for position, mk in enumerate(arc.lessons) if (cid, position) not in echo_lessons
+            mk
+            for position, mk in enumerate(arc.lessons)
+            if (arc_files[id(arc)], position) not in echo_lessons
         ]
         for label, items in (
             ("decision", arc.decisions),
