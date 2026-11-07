@@ -257,7 +257,8 @@ def test_quarantined_arcs_are_not_offered_for_synthesis(tmp_path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             f"---\ncluster_id: {cid}\ntitle: {cid}\nheat: 5\nregion: left\n"
-            f"status: active\nsynthesized: false\nconfidence: {confidence}\n---\n\nbody\n",
+            f"status: active\nsource_sessions:\n  - s-{cid}\nsynthesized: false\n"
+            f"confidence: {confidence}\n---\n\nbody\n",
             encoding="utf-8",
         )
     prompt, _ = brain_tick_prompt.build_prompt(tmp_path, tmp_path / "brain-feed")

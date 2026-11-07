@@ -760,9 +760,14 @@ def apply_summaries(vault_root: Path, summaries: list[dict], dry_run: bool = Fal
         fm, body = parts[1], parts[2]
         if re.search(r"^summary:\s*\S", fm, flags=re.MULTILINE):
             continue  # already synthesized — never overwrite
+        sources = markers.source_sessions(markers.parse_frontmatter(text)[0])
+        if not sources:
+            print(f"  SKIP summary: no source sessions — {arc_id}", file=sys.stderr)
+            continue
 
         # Insert summary; set synthesized true (replace in place, else append).
-        fm = fm.rstrip("\n") + f"\nsummary: {summary}\n"
+        fm = fm.rstrip("\n") + f"\nsummary: {summary}\nsummary_sources:\n"
+        fm += "".join(f"  - {sid}\n" for sid in sources)
         if re.search(r"^synthesized:", fm, flags=re.MULTILINE):
             fm = re.sub(r"^synthesized:.*$", "synthesized: true", fm, flags=re.MULTILINE)
         else:
