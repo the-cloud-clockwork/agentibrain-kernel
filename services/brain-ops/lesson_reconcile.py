@@ -127,7 +127,7 @@ def promotable(record: dict) -> bool:
     return bool(record.get("outcomes"))
 
 
-PARAPHRASE_THRESHOLD = 0.6
+PARAPHRASE_THRESHOLD = 0.7
 
 _LESSON_WORD_RE = re.compile(r"[a-z0-9]+")
 
@@ -150,7 +150,7 @@ def lesson_terms(body: str) -> frozenset[str]:
 def same_lesson(left: frozenset[str], right: frozenset[str]) -> bool:
     """Two lessons are one when their content words overlap at the paraphrase threshold."""
     if not left or not right:
-        return left == right
+        return False
     return len(left & right) / len(left | right) >= PARAPHRASE_THRESHOLD
 
 
@@ -160,24 +160,39 @@ def fold_lessons(occurrences: list[dict]) -> list[dict]:
     Each occurrence names its ``arc``, ``body``, ``evidence`` and ``sessions``. The first
     occurrence is the lesson's origin. A later paraphrase carrying evidence adds that
     outcome, its arc and its sessions; one without evidence only echoes the lesson and is
-    kept in ``echoes`` so synthesis can skip it.
+    kept whole in ``echoes`` so synthesis can skip that occurrence.
     """
     lessons: list[dict] = []
     for occurrence in occurrences:
         terms = lesson_terms(occurrence["body"])
-        lesson = next((item for item in lessons if same_lesson(item["terms"], terms)), None)
+        lesson = next(
+            (
+                item
+                for item in lessons
+                if item["body"] == occurrence["body"] or same_lesson(item["terms"], terms)
+            ),
+            None,
+        )
         if lesson is None:
-            lesson = {"body": occurrence["body"], "terms": terms, "arcs": [], "sessions": []}
-            lesson.update(evidence=[], echoes=[])
+            lesson = {
+                "body": occurrence["body"],
+                "terms": terms,
+                "arcs": [],
+                "sessions": [],
+                "evidence": [],
+                "echoes": [],
+            }
             lessons.append(lesson)
         elif not occurrence["evidence"]:
-            lesson["echoes"].append({"arc": occurrence["arc"], "body": occurrence["body"]})
+            lesson["echoes"].append(occurrence)
             continue
         if occurrence["arc"] not in lesson["arcs"]:
             lesson["arcs"].append(occurrence["arc"])
         if occurrence["evidence"] and occurrence["evidence"] not in lesson["evidence"]:
             lesson["evidence"].append(occurrence["evidence"])
-        lesson["sessions"] += [s for s in occurrence["sessions"] if s not in lesson["sessions"]]
+        for session in occurrence["sessions"]:
+            if session not in lesson["sessions"]:
+                lesson["sessions"].append(session)
     return lessons
 
 

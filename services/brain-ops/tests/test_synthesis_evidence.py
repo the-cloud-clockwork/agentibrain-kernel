@@ -27,10 +27,11 @@ def _occurrence(arc: str, body: str, evidence: str = "", sessions: tuple[str, ..
 
 
 def _arc(root: Path, cluster_id: str, created: str, sessions: list[str], body: str) -> Path:
-    path = root / "clusters" / created[:10] / f"{cluster_id}.md"
+    path = root / "clusters" / (created[:10] or "2026-10-09") / f"{cluster_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = ["---", f"cluster_id: {cluster_id}", f"title: {cluster_id}", "heat: 5"]
-    lines += ["region: left", "status: active", f"created: {created}"]
+    lines += ["region: left", "status: active"]
+    lines += [f"created: {created}"] if created else []
     if sessions:
         lines += ["source_sessions:", *(f"  - {sid}" for sid in sessions)]
     lines += ["synthesized: false", "---", "", body, ""]
@@ -58,7 +59,7 @@ def test_paraphrased_echo_folds_into_the_first_lesson() -> None:
     assert [lesson["body"] for lesson in folded] == [LESSON, DISTINCT]
     assert folded[0]["arcs"] == ["arc-a"]
     assert folded[0]["sessions"] == ["s1"]
-    assert folded[0]["echoes"] == [{"arc": "arc-b", "body": PARAPHRASE}]
+    assert folded[0]["echoes"] == [_occurrence("arc-b", PARAPHRASE, sessions=("s2",))]
     assert folded[1]["echoes"] == []
 
 
@@ -77,12 +78,31 @@ def test_paraphrase_with_its_own_evidence_adds_an_outcome() -> None:
 
 
 def test_distinct_lessons_never_fold() -> None:
-    assert lesson_reconcile.same_lesson(
-        lesson_reconcile.lesson_terms(LESSON), lesson_reconcile.lesson_terms(PARAPHRASE)
+    near_miss = "Use ThreadedConnectionPool for psycopg2 queries."
+    stopwords_only = ["It is so.", "If so, then."]
+    folded = lesson_reconcile.fold_lessons(
+        [
+            _occurrence("arc-a", "Use ThreadedConnectionPool for psycopg2 connections."),
+            _occurrence("arc-b", near_miss),
+            _occurrence("arc-c", LESSON),
+            _occurrence("arc-d", DISTINCT),
+            *(_occurrence("arc-e", body) for body in stopwords_only),
+        ]
     )
-    assert not lesson_reconcile.same_lesson(
-        lesson_reconcile.lesson_terms(LESSON), lesson_reconcile.lesson_terms(DISTINCT)
-    )
+    assert len(folded) == 6
+    assert all(lesson["echoes"] == [] for lesson in folded)
+
+
+def test_same_arc_echo_keeps_the_evidenced_lesson(tmp_path: Path) -> None:
+    body = _lesson(LESSON, "toolu_a") + "\n\n" + _lesson(LESSON)
+    _arc(tmp_path, "arc-a", "2026-10-01T09:00:00+00:00", ["s1"], body)
+    _arc(tmp_path, "arc-z", "", ["s9"], _lesson(PARAPHRASE, "toolu_z"))
+    prompt, _ = brain_tick_prompt.build_prompt(tmp_path, tmp_path / "brain-feed")
+    lessons = _section(prompt, "## Lessons", "## Unsynthesized Arcs")
+    assert f"- {LESSON} (evidence 2, sessions 2, echoes 1)" in lessons
+    synth = _section(prompt, "## Unsynthesized Arcs", "## Your Tasks")
+    arc_a = synth.split("- id: arc-a", 1)[1].split("- id:", 1)[0]
+    assert arc_a.count("lesson:") == 1
 
 
 def test_synthesis_reads_evidence_and_skips_echo_only_lessons(tmp_path: Path) -> None:
