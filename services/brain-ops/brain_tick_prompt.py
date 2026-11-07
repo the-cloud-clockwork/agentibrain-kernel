@@ -37,6 +37,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import brain_keeper
+import lesson_reconcile
 import markers
 import project_feed
 from brain_apply import _rank
@@ -80,6 +81,27 @@ def _extract_section(arc, heading: str) -> str:
         if capturing and s and not s.startswith("<!--"):
             out.append(s.lstrip("> ").strip())
     return " ".join(out)
+
+
+def _lesson_occurrences(arcs: list[markers.DocumentMeta]) -> list[dict]:
+    """Every non-empty arc lesson with its marker evidence and the arc's source sessions,
+    oldest arc first, so the first author of a lesson is its origin."""
+    occurrences: list[dict] = []
+    for arc in sorted(arcs, key=lambda a: str(a.frontmatter.get("created", ""))):
+        cid = arc.frontmatter.get("cluster_id", arc.path.stem if arc.path else "?")
+        sessions = markers.source_sessions(arc.frontmatter)
+        for lesson in arc.lessons:
+            body = (lesson.content or "").strip()
+            if body:
+                occurrences.append(
+                    {
+                        "arc": cid,
+                        "body": body,
+                        "evidence": lesson.attr("evidence"),
+                        "sessions": sessions,
+                    }
+                )
+    return occurrences
 
 
 _CLOSING = "Respond ONLY with the 6 sections above."
@@ -263,30 +285,14 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
             signal_lines.append(f"  [{sev}] ({src}) {content}")
     signals_text = "\n".join(signal_lines) if signal_lines else "  (none)"
 
-    # Lessons — dedup by content_hash so the 10-item sample contains 10
-    # distinct entries. Without this, a lesson repeating in many arc files
-    # (legitimate per-arc authorship — each writer session captures its own
-    # "NFS dirs need chmod 777" lesson when it hits the same issue) dominates
-    # the sample and the AI flags it as "lesson dedup broken". The vault
-    # data is fine; only the prompt rendering needs dedup. Same pattern as
-    # seen_signals above and seen in brain_keeper.write_inject_feed.
-    all_lessons = []
-    seen_lessons: set[str] = set()
-    for arc in arcs:
-        for lesson in arc.lessons:
-            first = (lesson.content.splitlines()[0] if lesson.content else "").strip()
-            if not first:
-                continue  # empty lesson body — nothing useful to show the AI
-            # Key on first_line, not full content. The AI sees only the
-            # first line in the sample, so two lessons sharing a first
-            # line are visually identical to the AI even if their bodies
-            # differ in metadata footers. Dedup on what's visible.
-            key = first.lower()
-            if key in seen_lessons:
-                continue
-            seen_lessons.add(key)
-            all_lessons.append(first)
-    lessons_sample = "\n".join(f"  - {l}" for l in all_lessons[:10])
+    folded = lesson_reconcile.fold_lessons(_lesson_occurrences(arcs))
+    echo_lessons = {(echo["arc"], echo["body"]) for item in folded for echo in item["echoes"]}
+    all_lessons = [
+        f"{item['body'].splitlines()[0].strip()} (evidence {len(item['evidence'])}, "
+        f"sessions {len(item['sessions'])}, echoes {len(item['echoes'])})"
+        for item in folded
+    ]
+    lessons_sample = "\n".join(f"  - {line}" for line in all_lessons[:10])
     if len(all_lessons) > 10:
         lessons_sample += f"\n  ... and {len(all_lessons) - 10} more"
 
@@ -302,6 +308,8 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
             return False
         if str(fm.get("summary", "")).strip():
             return False  # already synthesized, never re-spend on it
+        if not markers.source_sessions(fm):
+            return False
         if fm.get("synthesized") == "false":
             return True
         # Arcs written outside cluster.py never carry a `synthesized` field at
@@ -334,10 +342,13 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
         # Markers are the highest-signal content an arc carries — a decision or
         # milestone states the outcome directly, which is exactly what a summary
         # should say.
+        lessons = [
+            mk for mk in arc.lessons if (cid, (mk.content or "").strip()) not in echo_lessons
+        ]
         for label, items in (
             ("decision", arc.decisions),
             ("milestone", arc.milestones),
-            ("lesson", arc.lessons),
+            ("lesson", lessons),
         ):
             for mk in items[:2]:
                 parts.append(f"  {label}: {_squash(mk.content, SYNTH_MARKER_CHARS)}")

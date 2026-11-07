@@ -218,6 +218,13 @@ def parse_frontmatter(text: str) -> tuple[dict, str]:
     return fm, body
 
 
+def source_sessions(fm: dict) -> list[str]:
+    """The session ids an arc's frontmatter names in ``source_sessions``, blanks dropped."""
+    value = fm.get("source_sessions") or []
+    sessions = [value] if isinstance(value, str) else value
+    return [sid for sid in sessions if sid]
+
+
 def find_markers(text: str, marker_type: str | None = None) -> list[Marker]:
     """Find all inline and block markers in text.
 

@@ -127,6 +127,60 @@ def promotable(record: dict) -> bool:
     return bool(record.get("outcomes"))
 
 
+PARAPHRASE_THRESHOLD = 0.6
+
+_LESSON_WORD_RE = re.compile(r"[a-z0-9]+")
+
+_LESSON_STOPWORDS = frozenset(
+    "a an the and or but to of in on for with is are was were be been it its this that "
+    "these those as at by from so if then than can could should would will just".split()
+)
+
+
+def lesson_terms(body: str) -> frozenset[str]:
+    """Content words of a lesson, case and punctuation folded and a plural s dropped."""
+    words = _LESSON_WORD_RE.findall(body.lower())
+    return frozenset(
+        word[:-1] if len(word) > 3 and word.endswith("s") else word
+        for word in words
+        if word not in _LESSON_STOPWORDS
+    )
+
+
+def same_lesson(left: frozenset[str], right: frozenset[str]) -> bool:
+    """Two lessons are one when their content words overlap at the paraphrase threshold."""
+    if not left or not right:
+        return left == right
+    return len(left & right) / len(left | right) >= PARAPHRASE_THRESHOLD
+
+
+def fold_lessons(occurrences: list[dict]) -> list[dict]:
+    """Fold lesson occurrences, oldest first, into one record per lesson, paraphrases included.
+
+    Each occurrence names its ``arc``, ``body``, ``evidence`` and ``sessions``. The first
+    occurrence is the lesson's origin. A later paraphrase carrying evidence adds that
+    outcome, its arc and its sessions; one without evidence only echoes the lesson and is
+    kept in ``echoes`` so synthesis can skip it.
+    """
+    lessons: list[dict] = []
+    for occurrence in occurrences:
+        terms = lesson_terms(occurrence["body"])
+        lesson = next((item for item in lessons if same_lesson(item["terms"], terms)), None)
+        if lesson is None:
+            lesson = {"body": occurrence["body"], "terms": terms, "arcs": [], "sessions": []}
+            lesson.update(evidence=[], echoes=[])
+            lessons.append(lesson)
+        elif not occurrence["evidence"]:
+            lesson["echoes"].append({"arc": occurrence["arc"], "body": occurrence["body"]})
+            continue
+        if occurrence["arc"] not in lesson["arcs"]:
+            lesson["arcs"].append(occurrence["arc"])
+        if occurrence["evidence"] and occurrence["evidence"] not in lesson["evidence"]:
+            lesson["evidence"].append(occurrence["evidence"])
+        lesson["sessions"] += [s for s in occurrence["sessions"] if s not in lesson["sessions"]]
+    return lessons
+
+
 def _preamble_and_body(text: str, pattern: re.Pattern) -> tuple[str, str]:
     """Split at the first entry header: (everything before, everything from).
 
