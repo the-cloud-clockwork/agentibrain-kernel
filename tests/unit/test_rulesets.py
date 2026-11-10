@@ -61,3 +61,21 @@ def test_ci_gate_fans_in_every_job_and_runs_even_when_one_fails():
     assert [name for name, job in jobs.items() if "if" in job and name != "gate-required"] == [
         "macos-smoke"
     ]
+
+
+def test_gate_requires_the_shared_docs_sanity_scan_over_public_docs() -> None:
+    job = _ci()["jobs"]["docs-sanity"]
+
+    assert job["uses"] == "the-cloud-clockwork/agentihooks/.github/workflows/docs-sanity.yml@main"
+    assert job["with"]["paths"].split() == [
+        "docs",
+        "examples",
+        "README.md",
+        "architecture.md",
+        "concepts.md",
+        "index.md",
+        "operate.md",
+        "reference.md",
+    ]
+    assert job["secrets"] == "inherit"
+    assert "docs-sanity" in _ci()["jobs"]["gate-required"]["needs"]
