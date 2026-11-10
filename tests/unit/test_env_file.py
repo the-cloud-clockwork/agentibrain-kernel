@@ -161,6 +161,12 @@ def test_generated_manifest_covers_the_rendered_stack(tmp_path):
     assert "KB_RRF_K" in known
 
 
+def test_manifest_offers_the_graph_expansion_rollback_flag_disabled(tmp_path: Path) -> None:
+    """The init manifest names BRAIN_GRAPH_EXPANSION with its rollback default, false."""
+    assert bootstrap.PROGRAM_ENV_DEFAULTS["BRAIN_GRAPH_EXPANSION"] == "false"
+    assert "# BRAIN_GRAPH_EXPANSION=false\n" in _env_text(tmp_path)
+
+
 def test_rendered_stack_uses_configured_brain_api_port(tmp_path):
     settings = BrainSettings(
         PORT_BRAIN_API=9191,
