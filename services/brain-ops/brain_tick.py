@@ -359,6 +359,50 @@ def call_llm(prompt: str, inference_url: str = INFERENCE_URL) -> str:
         return f"ERROR: LLM call failed: {type(e).__name__}: {e}"
 
 
+DEFERRED = "DEFERRED"
+SYNTHESIS_PATH = "/v2/inference/synthesis"
+
+
+def _brain_api_synthesis(prompt: str, brain_api: str) -> str:
+    """Spend the synthesis call from this brain's inference budget through its own brain-api."""
+    brain = instance_scope.brain_id()
+    payload = json.dumps(
+        {
+            "brain_id": brain,
+            "model": BRAIN_BRIEF_MODEL,
+            "prompt": prompt,
+            "max_tokens": BRAIN_LLM_MAX_TOKENS,
+        }
+    ).encode()
+    headers = {"Content-Type": "application/json"}
+    token = os.environ.get("KB_ROUTER_TOKEN", "")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(
+        f"{brain_api.rstrip('/')}{SYNTHESIS_PATH}", data=payload, headers=headers, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=BRAIN_LLM_TIMEOUT_SECONDS) as resp:
+            return json.loads(resp.read())["content"]
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            return f"{DEFERRED}: the inference budget of brain {brain} is spent"
+        return f"ERROR: brain-api synthesis failed: HTTP {e.code}"
+    except (OSError, KeyError, ValueError) as e:
+        return f"ERROR: brain-api synthesis failed: {type(e).__name__}: {e}"
+
+
+def synthesize(prompt: str, inference_url: str = INFERENCE_URL) -> str:
+    """Tick synthesis charged to the brain it runs for; DEFERRED when that budget refuses it."""
+    brain_api = os.getenv("BRAIN_API_URL", "")
+    if brain_api:
+        return _brain_api_synthesis(prompt, brain_api)
+    brain = instance_scope.brain_id()
+    if brain != instance_scope.DEFAULT_BRAIN_ID:
+        return f"{DEFERRED}: brain {brain} has no BRAIN_API_URL to charge its inference budget"
+    return call_llm(prompt, inference_url)
+
+
 def run_tick(
     vault_root: Path,
     brain_feed_dir: Path,
@@ -418,17 +462,18 @@ def run_tick(
     else:
         t3 = time.time()
         print("Phase 3 (AI reasoning): calling LLM...", file=sys.stderr)
-        ai_output = call_llm(prompt, inference_url)
+        ai_output = synthesize(prompt, inference_url)
         phase3_ms = int((time.time() - t3) * 1000)
         report["phases"]["ai"] = {
             "duration_ms": phase3_ms,
             "output_length": len(ai_output),
             "error": ai_output.startswith("ERROR"),
+            "deferred": ai_output.startswith(DEFERRED),
         }
         print(f"Phase 3 (AI reasoning): {phase3_ms}ms — {len(ai_output)} chars", file=sys.stderr)
 
-        if ai_output.startswith("ERROR"):
-            print(f"  AI ERROR: {ai_output[:200]}", file=sys.stderr)
+        if ai_output.startswith(("ERROR", DEFERRED)):
+            print(f"  AI phase stopped: {ai_output[:200]}", file=sys.stderr)
             report["total_ms"] = int((time.time() - t0) * 1000)
             if CLICKHOUSE_URL:
                 try:
