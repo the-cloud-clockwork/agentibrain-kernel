@@ -363,9 +363,8 @@ DEFERRED = "DEFERRED"
 SYNTHESIS_PATH = "/v2/inference/synthesis"
 
 
-def _brain_api_synthesis(prompt: str, brain_api: str) -> str:
+def _brain_api_synthesis(prompt: str, brain_api: str, brain: str) -> str:
     """Spend the synthesis call from this brain's inference budget through its own brain-api."""
-    brain = instance_scope.brain_id()
     payload = json.dumps(
         {
             "brain_id": brain,
@@ -394,10 +393,10 @@ def _brain_api_synthesis(prompt: str, brain_api: str) -> str:
 
 def synthesize(prompt: str, inference_url: str = INFERENCE_URL) -> str:
     """Tick synthesis charged to the brain it runs for; DEFERRED when that budget refuses it."""
+    brain = instance_scope.brain_id()
     brain_api = os.getenv("BRAIN_API_URL", "")
     if brain_api:
-        return _brain_api_synthesis(prompt, brain_api)
-    brain = instance_scope.brain_id()
+        return _brain_api_synthesis(prompt, brain_api, brain)
     if brain != instance_scope.DEFAULT_BRAIN_ID:
         return f"{DEFERRED}: brain {brain} has no BRAIN_API_URL to charge its inference budget"
     return call_llm(prompt, inference_url)

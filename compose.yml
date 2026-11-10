@@ -316,8 +316,6 @@ services:
       INFERENCE_URL: ${INFERENCE_URL:-}
       INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
       BRAIN_BRIEF_MODEL: ${BRAIN_BRIEF_MODEL:-brain-brief}
-      BRAIN_API_URL: http://brain-api:8080
-      KB_ROUTER_TOKEN: ${KB_ROUTER_TOKEN:-}
       EMBEDDINGS_URL: http://embeddings:8080
       # Empty fails every tick: an unindexed tick is not a completed one.
       EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-}

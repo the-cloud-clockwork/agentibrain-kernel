@@ -781,7 +781,7 @@ paths:
       security: [{bearerAuth: []}]
       requestBody:
         required: true
-        description: "{brain_id, model, prompt, max_tokens}; brain_id must name this brain; max_tokens is capped at the active policy's synthesis_max_tokens."
+        description: "{brain_id, model, prompt, max_tokens}, all required and no other fields (422 otherwise); brain_id must name this brain; max_tokens is capped at the active policy's synthesis_max_tokens."
         content:
           application/json:
             schema: {type: object}

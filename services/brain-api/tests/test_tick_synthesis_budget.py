@@ -17,7 +17,7 @@ def _body(brain: str, max_tokens: int = 100000) -> dict:
     return {"brain_id": brain, "model": "brain-brief", "prompt": "tick", "max_tokens": max_tokens}
 
 
-def _gateway(monkeypatch, sent: list) -> None:
+def _gateway(monkeypatch: pytest.MonkeyPatch, sent: list) -> None:
     synthesis = importlib.import_module("app.synthesis")
     monkeypatch.setenv("INFERENCE_URL", "http://inference.fixture")
 
