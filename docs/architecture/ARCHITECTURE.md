@@ -308,8 +308,8 @@ Operators pick one of:
   CronJob and brain-keeper StatefulSet both mount at `/vault`. Brain-feed is a
   subtree; agents can mount just the subtree read-only. Example exports:
   ```
-  "/path/to/vault"            -async,no_subtree_check,fsid=301 10.0.0.0/24
-  "/path/to/vault/brain-feed" -async,no_subtree_check,fsid=302 10.0.0.0/24
+  "/path/to/vault"            -async,no_subtree_check,fsid=301 192.0.2.0/24
+  "/path/to/vault/brain-feed" -async,no_subtree_check,fsid=302 192.0.2.0/24
   ```
 - **PVC** — a PersistentVolumeClaim with ReadWriteMany. Agent pods can mount
   the same claim read-only by sub-path.
