@@ -3,6 +3,9 @@
 import copy
 import importlib
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import httpx
@@ -12,10 +15,26 @@ from .test_brain_policy import FIXTURE, SETS, _instance, _policy, _port, _remote
 from .test_graph import ROUTER, _auth
 
 PATH = "/v2/inference/synthesis"
+BRAIN_OPS = Path(__file__).resolve().parents[2] / "brain-ops"
 
 
 def _body(brain: str, max_tokens: int = 100000) -> dict:
     return {"brain_id": brain, "model": "brain-brief", "prompt": "tick", "max_tokens": max_tokens}
+
+
+def _tick_synthesis(brain: str, brain_api: str) -> str:
+    """Run the brain-ops tick synthesis for brain against its brain-api in a fresh process."""
+    env = {**os.environ, "BRAIN_ID": brain, "BRAIN_API_URL": brain_api, "KB_ROUTER_TOKEN": ROUTER}
+    result = subprocess.run(
+        [sys.executable, "-c", "import brain_tick; print(brain_tick.synthesize('tick'))"],
+        cwd=BRAIN_OPS,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
 
 
 def _gateway(monkeypatch: pytest.MonkeyPatch, sent: list) -> None:
@@ -141,6 +160,7 @@ def test_a_spent_swarm_tick_budget_leaves_the_personal_budget(
             httpx.post(f"{swarm_url}{PATH}", json=_body("swarm"), headers=_auth(ROUTER)).status_code
             for _ in range(calls + 1)
         ]
+        tick = _tick_synthesis("swarm", swarm_url)
         swarm_usage = _remote_stats(swarm_url)["brain_inference_budget_usage"]
         after = _remote_stats(personal_url)["brain_inference_budget_usage"]
     finally:
@@ -153,7 +173,8 @@ def test_a_spent_swarm_tick_budget_leaves_the_personal_budget(
     assert codes[-1] == 429
     assert swarm_usage["brain_id"] == "swarm"
     assert swarm_usage["granted"] == calls
-    assert swarm_usage["refused_tokens"] == 1
+    assert tick.startswith("DEFERRED"), tick
+    assert swarm_usage["refused_tokens"] == 2
     assert after == before
     assert after["granted"] == 0
     assert after["tokens_reserved_window"] == 0
