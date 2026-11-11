@@ -4,7 +4,7 @@ Covered:
 - markers.canonical_arc_id collapses .merged.merged…md chains to one id
 - brain_apply.apply_merges: skips .merged.md tombstones, idempotent per pair,
   single canonical rename (no suffix stacking), strips @edge from merged body
-- brain_tick_prompt.build_prompt: edge_map dedup (src,tgt) + MAX_EDGE_LINES cap,
+- brain_tick_prompt.build_prompt: edge_map keeps every relation per pair + MAX_EDGE_LINES cap,
   MAX_PROMPT_CHARS budget drops the edge map first
 - scripts/vault_cleanup: collapses a synthetic chain to one file + dedups edges
 
@@ -121,16 +121,18 @@ class TestApplyMerges:
 
 
 class TestBuildPrompt:
-    def test_edge_dedup_keeps_strongest_type(self, tmp_path):
+    def test_edge_map_keeps_every_relation_per_pair(self, tmp_path):
         feed = tmp_path / "brain-feed"
         _write_arc(
             tmp_path / "clusters" / "2026-05-01" / "arc-e.md",
             "arc-e",
-            "<!-- @edge type=related target=t1 -->\n<!-- @edge type=parent target=t1 -->\n",
+            "<!-- @edge type=related target=t1 -->\n"
+            "<!-- @edge type=parent target=t1 -->\n"
+            "<!-- @edge type=parent target=t1 -->\n",
         )
         prompt, _ = brain_tick_prompt.build_prompt(tmp_path, feed)
-        assert "--parent--> t1" in prompt
-        assert "--related--> t1" not in prompt
+        assert prompt.count("  arc-e --related--> t1\n") == 1
+        assert prompt.count("  arc-e --parent--> t1\n") == 1
 
     def test_edge_map_capped(self, tmp_path, monkeypatch):
         monkeypatch.setattr(brain_tick_prompt, "MAX_PROMPT_CHARS", 400_000)
@@ -187,9 +189,32 @@ class TestVaultCleanup:
         assert (d / "foo.md").read_text().count("## Merged from bar") == 1
 
         edges = vault_cleanup.dedupe_all_edges(tmp_path, dry_run=False)
-        # related+parent → one canonical edge to x.
-        assert edges["edges_removed"] >= 1
-        assert (d / "foo.md").read_text().count("target=x") == 1
+        assert edges["edges_removed"] == 0
+        text = (d / "foo.md").read_text()
+        assert text.count("<!-- @edge type=related target=x -->") == 1
+        assert text.count("<!-- @edge type=parent target=x -->") == 1
+
+
+class TestDedupeEdges:
+    def test_keeps_every_relation_per_pair(self, tmp_path):
+        import dedupe_edges
+
+        arc = tmp_path / "arc-a.md"
+        _write_arc(
+            arc,
+            "arc-a",
+            "<!-- @edge type=related target=`arc-b` -->\n"
+            "<!-- @edge type=parent target=arc-b -->\n"
+            "<!-- @edge type=parent target=arc-b -->\n"
+            "<!-- @edge type=sibling target=arc-a -->\n",
+        )
+        assert dedupe_edges._process_file(arc, dry_run=False) == (2, 1, 1)
+        text = arc.read_text()
+        assert text.count("<!-- @edge type=related target=arc-b -->") == 1
+        assert text.count("<!-- @edge type=parent target=arc-b -->") == 1
+        assert "target=arc-a" not in text
+        assert dedupe_edges._process_file(arc, dry_run=False) == (2, 0, 0)
+        assert arc.read_text() == text
 
 
 def test_merge_title_drops_the_models_rationale():
