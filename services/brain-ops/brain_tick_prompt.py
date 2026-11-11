@@ -40,12 +40,11 @@ import brain_keeper
 import lesson_reconcile
 import markers
 import project_feed
-from brain_apply import _rank
 
 # Prompt-size guards. The AI reasoning model has a finite context window. An
 # unbounded edge map or arc table overflows it, so the final budget remains
 # configurable for the inference backend rather than assuming a provider.
-MAX_EDGE_LINES = 500  # rendered edge lines after (source, target) dedup
+MAX_EDGE_LINES = 500
 MAX_ARC_ROWS = 250  # arc-table rows, highest heat first
 MAX_PROMPT_CHARS = int(os.getenv("BRAIN_PROMPT_MAX_CHARS", "12000"))
 # Synthesis (Task 6). Bounded per tick: an unsynthesized backlog drains over
@@ -246,27 +245,13 @@ def build_prompt(vault_root: Path, brain_feed_dir: Path) -> tuple[str, dict]:
             f"| | | | | | |\n"
         )
 
-    # Edge map — dedup per (source, target) keeping the strongest edge type,
-    # then hard-cap. This is the only prompt section that scales with the
-    # (historically runaway) on-disk edge count; without the dedup + cap a
-    # corrupt vault overflows the model context and the tick scores 0/nuclear.
-    # Dedup mirrors apply_edges pass-1 (lower _rank == stronger type).
-    chosen_edges: dict[tuple[str, str], str] = {}
-    edge_order: list[tuple[str, str]] = []
+    relations: dict[tuple[str, str, str], None] = {}
     for arc in arcs:
         cid = arc.frontmatter.get("cluster_id", arc.path.stem if arc.path else "?")
         for edge in arc.edges:
-            etype = edge.attr("type", "related")
-            target = edge.attr("target", "?")
-            key = (cid, target)
-            if key not in chosen_edges:
-                chosen_edges[key] = etype
-                edge_order.append(key)
-            elif _rank(etype) < _rank(chosen_edges[key]):
-                chosen_edges[key] = etype
-    edge_lines = [
-        f"  {cid} --{chosen_edges[(cid, target)]}--> {target}" for (cid, target) in edge_order
-    ]
+            target = edge.attr("target", "?").strip().strip("`")
+            relations[(cid, edge.attr("type", "related"), target)] = None
+    edge_lines = [f"  {cid} --{etype}--> {target}" for (cid, etype, target) in relations]
     total_edges = len(edge_lines)
     if total_edges > MAX_EDGE_LINES:
         edge_lines = edge_lines[:MAX_EDGE_LINES]

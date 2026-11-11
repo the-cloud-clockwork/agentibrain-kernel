@@ -17,11 +17,10 @@ Phases:
      ``## Merged from <X>`` sections, delete the rest, and write the survivor
      back under the canonical ``<id>.md`` name.
   2. Edge dedup — run the existing ``dedupe_edges._process_file`` over every
-     surviving file (one canonical edge per target, drop self-loops, collapse
-     multi-type collisions).
+     surviving file (one marker per distinct relation, drop self-loops).
 
-Idempotent — a second run is a no-op. Reuses ``markers``, ``brain_apply._rank``
-(via dedupe_edges) and ``dedupe_edges._process_file``; no logic is duplicated.
+Idempotent — a second run is a no-op. Reuses ``markers`` and
+``dedupe_edges._process_file``; no logic is duplicated.
 
 Usage:
     python3 scripts/vault_cleanup.py --vault /vault --dry-run
@@ -174,8 +173,8 @@ def dedupe_all_edges(vault: Path, dry_run: bool) -> dict:
         for md in region_dir.rglob("*.md"):
             if md.name.startswith("_"):
                 continue
-            kept, dedup, selfloop, collapsed = dedupe_edges._process_file(md, dry_run)
-            removed = dedup + selfloop + collapsed
+            kept, dedup, selfloop = dedupe_edges._process_file(md, dry_run)
+            removed = dedup + selfloop
             stats["edges_kept"] += kept
             stats["edges_removed"] += removed
             if removed:

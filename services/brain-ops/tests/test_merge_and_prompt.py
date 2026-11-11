@@ -128,7 +128,7 @@ class TestBuildPrompt:
             "arc-e",
             "<!-- @edge type=related target=t1 -->\n"
             "<!-- @edge type=parent target=t1 -->\n"
-            "<!-- @edge type=parent target=t1 -->\n",
+            "<!-- @edge type=parent target=`t1` -->\n",
         )
         prompt, _ = brain_tick_prompt.build_prompt(tmp_path, feed)
         assert prompt.count("  arc-e --related--> t1\n") == 1
