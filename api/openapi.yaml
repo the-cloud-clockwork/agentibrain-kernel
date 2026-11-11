@@ -775,6 +775,22 @@ paths:
       responses:
         "200": {description: "context_request_validation_failures: reason to count. context_cache: context_cache_requests, context_cache_hits, context_cache_misses, context_coalesced_requests, context_cache_hit_ratio ((hits + coalesced) / requests), context_cache_invalidations and context_cache_entries. context_receipt_validation_failures: reason to count. brain_policy: active (or null), refusal {reason, error} (or null), ceiling {concurrency, tokens_per_minute} (null when unparsable) and refusals: refused context requests and inference reservations by reason. brain_inference_budget_usage (null while refused): brain_id, policy_revision, in_flight, concurrency_limit, tokens_reserved_window, tokens_per_minute_limit, granted, refused_concurrency, refused_tokens."}
         "403": {description: Not a router token.}
+  /v2/inference/synthesis:
+    post:
+      summary: One synthesis call charged to this brain's inference budget, used by the maintenance tick (router tokens only).
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        description: "{brain_id, model, prompt, max_tokens}; brain_id must name this brain; max_tokens is capped at the active policy's synthesis_max_tokens."
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200": {description: "brain_id, policy_revision and content, the gateway's completion text."}
+        "403": {description: Not a router token, or brain_id names another brain; nothing is charged.}
+        "429": {description: "inference_budget_spent: this brain's concurrency or per-minute token budget refused the call; the gateway is not called."}
+        "502": {description: The inference gateway failed; the reservation stays in the token window.}
+        "503": {description: "policy_refused, or INFERENCE_URL is not configured."}
   /v2/context/receipts/verify:
     post:
       summary: Verify a context receipt for the caller's current task (SV2-CTX-05).

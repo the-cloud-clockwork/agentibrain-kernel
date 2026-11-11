@@ -69,6 +69,7 @@ from . import (
     provenance,
     receipts,
     scope,
+    synthesis,
     vault_reader,
 )
 from .feed import VAULT_ROOT, feed_payload, project_feed_payload
@@ -915,6 +916,17 @@ def get_context_stats(_: None = Depends(require_router_token)) -> dict:
         "brain_policy": brain_policy.diagnostics(),
         "brain_inference_budget_usage": brain_policy.usage(),
     }
+
+
+@app.post("/v2/inference/synthesis")
+async def post_inference_synthesis(
+    body: synthesis.Request, _: None = Depends(require_router_token)
+) -> dict:
+    """One synthesis call charged to this brain's inference budget; 429 when it is spent."""
+    try:
+        return await synthesis.synthesize(body)
+    except synthesis.Refused as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
 
 
 def _receipt_denial(authorization: str | None, route: str, title: str | None):

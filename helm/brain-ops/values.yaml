@@ -58,6 +58,11 @@ env:
   # Wire at any OpenAI-compatible endpoint: LiteLLM, OpenAI, Ollama, etc.
   # See docs/GATEWAY-CONTRACT.md.
   INFERENCE_URL: ""
+  # Tick synthesis is charged to this brain's inference budget through its own
+  # brain-api (POST /v2/inference/synthesis, KB_ROUTER_TOKEN from a secretRef);
+  # a spent budget defers the AI phase. A named BRAIN_ID without BRAIN_API_URL
+  # defers synthesis; the default brain without it calls INFERENCE_URL directly.
+  BRAIN_API_URL: ""
   # Embeddings service base URL — consumed by embed_arcs.py and embed_raw.py in
   # every cycle (main cron AND tick-drain) to refresh the pgvector index. A
   # cycle without EMBEDDINGS_API_KEY (from a secretRef) cannot index, so its
