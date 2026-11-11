@@ -404,7 +404,7 @@ class Brain:
                 "KB_ROUTER_TOKEN": ROUTER,
                 "BRAIN_ID": BRAIN_ID,
                 "KB_WORKER_TOKENS": grants,
-                "INFERENCE_URL": "",
+                "INFERENCE_URL": self.model,
                 "EMBEDDINGS_URL": "",
             },
         )
@@ -478,6 +478,8 @@ class Brain:
             env={
                 **base,
                 "BRAIN_ID": BRAIN_ID,
+                "BRAIN_API_URL": self.url,
+                "KB_ROUTER_TOKEN": ROUTER,
                 "REDIS_URL": "",
                 "CLICKHOUSE_URL": "",
                 "INFERENCE_URL": self.model,
