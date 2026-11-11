@@ -39,20 +39,6 @@ import redact
 
 edge_relations = importlib.import_module("edge_relations")
 
-# Edge-type priority. Used when collapsing multi-type same-pair collisions.
-# Structural hierarchy first; sibling/peer; directional dependencies; the
-# generic catch-all last. Anything outside this set (causal, temporal, AI
-# hallucinations) sorts after `related` via _rank().
-EDGE_TYPE_PRIORITY = ("parent", "child", "sibling", "unblocks", "supersedes", "related")
-
-
-def _rank(t: str) -> int:
-    try:
-        return EDGE_TYPE_PRIORITY.index(t)
-    except ValueError:
-        return len(EDGE_TYPE_PRIORITY)
-
-
 # ── Parsers for AI tick output sections ───────────────────────────────
 
 

@@ -10,11 +10,8 @@ inline `<!-- @edge type=X target=Y -->` markers, and:
   - Strips backticks from the `target` attribute (normalization)
   - Drops self-loops (target_norm == source_norm where source is the
     file's cluster_id or stem)
-  - Collapses multi-type same-target collisions: when a file has
-    `child` and `parent` both pointing at the same arc, keeps the
-    highest-priority type (parent > child > sibling > unblocks >
-    supersedes > related). Priority is imported from brain_apply._rank.
-  - Dedupes within a file by target (one canonical edge per pair)
+  - Dedupes within a file keyed on the raw (type, target): every distinct
+    relation to an arc survives; only exact duplicates are dropped
 
 Usage:
     python3 dedupe_edges.py --vault /vault
@@ -32,7 +29,6 @@ from pathlib import Path
 # one level deeper, so add the parent.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import markers  # noqa: E402
-from brain_apply import _rank  # noqa: E402  # shared edge-type priority
 
 REGION_DIRS = (
     "clusters",
@@ -63,46 +59,14 @@ def _arc_id_for(path: Path) -> str:
     return _normalize_id(path.stem)
 
 
-def _process_file(path: Path, dry_run: bool) -> tuple[int, int, int, int]:
-    """Return (kept, dedup_dropped, selfloop_dropped, type_collapsed)."""
+def _process_file(path: Path, dry_run: bool) -> tuple[int, int, int]:
+    """Return (kept, dedup_dropped, selfloop_dropped)."""
     text = path.read_text()
     src_id = _arc_id_for(path)
-
-    # Pass 1: pick the highest-priority type per target. Track how many
-    # losing variants will be dropped so the run report distinguishes
-    # plain duplicates from multi-type collisions.
-    best_by_target: dict[str, str] = {}
-    type_collapsed = 0
-    seen_pairs: set[tuple[str, str]] = set()
-    for match in EDGE_RE.finditer(text):
-        attrs = markers._parse_attrs(match.group(1))
-        etype = attrs.get("type", "")
-        target = _normalize_id(attrs.get("target", ""))
-        if not etype or not target:
-            continue
-        if target == src_id:
-            continue  # accounted for in pass 2
-
-        pair = (etype, target)
-        if pair in seen_pairs:
-            continue  # plain (type,target) dup; counted in pass 2
-        seen_pairs.add(pair)
-
-        cur = best_by_target.get(target)
-        if cur is None:
-            best_by_target[target] = etype
-        elif _rank(etype) < _rank(cur):
-            best_by_target[target] = etype
-            type_collapsed += 1  # previous winner now loses
-        else:
-            type_collapsed += 1  # this one loses to the current winner
-
-    # Pass 2: emit one canonical marker per target; drop self-loops and
-    # any subsequent occurrence of the same target.
     kept = 0
     dedup_dropped = 0
     selfloop_dropped = 0
-    emitted: set[str] = set()
+    emitted: set[tuple[str, str]] = set()
 
     def replace(match: re.Match) -> str:
         nonlocal kept, dedup_dropped, selfloop_dropped
@@ -110,30 +74,28 @@ def _process_file(path: Path, dry_run: bool) -> tuple[int, int, int, int]:
         etype = attrs.get("type", "")
         target = _normalize_id(attrs.get("target", ""))
         if not etype or not target:
-            return match.group(0)  # malformed — leave alone
+            return match.group(0)
 
         if target == src_id:
             selfloop_dropped += 1
             return ""
 
-        if target in emitted:
+        if (etype, target) in emitted:
             dedup_dropped += 1
             return ""
 
-        winning = best_by_target.get(target, etype)
-        emitted.add(target)
+        emitted.add((etype, target))
         kept += 1
-        return f"<!-- @edge type={winning} target={target} -->"
+        return f"<!-- @edge type={etype} target={target} -->"
 
     new_text = EDGE_RE.sub(replace, text)
 
-    # Collapse runs of blank lines left behind by removed markers.
     new_text = re.sub(r"\n{3,}", "\n\n", new_text)
 
     if new_text != text and not dry_run:
         path.write_text(new_text)
 
-    return kept, dedup_dropped, selfloop_dropped, type_collapsed
+    return kept, dedup_dropped, selfloop_dropped
 
 
 def main() -> int:
@@ -150,7 +112,6 @@ def main() -> int:
     total_kept = 0
     total_dedup = 0
     total_selfloop = 0
-    total_type_collapsed = 0
     files_touched = 0
 
     for region in REGION_DIRS:
@@ -159,27 +120,24 @@ def main() -> int:
             continue
         for md in region_dir.rglob("*.md"):
             before = md.read_text()
-            kept, dedup, selfloop, type_collapsed = _process_file(md, args.dry_run)
+            kept, dedup, selfloop = _process_file(md, args.dry_run)
             after = md.read_text() if not args.dry_run else before
-            if dedup or selfloop or type_collapsed or after != before:
+            if dedup or selfloop or after != before:
                 files_touched += 1
                 print(
                     f"  {md.relative_to(vault)}: kept={kept} "
-                    f"dedup_dropped={dedup} selfloop_dropped={selfloop} "
-                    f"type_collapsed={type_collapsed}"
+                    f"dedup_dropped={dedup} selfloop_dropped={selfloop}"
                 )
             total_kept += kept
             total_dedup += dedup
             total_selfloop += selfloop
-            total_type_collapsed += type_collapsed
 
     prefix = "[dry-run] " if args.dry_run else ""
     print(
         f"\n{prefix}files_touched={files_touched} "
         f"edges_kept={total_kept} "
         f"dedup_dropped={total_dedup} "
-        f"selfloop_dropped={total_selfloop} "
-        f"type_collapsed={total_type_collapsed}"
+        f"selfloop_dropped={total_selfloop}"
     )
     return 0
 
