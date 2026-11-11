@@ -48,7 +48,9 @@ def _tick(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, answer: object) -> tu
     return report, sent
 
 
-def test_a_spent_swarm_budget_defers_the_tick_without_a_gateway_call(monkeypatch, tmp_path):
+def test_a_spent_swarm_budget_defers_the_tick_without_a_gateway_call(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("BRAIN_ID", "swarm")
     monkeypatch.setenv("BRAIN_API_URL", BRAIN_API)
     monkeypatch.setenv("KB_ROUTER_TOKEN", "router-fixture")
@@ -63,7 +65,9 @@ def test_a_spent_swarm_budget_defers_the_tick_without_a_gateway_call(monkeypatch
     assert report["applied"] == []
 
 
-def test_a_granted_swarm_synthesis_is_applied(monkeypatch, tmp_path):
+def test_a_granted_swarm_synthesis_is_applied(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("BRAIN_ID", "swarm")
     monkeypatch.setenv("BRAIN_API_URL", BRAIN_API)
 
@@ -79,7 +83,9 @@ def test_a_granted_swarm_synthesis_is_applied(monkeypatch, tmp_path):
     assert report["applied"] == ["brief"]
 
 
-def test_a_named_brain_without_its_brain_api_defers(monkeypatch, tmp_path):
+def test_a_named_brain_without_its_brain_api_defers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("BRAIN_ID", "swarm")
     monkeypatch.delenv("BRAIN_API_URL", raising=False)
 
@@ -90,7 +96,9 @@ def test_a_named_brain_without_its_brain_api_defers(monkeypatch, tmp_path):
     assert report["applied"] == []
 
 
-def test_the_default_brain_without_a_brain_api_keeps_the_gateway(monkeypatch, tmp_path):
+def test_the_default_brain_without_a_brain_api_keeps_the_gateway(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.delenv("BRAIN_ID", raising=False)
     monkeypatch.delenv("BRAIN_API_URL", raising=False)
 
@@ -101,7 +109,9 @@ def test_the_default_brain_without_a_brain_api_keeps_the_gateway(monkeypatch, tm
     assert report["applied"] == ["brief"]
 
 
-def test_a_brain_api_failure_is_an_ai_error(monkeypatch, tmp_path):
+def test_a_brain_api_failure_is_an_ai_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     monkeypatch.setenv("BRAIN_ID", "swarm")
     monkeypatch.setenv("BRAIN_API_URL", BRAIN_API)
 

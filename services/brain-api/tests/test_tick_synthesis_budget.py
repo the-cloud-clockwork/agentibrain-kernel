@@ -3,6 +3,7 @@
 import copy
 import importlib
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -17,7 +18,7 @@ def _body(brain: str, max_tokens: int = 100000) -> dict:
     return {"brain_id": brain, "model": "brain-brief", "prompt": "tick", "max_tokens": max_tokens}
 
 
-def _gateway(monkeypatch, sent: list) -> None:
+def _gateway(monkeypatch: pytest.MonkeyPatch, sent: list) -> None:
     synthesis = importlib.import_module("app.synthesis")
     monkeypatch.setenv("INFERENCE_URL", "http://inference.fixture")
 
@@ -46,7 +47,9 @@ def _gateway(monkeypatch, sent: list) -> None:
 
 
 @pytest.mark.parametrize("name", SETS)
-def test_tick_synthesis_spends_this_brain_budget(monkeypatch, vault, tmp_path, name):
+def test_tick_synthesis_spends_this_brain_budget(
+    monkeypatch: pytest.MonkeyPatch, vault: Path, tmp_path: Path, name: str
+) -> None:
     fixture = copy.deepcopy(FIXTURE[name])
     client, _ = _instance(monkeypatch, tmp_path, fixture, "swarm", "2")
     sent: list = []
@@ -65,7 +68,9 @@ def test_tick_synthesis_spends_this_brain_budget(monkeypatch, vault, tmp_path, n
 
 
 @pytest.mark.parametrize("name", SETS)
-def test_a_spent_budget_defers_tick_synthesis(monkeypatch, vault, tmp_path, name):
+def test_a_spent_budget_defers_tick_synthesis(
+    monkeypatch: pytest.MonkeyPatch, vault: Path, tmp_path: Path, name: str
+) -> None:
     fixture = copy.deepcopy(FIXTURE[name])
     client, _ = _instance(monkeypatch, tmp_path, fixture, "swarm", "2")
     sent: list = []
@@ -84,7 +89,9 @@ def test_a_spent_budget_defers_tick_synthesis(monkeypatch, vault, tmp_path, name
 
 
 @pytest.mark.parametrize("name", SETS)
-def test_tick_synthesis_for_another_brain_is_refused(monkeypatch, vault, tmp_path, name):
+def test_tick_synthesis_for_another_brain_is_refused(
+    monkeypatch: pytest.MonkeyPatch, vault: Path, tmp_path: Path, name: str
+) -> None:
     fixture = copy.deepcopy(FIXTURE[name])
     client, _ = _instance(monkeypatch, tmp_path, fixture, "swarm", "2")
     sent: list = []
@@ -99,7 +106,9 @@ def test_tick_synthesis_for_another_brain_is_refused(monkeypatch, vault, tmp_pat
 
 
 @pytest.mark.parametrize("name", SETS)
-def test_tick_synthesis_needs_a_router_token(monkeypatch, vault, tmp_path, name):
+def test_tick_synthesis_needs_a_router_token(
+    monkeypatch: pytest.MonkeyPatch, vault: Path, tmp_path: Path, name: str
+) -> None:
     fixture = copy.deepcopy(FIXTURE[name])
     client, _ = _instance(monkeypatch, tmp_path, fixture, "swarm", "2")
     sent: list = []
@@ -112,7 +121,9 @@ def test_tick_synthesis_needs_a_router_token(monkeypatch, vault, tmp_path, name)
 
 
 @pytest.mark.parametrize("name", SETS)
-def test_a_spent_swarm_tick_budget_leaves_the_personal_budget(monkeypatch, tmp_path, name):
+def test_a_spent_swarm_tick_budget_leaves_the_personal_budget(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, name: str
+) -> None:
     fixture = copy.deepcopy(FIXTURE[name])
     personal_revision = next(iter(fixture["personal"]["revisions"]))
     monkeypatch.setenv("INFERENCE_URL", f"http://127.0.0.1:{_port()}")
