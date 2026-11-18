@@ -2,12 +2,28 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import embed_arcs  # noqa: E402
 import embed_raw  # noqa: E402
+
+
+class _Resp:
+    def __init__(self, body):
+        self.body = body
+
+    def read(self):
+        return json.dumps(self.body).encode()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
 
 
 def _note(vault: Path, rel: str, text: str) -> Path:
@@ -58,6 +74,52 @@ def test_main_embeds_and_records_state(tmp_path, monkeypatch, capsys):
     calls.clear()
     assert embed_raw.main() == 0
     assert calls == []
+
+
+def test_rows_lost_server_side_clear_the_state_and_the_next_run_re_embeds(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.delenv(embed_arcs.STATE_GENERATION_ENV, raising=False)
+    _note(
+        tmp_path,
+        "raw/inbox/full-note.md",
+        "This note carries enough characters to clear the fifty char noop floor easily.",
+    )
+    _note(tmp_path, "raw/inbox/tiny.md", "too short")
+    calls = []
+    monkeypatch.setattr(
+        embed_raw,
+        "post_embed",
+        lambda url, key, payload: calls.append(payload["key"]) or {"chunks_stored": 1},
+    )
+    argv = ["embed_raw", "--vault", str(tmp_path), "--api-key", "k", "--prune"]
+    monkeypatch.setattr(sys, "argv", argv)
+    kept = {"kept": 1, "deleted": 0}
+    monkeypatch.setattr(embed_raw.urllib.request, "urlopen", lambda *a, **k: _Resp(kept))
+    assert embed_raw.main() == 0
+    assert calls == ["raw:inbox:full-note.md"]
+    assert "HEAL" not in capsys.readouterr().out
+
+    calls.clear()
+    kept["kept"] = 0
+    assert embed_raw.main() == 0
+    assert calls == []
+    assert "HEAL: the raw index holds 0 of 1 embedded keys" in capsys.readouterr().out
+    assert json.loads((tmp_path / embed_raw.STATE_FILENAME).read_text()) == {}
+
+    kept["kept"] = 1
+    assert embed_raw.main() == 0
+    assert calls == ["raw:inbox:full-note.md"]
+
+
+def test_heal_state_clears_only_when_claimed_keys_are_missing(tmp_path, monkeypatch):
+    monkeypatch.delenv(embed_arcs.STATE_GENERATION_ENV, raising=False)
+    state = tmp_path / "state.json"
+    embed_arcs.save_state(state, {"arc-a.md": 1.0})
+    assert embed_arcs.heal_state(state, {"arc-a", "arc-b"}, 2, "arc") == 0
+    assert json.loads(state.read_text()) == {"arc-a.md": 1.0}
+    assert embed_arcs.heal_state(state, {"arc-a", "arc-b"}, 1, "arc") == 1
+    assert json.loads(state.read_text()) == {}
 
 
 def test_prune_skipped_when_raw_dir_absent(tmp_path, monkeypatch, capsys):

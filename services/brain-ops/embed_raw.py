@@ -27,6 +27,7 @@ from pathlib import Path
 import net_wait
 from embed_arcs import (
     REQ_TIMEOUT,
+    heal_state,
     load_state,
     parse_frontmatter,
     post_embed,
@@ -100,6 +101,7 @@ def main() -> int:
 
     stats = {"scanned": 0, "embedded": 0, "skipped_unchanged": 0, "skipped_noop": 0, "errors": 0}
     seen_keys: set[str] = set()
+    claimed: set[str] = set()
 
     t0 = time.time()
     for md in scan_raw(vault):
@@ -109,6 +111,7 @@ def main() -> int:
         mtime = md.stat().st_mtime
         if state.get(rel) == mtime:
             seen_keys.add(key)
+            claimed.add(key)
             stats["skipped_unchanged"] += 1
             continue
 
@@ -144,6 +147,7 @@ def main() -> int:
             resp = post_embed(args.api_url, args.api_key, payload)
             stats["embedded"] += 1
             state[rel] = mtime
+            claimed.add(key)
             print(f"OK: {key} chunks={resp.get('chunks_stored')}")
         except Exception as e:
             stats["errors"] += 1
@@ -184,6 +188,7 @@ def main() -> int:
                 pr = json.loads(resp.read())
             stats["pruned"] = pr.get("deleted", 0)
             print(f"PRUNE: deleted={stats['pruned']} kept={pr.get('kept', 0)}")
+            stats["healed"] = heal_state(state_path, claimed, pr.get("kept", 0), "raw")
         except Exception as e:
             stats["prune_error"] = str(e)
             stats["errors"] += 1
