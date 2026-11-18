@@ -184,6 +184,24 @@ def save_state(state_path: Path, state: dict) -> None:
         os.replace(generation_tmp, generation_path)
 
 
+def heal_state(state_path: Path, claimed: set[str], kept: int, what: str) -> int:
+    """Clear the state when the index lost keys it records as embedded.
+
+    The state file skips every unchanged note, so rows lost server-side (a
+    rebuilt database) would never come back; /prune's `kept` counts the keep
+    keys that still exist, which is how the loss shows.
+    """
+    missing = len(claimed) - kept
+    if missing <= 0:
+        return 0
+    save_state(state_path, {})
+    print(
+        f"HEAL: the {what} index holds {kept} of {len(claimed)} embedded keys; "
+        "state cleared so the next run re-embeds them"
+    )
+    return missing
+
+
 def post_embed(api_url: str, api_key: str, payload: dict, timeout: int = REQ_TIMEOUT) -> dict:
     req = urllib.request.Request(
         url=f"{api_url.rstrip('/')}/embed",
@@ -345,6 +363,7 @@ def main() -> int:
     # Cluster IDs of every arc we saw on disk — used for the prune call so
     # that pgvector rows whose source file has disappeared get deleted.
     seen_keys: set[str] = set()
+    claimed: set[str] = set()
 
     t0 = time.time()
     for md in scan_arcs(vault):
@@ -356,6 +375,7 @@ def main() -> int:
             try:
                 fm_only, _ = parse_frontmatter(md.read_text(encoding="utf-8"))
                 seen_keys.add(arc_id(md, fm_only))
+                claimed.add(arc_id(md, fm_only))
             except OSError:
                 pass
             stats["skipped_unchanged"] += 1
@@ -406,6 +426,7 @@ def main() -> int:
             resp = post_embed(args.api_url, args.api_key, payload)
             stats["embedded"] += 1
             state[rel] = mtime
+            claimed.add(cluster_id)
             print(f"OK: {cluster_id} chunks={resp.get('chunks_stored')}")
         except Exception as e:
             stats["errors"] += 1
@@ -536,6 +557,7 @@ def main() -> int:
             stats["pruned"] = pr.get("deleted", 0)
             stats["pruned_kept"] = pr.get("kept", 0)
             print(f"PRUNE: deleted={stats['pruned']} kept={stats['pruned_kept']}")
+            stats["healed"] = heal_state(state_path, claimed, stats["pruned_kept"], "arc")
         except Exception as e:
             stats["prune_error"] = str(e)
             stats["errors"] += 1
