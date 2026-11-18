@@ -47,6 +47,7 @@ import project_feed
 MAX_EDGE_LINES = 500
 MAX_ARC_ROWS = 250  # arc-table rows, highest heat first
 MAX_PROMPT_CHARS = int(os.getenv("BRAIN_PROMPT_MAX_CHARS", "12000"))
+TRIM_NOTE_CHARS = 80
 # Synthesis (Task 6). Bounded per tick: an unsynthesized backlog drains over
 # successive ticks rather than blowing one prompt. Summaries persist to arc
 # frontmatter, so each arc is paid for exactly once.
@@ -139,13 +140,31 @@ Respond ONLY with the 7 sections above."""
     return f"{prompt}\n\n{task}\n"
 
 
+def _trim_rows(block: str, room: int, what: str) -> str:
+    if len(block) <= room:
+        return block
+    lines = block.splitlines(keepends=True)
+    kept: list[str] = []
+    used = 0
+    for line in lines:
+        if used + len(line) > room:
+            break
+        kept.append(line)
+        used += len(line)
+    return (
+        "".join(kept)
+        + f"  [{len(lines) - len(kept)} more {what} trimmed to fit the context budget]\n"
+    )
+
+
 def _fit_budget(prompt: str, edge_map: str, arc_table: str) -> str:
     if len(prompt) > MAX_PROMPT_CHARS:
-        prompt = prompt.replace(
-            edge_map, "  [edge map omitted — exceeded context budget; run vault cleanup]"
+        room = (
+            MAX_PROMPT_CHARS - (len(prompt) - len(edge_map) - len(arc_table)) - 2 * TRIM_NOTE_CHARS
         )
-    if len(prompt) > MAX_PROMPT_CHARS:
-        prompt = prompt.replace(arc_table, "  [arc table omitted — exceeded context budget]\n")
+        arcs = _trim_rows(arc_table, room // 2, "arc rows")
+        edges = _trim_rows(edge_map, room - len(arcs), "edge lines")
+        prompt = prompt.replace(arc_table, arcs).replace(edge_map, edges)
     if len(prompt) > MAX_PROMPT_CHARS:
         prompt = prompt[:MAX_PROMPT_CHARS] + "\n\n[prompt hard-truncated to fit context]\n"
     return prompt

@@ -145,17 +145,28 @@ class TestBuildPrompt:
         prompt, _ = brain_tick_prompt.build_prompt(tmp_path, feed)
         assert "more edges (capped)" in prompt
 
-    def test_prompt_char_budget_drops_edge_map(self, tmp_path, monkeypatch):
+    def test_prompt_char_budget_trims_the_edge_map_and_keeps_the_arc_table(
+        self, tmp_path, monkeypatch
+    ):
         feed = tmp_path / "brain-feed"
         edges = "".join(f"<!-- @edge type=related target=t{i} -->\n" for i in range(40))
         _write_arc(tmp_path / "clusters" / "2026-05-01" / "arc-b.md", "arc-b", edges)
         prompt0, _ = brain_tick_prompt.build_prompt(tmp_path, feed)
-        # Force the budget just below the full size — the edge map is the first
-        # (and here largest variable) section, so it must be dropped.
         monkeypatch.setattr(brain_tick_prompt, "MAX_PROMPT_CHARS", len(prompt0) - 50)
         prompt1, _ = brain_tick_prompt.build_prompt(tmp_path, feed)
-        assert "[edge map omitted" in prompt1
-        assert len(prompt1) < len(prompt0)
+        assert "more edge lines trimmed to fit the context budget" in prompt1
+        assert "--related--> t0" in prompt1
+        assert "| Arc ID |" in prompt1 and "arc-b" in prompt1
+        assert "omitted" not in prompt1
+        assert len(prompt1) <= len(prompt0) - 50
+
+    def test_trim_rows_keeps_whole_leading_rows_and_counts_the_rest(self):
+        block = "h1\nh2\nrow-a\nrow-b\n"
+        note = "more arc rows trimmed to fit the context budget]\n"
+        assert brain_tick_prompt._trim_rows(block, len(block), "arc rows") == block
+        assert brain_tick_prompt._trim_rows(block, 11, "arc rows") == "h1\nh2\n  [2 " + note
+        assert brain_tick_prompt._trim_rows(block, 12, "arc rows") == "h1\nh2\nrow-a\n  [1 " + note
+        assert brain_tick_prompt._trim_rows(block, -5, "arc rows") == "  [4 " + note
 
 
 # ---------- vault_cleanup chain collapse ----------
